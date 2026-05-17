@@ -415,12 +415,17 @@ async function renderHtmlToBlob(html) {
 
     const node = content.querySelector('.page')
 
-    // Collect ranges (in canvas-px) of elements that must not be split across pages.
-    // We compute these BEFORE html2canvas to use live DOM measurements; the scale
-    // factor is constant since the source node has a fixed CSS width.
+    // IMPORTANT: measure ALL atomic-element bounds BEFORE html2canvas, so we use
+    // the exact same layout that html2canvas will render. (Doing it after has
+    // caused off-by-N-px discrepancies that produced visually clipped elements.)
     const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
+    const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
+      .map((el) => {
+        const r = el.getBoundingClientRect()
+        return [r.top - nodeRect.top, r.bottom - nodeRect.top]
+      })
 
     const canvas = await html2canvas(node, {
       scale: 2,
@@ -438,28 +443,31 @@ async function renderHtmlToBlob(html) {
     if (imgH <= pageH) {
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgW, imgH)
     } else {
-      const pageHeightPx = Math.floor((pageH * canvas.width) / pageW)
+      // Continuation pages (page 2, 3, ...) get a top margin so content doesn't
+      // sit flush against the paper edge. The first page already has its CSS
+      // padding baked into the source render.
+      const CONTINUATION_TOP_MM = 14
+      const BOTTOM_BUFFER_MM = 8
+      const fullPageHeightPx = Math.floor((pageH * canvas.width) / pageW)
+      const continuationOffsetPx = Math.round((CONTINUATION_TOP_MM * canvas.width) / pageW)
+      const bottomBufferPx = Math.round((BOTTOM_BUFFER_MM * canvas.width) / pageW)
       const scaleY = canvas.height / sourceHeightPx
 
-      // Build sorted list of no-break ranges in canvas-px space
-      const ranges = []
-      for (const el of node.querySelectorAll(NO_BREAK_SELECTORS)) {
-        const r = el.getBoundingClientRect()
-        const top = Math.round((r.top - nodeRect.top) * scaleY)
-        const bottom = Math.round((r.bottom - nodeRect.top) * scaleY)
-        const h = bottom - top
-        // Only protect elements that can actually fit on one page
-        if (h > 0 && h <= pageHeightPx - 20) ranges.push([top, bottom])
-      }
-      ranges.sort((a, b) => a[0] - b[0])
+      const ranges = noBreakBoundsPx
+        .map(([t, b]) => [Math.round(t * scaleY), Math.round(b * scaleY)])
+        .filter(([t, b]) => b - t > 0 && b - t <= fullPageHeightPx - 40)
+        .sort((a, b) => a[0] - b[0])
 
       let y = 0
       let isFirst = true
       while (y < canvas.height) {
-        let pageEnd = Math.min(y + pageHeightPx, canvas.height)
+        // Effective drawable area per page (reserve top margin on continuation pages
+        // and a small bottom buffer so the last protected element doesn't kiss the edge)
+        const topReserve = isFirst ? 0 : continuationOffsetPx
+        const availPx = fullPageHeightPx - topReserve - bottomBufferPx
+        let pageEnd = Math.min(y + availPx, canvas.height)
 
         // Pull pageEnd up so we don't slice through a protected element.
-        // Iterate because pulling back may reveal an earlier conflict.
         for (let iter = 0; iter < 100; iter++) {
           let conflict = null
           for (const [top, bottom] of ranges) {
@@ -473,8 +481,8 @@ async function renderHtmlToBlob(html) {
           pageEnd = conflict
         }
 
-        // Fallback: if we couldn't fit anything (element too tall), force-fill the page.
-        if (pageEnd <= y) pageEnd = Math.min(y + pageHeightPx, canvas.height)
+        // Fallback: if we couldn't fit anything (element too tall), force-fill.
+        if (pageEnd <= y) pageEnd = Math.min(y + availPx, canvas.height)
 
         const sliceH = pageEnd - y
         const slice = document.createElement('canvas')
@@ -486,7 +494,8 @@ async function renderHtmlToBlob(html) {
         ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH)
         const sliceImgH = (sliceH * imgW) / canvas.width
         if (!isFirst) pdf.addPage()
-        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgW, sliceImgH)
+        const yOffsetMm = isFirst ? 0 : CONTINUATION_TOP_MM
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, yOffsetMm, imgW, sliceImgH)
         isFirst = false
         y = pageEnd
       }
