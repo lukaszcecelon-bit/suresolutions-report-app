@@ -90,6 +90,17 @@ export const getImages = (ids) => getManyGeneric(STORE_IMAGES, ids)
 export const deleteImage = (id) => deleteManyGeneric(STORE_IMAGES, [id])
 export const deleteImages = (ids) => deleteManyGeneric(STORE_IMAGES, ids)
 
+export async function replaceImage(id, dataUrl) {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_IMAGES, 'readwrite')
+    tx.objectStore(STORE_IMAGES).put(dataUrl, id)
+    tx.oncomplete = () => resolve(id)
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
 // ---- Videos (Blob/File) ----
 export const putVideo = (blob) => putGeneric(STORE_VIDEOS, blob, 'v')
 export const getVideo = (id) => getGeneric(STORE_VIDEOS, id)

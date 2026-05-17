@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { compressImageFile } from '../../utils/imageCompressor.js'
 import { newId } from '../../utils/storage.js'
-import { putImage, getImages, deleteImage, putVideo, deleteVideo } from '../../utils/imageStore.js'
+import { putImage, getImages, deleteImage, putVideo, deleteVideo, replaceImage } from '../../utils/imageStore.js'
+import PhotoAnnotator from './PhotoAnnotator.jsx'
 
 function fmtSize(bytes) {
   if (!bytes && bytes !== 0) return ''
@@ -18,6 +19,8 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
   const [error, setError] = useState('')
   // cache: photoId → dataUrl, used purely for rendering thumbnails
   const [resolved, setResolved] = useState({})
+  // photoId of image currently being annotated (null when no editor open)
+  const [editingPhotoId, setEditingPhotoId] = useState(null)
 
   // Load dataUrls from IndexedDB for any photoIds we don't yet have cached.
   useEffect(() => {
@@ -180,14 +183,27 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                 <div className="absolute top-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded z-10">
                   Zdj. {i + 1}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeItem(m.id)}
-                  className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center z-10"
-                  aria-label="Usuń zdjęcie"
-                >
-                  ✕
-                </button>
+                <div className="absolute top-1 right-1 flex gap-1 z-10">
+                  {m.photoId && url && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingPhotoId(m.photoId)}
+                      className="bg-sure-blue hover:bg-blue-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center"
+                      aria-label="Edytuj zdjęcie (adnotacje)"
+                      title="Adnotacje"
+                    >
+                      ✎
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeItem(m.id)}
+                    className="bg-red-600 hover:bg-red-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center"
+                    aria-label="Usuń zdjęcie"
+                  >
+                    ✕
+                  </button>
+                </div>
                 {url ? (
                   <img src={url} alt={m.filename} className="w-full h-32 object-cover" />
                 ) : (
@@ -204,6 +220,22 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
             )
           })}
         </div>
+      )}
+
+      {editingPhotoId && resolved[editingPhotoId] && (
+        <PhotoAnnotator
+          sourceDataUrl={resolved[editingPhotoId]}
+          onCancel={() => setEditingPhotoId(null)}
+          onSave={async (newDataUrl) => {
+            try {
+              await replaceImage(editingPhotoId, newDataUrl)
+              setResolved((prev) => ({ ...prev, [editingPhotoId]: newDataUrl }))
+            } catch (e) {
+              alert('Błąd zapisu zdjęcia: ' + (e.message || e))
+            }
+            setEditingPhotoId(null)
+          }}
+        />
       )}
 
       {videoItems.length > 0 && (
