@@ -355,17 +355,23 @@ const CSS = `
     margin-bottom: 10px;
   }
   .photo {
-    border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #fff;
+    border: 1px solid #D1D5DB; border-radius: 6px; overflow: hidden; background: #fff;
   }
-  .photo img { width: 100%; height: 220px; object-fit: cover; display: block; background: #F3F4F6; }
+  .photo img {
+    width: 100%; height: 220px; object-fit: cover; display: block;
+    background: #F3F4F6; border-bottom: 1px solid #D1D5DB;
+  }
+  .photo-meta { padding: 10px 14px 12px; }
   .photo-num {
-    font-size: 11px; font-weight: 700; color: #3D70B2; padding: 8px 12px 0;
-    text-transform: uppercase; letter-spacing: 0.5px;
+    display: inline-block; font-size: 10px; font-weight: 700; color: #fff;
+    background: #3D70B2; padding: 3px 10px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
   }
-  .photo-ctx { font-size: 10.5px; color: #6B7280; padding: 1px 12px 0; }
-  .photo-desc { font-size: 12px; color: #1F2937; padding: 3px 12px 0; line-height: 1.45; }
+  .photo-ctx { font-size: 11.5px; color: #1F2937; font-weight: 600; line-height: 1.35; }
+  .photo-desc { font-size: 11px; color: #4B5563; margin-top: 4px; line-height: 1.45; }
   .photo-file {
-    font-size: 9.5px; color: #9CA3AF; padding: 5px 12px 10px;
+    font-size: 9.5px; color: #6B7280; margin-top: 8px;
+    padding-top: 6px; border-top: 1px dashed #E5E7EB;
     font-family: ui-monospace, monospace; word-break: break-all;
   }
 
@@ -557,11 +563,13 @@ function renderPhotosVideosHtml(allPhotos, allVideos) {
     <div class="photos">
       ${allPhotos.map((p, i) => `
         <div class="photo">
-          <div class="photo-num">Zdj. ${String(i + 1).padStart(2, '0')}</div>
-          ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#9CA3AF;font-size:11px">(brak miniatury)</div>'}
-          ${p._ctxLabel ? `<div class="photo-ctx">${esc(p._ctxLabel)}</div>` : ''}
-          ${p.description ? `<div class="photo-desc">${esc(p.description)}</div>` : ''}
-          <div class="photo-file">📁 ${esc(p._zipFilename || p.filename || '—')}</div>
+          ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#9CA3AF;font-size:11px;background:#F3F4F6;border-bottom:1px solid #D1D5DB">(brak miniatury)</div>'}
+          <div class="photo-meta">
+            <div class="photo-num">Zdj. ${String(i + 1).padStart(2, '0')}</div>
+            ${p._ctxLabel ? `<div class="photo-ctx">${esc(p._ctxLabel)}</div>` : ''}
+            ${p.description ? `<div class="photo-desc">${esc(p.description)}</div>` : ''}
+            <div class="photo-file">📁 ${esc(p._zipFilename || p.filename || '—')}</div>
+          </div>
         </div>
       `).join('')}
     </div>
