@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { compressImageFile } from '../../utils/imageCompressor.js'
 import { newId } from '../../utils/storage.js'
-import { putImage, getImages, deleteImage } from '../../utils/imageStore.js'
+import { putImage, getImages, deleteImage, putVideo, deleteVideo } from '../../utils/imageStore.js'
+
+function fmtSize(bytes) {
+  if (!bytes && bytes !== 0) return ''
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
+}
 
 export default function MediaUploader({ media = [], onChange, compact = false, photoOnly = false }) {
   const photoCamInput = useRef(null)
@@ -48,6 +55,9 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
     if (m?.photoId) {
       deleteImage(m.photoId).catch((e) => console.warn('deleteImage failed', e))
     }
+    if (m?.videoId) {
+      deleteVideo(m.videoId).catch((e) => console.warn('deleteVideo failed', e))
+    }
   }
 
   const handleFiles = async (files) => {
@@ -70,10 +80,14 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
             description: '',
           })
         } else if (f.type.startsWith('video/') && !photoOnly) {
+          const videoId = await putVideo(f)
           out.push({
             id: newId(),
             kind: 'video',
+            videoId,
             filename: f.name,
+            mimeType: f.type,
+            size: f.size,
             description: '',
           })
         }
@@ -198,7 +212,10 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
             <div key={m.id} className="border border-gray-200 rounded-lg p-2 bg-gray-50 flex items-start gap-2">
               <div className="text-2xl">🎬</div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium">Wideo {i + 1}</div>
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <span>Wideo {i + 1}</span>
+                  {m.size > 0 && <span className="text-xs text-gray-400 font-normal">({fmtSize(m.size)})</span>}
+                </div>
                 <div className="text-xs text-gray-500 truncate" title={m.filename}>
                   Plik: {m.filename}
                 </div>
@@ -209,9 +226,6 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                   onChange={(e) => updateItem(m.id, { description: e.target.value })}
                   className="mt-1 w-full text-xs px-2 py-1.5 border border-gray-200 rounded focus:outline-none"
                 />
-                <div className="text-[10px] text-amber-600 mt-1">
-                  Wideo nie jest zapisywane w raporcie — wyślij plik osobno na folder projektu.
-                </div>
               </div>
               <button
                 type="button"

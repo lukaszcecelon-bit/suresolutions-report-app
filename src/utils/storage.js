@@ -1,16 +1,23 @@
-import { deleteImages } from './imageStore.js'
+import { deleteImages, deleteVideos } from './imageStore.js'
 
 const KEY = 'suresolutions.reports.v1'
 
-export function collectPhotoIds(value, out = new Set()) {
+export function collectMediaIds(value, out) {
+  if (!out) out = { photos: new Set(), videos: new Set() }
   if (value === null || typeof value !== 'object') return out
   if (Array.isArray(value)) {
-    for (const v of value) collectPhotoIds(v, out)
+    for (const v of value) collectMediaIds(v, out)
     return out
   }
-  if (value.kind === 'image' && value.photoId) out.add(value.photoId)
-  for (const k of Object.keys(value)) collectPhotoIds(value[k], out)
+  if (value.kind === 'image' && value.photoId) out.photos.add(value.photoId)
+  if (value.kind === 'video' && value.videoId) out.videos.add(value.videoId)
+  for (const k of Object.keys(value)) collectMediaIds(value[k], out)
   return out
+}
+
+// Backwards-compat helper (used by pdfGenerator legacy path)
+export function collectPhotoIds(value) {
+  return collectMediaIds(value).photos
 }
 
 export function loadAll() {
@@ -43,9 +50,12 @@ export function getById(id) {
 export function remove(id) {
   const report = getById(id)
   if (report) {
-    const ids = collectPhotoIds(report)
-    if (ids.size > 0) {
-      deleteImages(Array.from(ids)).catch((e) => console.warn('IDB cleanup failed', e))
+    const m = collectMediaIds(report)
+    if (m.photos.size > 0) {
+      deleteImages(Array.from(m.photos)).catch((e) => console.warn('photo cleanup failed', e))
+    }
+    if (m.videos.size > 0) {
+      deleteVideos(Array.from(m.videos)).catch((e) => console.warn('video cleanup failed', e))
     }
   }
   saveAll(loadAll().filter((r) => r.id !== id))

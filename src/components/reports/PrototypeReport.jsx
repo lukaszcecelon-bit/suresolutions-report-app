@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
-import { generatePrototypePdf } from '../../utils/pdfGenerator.js'
+import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
 
 const SAMPLE_METHODS = [
   { key: 'print3d', label: 'Druk 3D' },
@@ -141,8 +141,8 @@ export default function PrototypeReport({ navigate, reportId }) {
   }
 
   const downloadPdf = async () => {
-    try { await generatePrototypePdf(report) }
-    catch (e) { alert('Błąd generowania PDF: ' + e.message) }
+    try { await generatePrototypePackage(report) }
+    catch (e) { alert('Błąd generowania paczki: ' + e.message) }
   }
 
   // counters
@@ -442,7 +442,7 @@ export default function PrototypeReport({ navigate, reportId }) {
             ✓ Oznacz jako ukończony
           </button>
         )}
-        <button onClick={downloadPdf} className="btn-primary flex-1">📄 Pobierz PDF</button>
+        <button onClick={downloadPdf} className="btn-primary flex-1">📦 Pobierz paczkę (PDF + media)</button>
         <button onClick={() => navigate('')} className="btn-secondary flex-1">Zapisz i wyjdź</button>
       </div>
     </div>

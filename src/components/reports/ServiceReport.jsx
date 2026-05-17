@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
-import { generateServicePdf } from '../../utils/pdfGenerator.js'
+import { generateServicePackage } from '../../utils/pdfGenerator.js'
 
 const CATEGORIES = ['Mechanika', 'Elektryka', 'Pneumatyka', 'Hydraulika', 'Software', 'Inne']
 
@@ -108,8 +108,8 @@ export default function ServiceReport({ navigate, reportId }) {
   }
 
   const downloadPdf = async () => {
-    try { await generateServicePdf(report) }
-    catch (e) { alert('Błąd generowania PDF: ' + e.message) }
+    try { await generateServicePackage(report) }
+    catch (e) { alert('Błąd generowania paczki: ' + e.message) }
   }
 
   return (
@@ -325,7 +325,7 @@ export default function ServiceReport({ navigate, reportId }) {
             ✓ Oznacz jako ukończony
           </button>
         )}
-        <button onClick={downloadPdf} className="btn-primary flex-1">📄 Pobierz PDF</button>
+        <button onClick={downloadPdf} className="btn-primary flex-1">📦 Pobierz paczkę (PDF + media)</button>
         <button onClick={() => navigate('')} className="btn-secondary flex-1">Zapisz i wyjdź</button>
       </div>
     </div>

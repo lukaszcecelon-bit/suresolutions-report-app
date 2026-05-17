@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
-import { generateCommissioningPdf } from '../../utils/pdfGenerator.js'
+import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -184,8 +184,8 @@ export default function CommissioningReport({ navigate, reportId }) {
     : 0
 
   const downloadPdf = async () => {
-    try { await generateCommissioningPdf(report) }
-    catch (e) { alert('Błąd generowania PDF: ' + e.message) }
+    try { await generateCommissioningPackage(report) }
+    catch (e) { alert('Błąd generowania paczki: ' + e.message) }
   }
 
   // ============ RENDER ============
@@ -475,7 +475,7 @@ export default function CommissioningReport({ navigate, reportId }) {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
-            <button onClick={downloadPdf} className="btn-primary flex-1">📄 Pobierz PDF</button>
+            <button onClick={downloadPdf} className="btn-primary flex-1">📦 Pobierz paczkę (PDF + media)</button>
             <button onClick={() => navigate('')} className="btn-secondary flex-1">Zapisz i wyjdź</button>
           </div>
         </>

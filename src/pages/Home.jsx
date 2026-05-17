@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { loadAll, remove } from '../utils/storage.js'
-import { generateCommissioningPdf, generateServicePdf, generatePrototypePdf } from '../utils/pdfGenerator.js'
+import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage } from '../utils/pdfGenerator.js'
 
 const TYPE_LABELS = {
   commissioning: 'Uruchomienie / obserwacja maszyny',
@@ -31,12 +31,12 @@ export default function Home({ navigate }) {
 
   const handlePdf = async (r) => {
     try {
-      if (r.type === 'commissioning') await generateCommissioningPdf(r)
-      else if (r.type === 'service') await generateServicePdf(r)
-      else if (r.type === 'prototype') await generatePrototypePdf(r)
-      else alert('PDF dla tego typu raportu zostanie dodany w kolejnej fazie.')
+      if (r.type === 'commissioning') await generateCommissioningPackage(r)
+      else if (r.type === 'service') await generateServicePackage(r)
+      else if (r.type === 'prototype') await generatePrototypePackage(r)
+      else alert('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.')
     } catch (e) {
-      alert('Błąd generowania PDF: ' + e.message)
+      alert('Błąd generowania paczki: ' + e.message)
     }
   }
 
@@ -90,7 +90,7 @@ export default function Home({ navigate }) {
                 </div>
                 <div className="flex gap-2 flex-wrap">
                   <button className="btn-secondary text-sm py-2 px-3" onClick={() => handleOpen(r)}>Otwórz</button>
-                  <button className="btn-secondary text-sm py-2 px-3" onClick={() => handlePdf(r)}>Pobierz PDF</button>
+                  <button className="btn-secondary text-sm py-2 px-3" onClick={() => handlePdf(r)}>📦 Pobierz</button>
                   <button className="btn-danger text-sm py-2 px-3" onClick={() => handleDelete(r.id)}>Usuń</button>
                 </div>
               </div>

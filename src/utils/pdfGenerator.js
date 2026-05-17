@@ -1,8 +1,55 @@
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
+import JSZip from 'jszip'
 import logoUrl from '../assets/logo.png'
-import { getImages } from './imageStore.js'
+import { getImages, getVideos } from './imageStore.js'
 import { collectPhotoIds } from './storage.js'
+
+function slugify(s) {
+  return (s || '')
+    .replace(/[ąĄ]/g, 'a').replace(/[ćĆ]/g, 'c').replace(/[ęĘ]/g, 'e')
+    .replace(/[łŁ]/g, 'l').replace(/[ńŃ]/g, 'n').replace(/[óÓ]/g, 'o')
+    .replace(/[śŚ]/g, 's').replace(/[źŹżŻ]/g, 'z')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, 80)
+}
+
+function makeFilename(idx, ctxSlug, description, ext) {
+  const num = String(idx + 1).padStart(2, '0')
+  const desc = description ? '__' + slugify(description) : ''
+  return `${num}_${ctxSlug || 'Media'}${desc}.${ext}`
+}
+
+function extractExt(filename) {
+  if (!filename) return null
+  const m = filename.match(/\.([a-zA-Z0-9]{1,5})$/)
+  return m ? m[1].toLowerCase() : null
+}
+
+function extFromMime(mime) {
+  if (!mime) return null
+  if (/mp4|quicktime/i.test(mime)) return 'mp4'
+  if (/webm/i.test(mime)) return 'webm'
+  if (/3gpp/i.test(mime)) return '3gp'
+  if (/ogg/i.test(mime)) return 'ogv'
+  return null
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+    a.remove()
+  }, 200)
+}
 
 function deepCloneWithPhotos(value, resolved) {
   if (value === null || typeof value !== 'object') return value
@@ -26,6 +73,70 @@ const TYPE_TITLES = {
   commissioning: 'RAPORT URUCHOMIENIA / OBSERWACJI MASZYNY',
   service: 'RAPORT SERWISU NA OBIEKCIE',
   prototype: 'RAPORT TESTÓW PROTOTYPU',
+}
+
+const POINT_RESULT_LABELS = {
+  ok: '✓ OK',
+  nok: '✗ NOK',
+  cond: '~ Warunkowo',
+}
+
+const POINT_RESULT_SLUGS = {
+  ok: 'OK',
+  nok: 'NOK',
+  cond: 'Warunkowo',
+}
+
+function collectAllMedia(report) {
+  const items = []
+  const push = (mediaArr, ctxLabel, ctxSlug) => {
+    for (const m of (mediaArr || [])) {
+      items.push({ ...m, _ctxLabel: ctxLabel, _ctxSlug: ctxSlug })
+    }
+  }
+
+  if (report.type === 'commissioning') {
+    ;(report.stops || []).forEach((s, idx) => {
+      const reason = s.reason === 'Inne' && s.customReason ? s.customReason : (s.reason || '')
+      push(s.media,
+        `Zatrzymanie #${idx + 1} — ${reason}`,
+        `Zatrzymanie-${idx + 1}_${slugify(reason) || 'X'}`)
+    })
+    push(report.generalMedia, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
+  } else if (report.type === 'service') {
+    ;(report.actions || []).forEach((a, idx) => {
+      const cat = a.category || ''
+      push(a.media,
+        `Czynność #${idx + 1} — ${cat}`,
+        `Czynnosc-${idx + 1}_${slugify(cat) || 'X'}`)
+    })
+    push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
+  } else if (report.type === 'prototype') {
+    push(report.info?.media, 'Sekcja A — Informacje o teście', 'Sekcja-A_Informacje')
+    ;(report.points || []).forEach((pt, idx) => {
+      const ctxLabel = `Punkt #${idx + 1}${pt.description ? ' — ' + pt.description : ''} (${POINT_RESULT_LABELS[pt.result] || ''})`
+      const descSlug = pt.description ? '_' + slugify(pt.description) : ''
+      push(pt.media,
+        ctxLabel,
+        `Punkt-${idx + 1}_${POINT_RESULT_SLUGS[pt.result] || 'X'}${descSlug}`)
+    })
+    push(report.resultsMedia, 'Sekcja C — Wyniki testu (ogólne)', 'Sekcja-C_Wyniki')
+    push(report.observationsMedia, 'Sekcja D — Obserwacje i wnioski', 'Sekcja-D_Obserwacje')
+    push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
+  }
+
+  const photos = items.filter((m) => m.kind === 'image')
+  const videos = items.filter((m) => m.kind === 'video')
+
+  photos.forEach((p, i) => {
+    p._zipFilename = makeFilename(i, p._ctxSlug, p.description, 'jpg')
+  })
+  videos.forEach((v, i) => {
+    const ext = (extractExt(v.filename) || extFromMime(v.mimeType) || 'mp4').toLowerCase()
+    v._zipFilename = makeFilename(i, v._ctxSlug, v.description, ext)
+  })
+
+  return { photos, videos }
 }
 
 function formatDurationFull(ms) {
@@ -67,7 +178,7 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
-function buildCommissioningHtml(report) {
+function buildCommissioningHtml(report, photos, videos) {
   const h = report.header || {}
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
     ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt)
@@ -76,11 +187,11 @@ function buildCommissioningHtml(report) {
   const longest = (report.stops || []).reduce((m, st) => Math.max(m, st.durationMs || 0), 0)
 
   const stopsRows = (report.stops || []).map((s, i) => {
-    const photos = (s.media || []).filter((m) => m.kind === 'image').length
-    const videos = (s.media || []).filter((m) => m.kind === 'video').length
-    const mediaCell = photos === 0 && videos === 0
+    const ph = (s.media || []).filter((m) => m.kind === 'image').length
+    const vd = (s.media || []).filter((m) => m.kind === 'video').length
+    const mediaCell = ph === 0 && vd === 0
       ? '—'
-      : `${photos > 0 ? `Zdj. ${photos}` : ''}${photos > 0 && videos > 0 ? ' · ' : ''}${videos > 0 ? `Wid. ${videos}` : ''}`
+      : `${ph > 0 ? `Zdj. ${ph}` : ''}${ph > 0 && vd > 0 ? ' · ' : ''}${vd > 0 ? `Wid. ${vd}` : ''}`
     return `
     <tr>
       <td>${i + 1}</td>
@@ -92,55 +203,7 @@ function buildCommissioningHtml(report) {
     </tr>
   `}).join('')
 
-  // photos & videos collected across stops + general
-  const allPhotos = []
-  const allVideos = []
-  ;(report.stops || []).forEach((s, idx) => {
-    ;(s.media || []).forEach((m) => {
-      const ctx = `Zatrzymanie #${idx + 1} — ${s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}`
-      if (m.kind === 'image') allPhotos.push({ ...m, context: ctx })
-      else if (m.kind === 'video') allVideos.push({ ...m, context: ctx })
-    })
-  })
-  ;(report.generalMedia || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Dokumentacja ogólna' })
-    else if (m.kind === 'video') allVideos.push({ ...m, context: 'Dokumentacja ogólna' })
-  })
-
-  const photosHtml = allPhotos.length > 0 ? `
-    <h2>Dokumentacja fotograficzna</h2>
-    <div class="photos">
-      ${allPhotos.map((p, i) => `
-        <div class="photo">
-          <div class="photo-num">Zdj. ${i + 1}</div>
-          <img src="${p.dataUrl}" />
-          <div class="photo-ctx">${esc(p.context)}</div>
-          ${p.description ? `<div class="photo-desc">${esc(p.description)}</div>` : ''}
-          <div class="photo-file">Plik: ${esc(p.filename || '—')}</div>
-        </div>
-      `).join('')}
-    </div>
-  ` : ''
-
-  const videosHtml = allVideos.length > 0 ? `
-    <h2>Dokumentacja wideo</h2>
-    <table class="stops">
-      <thead>
-        <tr><th>Nr</th><th>Kontekst</th><th>Opis</th><th>Plik</th></tr>
-      </thead>
-      <tbody>
-        ${allVideos.map((v, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${esc(v.context)}</td>
-            <td>${esc(v.description || '—')}</td>
-            <td>${esc(v.filename || '—')}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <p class="note">Pliki wideo nie są osadzone w PDF — wyślij je osobno na folder projektu.</p>
-  ` : ''
+  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   return `
   <div class="page">
@@ -325,7 +388,7 @@ const CSS = `
   }
 `
 
-async function renderHtmlToPdf(html, fname) {
+async function renderHtmlToBlob(html) {
   const container = document.createElement('div')
   container.style.position = 'fixed'
   container.style.left = '-10000px'
@@ -428,27 +491,68 @@ async function renderHtmlToPdf(html, fname) {
         y = pageEnd
       }
     }
-    pdf.save(fname)
+    return pdf.output('blob')
   } finally {
     document.body.removeChild(container)
   }
 }
 
-function pdfFilename(report, fallback = 'raport') {
-  return `${(report.header?.reportNumber || fallback).replace(/[^\w\-]+/g, '_')}_${report.header?.date || 'data'}.pdf`
+function fileBase(report, fallback = 'raport') {
+  const num = (report.header?.reportNumber || fallback).replace(/[^\w\-]+/g, '_')
+  return `${num}_${report.header?.date || 'data'}`
+}
+
+async function assemblePackage(pdfBlob, photos, videos, baseName) {
+  const hasMedia = photos.length > 0 || videos.length > 0
+  if (!hasMedia) {
+    return { blob: pdfBlob, filename: `${baseName}.pdf` }
+  }
+  const zip = new JSZip()
+  zip.file(`${baseName}.pdf`, pdfBlob)
+
+  if (photos.length > 0) {
+    const folder = zip.folder('zdjecia')
+    for (const p of photos) {
+      if (!p.dataUrl) continue
+      const base64 = p.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '')
+      folder.file(p._zipFilename, base64, { base64: true })
+    }
+  }
+
+  if (videos.length > 0) {
+    const folder = zip.folder('wideo')
+    const ids = videos.map((v) => v.videoId).filter(Boolean)
+    const blobMap = await getVideos(ids)
+    let missing = 0
+    for (const v of videos) {
+      if (v.videoId && blobMap.has(v.videoId)) {
+        folder.file(v._zipFilename, blobMap.get(v.videoId))
+      } else {
+        missing++
+      }
+    }
+    if (missing > 0) {
+      const note = `Część plików wideo (${missing}) nie była dostępna w pamięci aplikacji — sprawdź czy raport był edytowany na innym urządzeniu. Lista nazw plików znajduje się w PDF, sekcja „Dokumentacja wideo".\r\n`
+      folder.file('UWAGA-brakujace-pliki.txt', note)
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+  return { blob, filename: `${baseName}.zip` }
 }
 
 function renderPhotosVideosHtml(allPhotos, allVideos) {
   const photosHtml = allPhotos.length > 0 ? `
     <h2>Dokumentacja fotograficzna</h2>
+    <p class="note">Pełne pliki znajdziesz w paczce ZIP w folderze <strong>zdjecia/</strong>.</p>
     <div class="photos">
       ${allPhotos.map((p, i) => `
         <div class="photo">
-          <div class="photo-num">Zdj. ${i + 1}</div>
-          <img src="${p.dataUrl}" />
-          ${p.context ? `<div class="photo-ctx">${esc(p.context)}</div>` : ''}
+          <div class="photo-num">Zdj. ${String(i + 1).padStart(2, '0')}</div>
+          ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#9CA3AF;font-size:11px">(brak miniatury)</div>'}
+          ${p._ctxLabel ? `<div class="photo-ctx">${esc(p._ctxLabel)}</div>` : ''}
           ${p.description ? `<div class="photo-desc">${esc(p.description)}</div>` : ''}
-          <div class="photo-file">Plik: ${esc(p.filename || '—')}</div>
+          <div class="photo-file">📁 ${esc(p._zipFilename || p.filename || '—')}</div>
         </div>
       `).join('')}
     </div>
@@ -456,29 +560,33 @@ function renderPhotosVideosHtml(allPhotos, allVideos) {
 
   const videosHtml = allVideos.length > 0 ? `
     <h2>Dokumentacja wideo</h2>
+    <p class="note">Pełne pliki wideo znajdziesz w paczce ZIP w folderze <strong>wideo/</strong>.</p>
     <table class="stops">
       <thead>
-        <tr><th>Nr</th>${allVideos.some((v) => v.context) ? '<th>Kontekst</th>' : ''}<th>Opis</th><th>Plik</th></tr>
+        <tr><th style="width:36px">Nr</th><th>Kontekst</th><th>Opis</th><th>Plik w paczce</th></tr>
       </thead>
       <tbody>
         ${allVideos.map((v, i) => `
           <tr>
-            <td>${i + 1}</td>
-            ${allVideos.some((x) => x.context) ? `<td>${esc(v.context || '—')}</td>` : ''}
+            <td>${String(i + 1).padStart(2, '0')}</td>
+            <td>${esc(v._ctxLabel || '—')}</td>
             <td>${esc(v.description || '—')}</td>
-            <td>${esc(v.filename || '—')}</td>
+            <td>📁 ${esc(v._zipFilename || v.filename || '—')}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-    <p class="note">Pliki wideo nie są osadzone w PDF — wyślij je osobno na folder projektu.</p>
   ` : ''
   return { photosHtml, videosHtml }
 }
 
-export async function generateCommissioningPdf(report) {
+export async function generateCommissioningPackage(report) {
   const r = await resolveReportPhotos(report)
-  await renderHtmlToPdf(buildCommissioningHtml(r), pdfFilename(r))
+  const { photos, videos } = collectAllMedia(r)
+  const html = buildCommissioningHtml(r, photos, videos)
+  const pdfBlob = await renderHtmlToBlob(html)
+  const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r))
+  downloadBlob(pack.blob, pack.filename)
 }
 
 const PRIORITY_LABELS = {
@@ -493,23 +601,10 @@ const VISIT_STATUS_LABELS = {
   parts: '🔧 Oczekuje na części',
 }
 
-function buildServiceHtml(report) {
+function buildServiceHtml(report, photos, videos) {
   const h = report.header || {}
   const v = report.visit || {}
-
-  const allPhotos = []
-  const allVideos = []
-  ;(report.actions || []).forEach((a, idx) => {
-    ;(a.media || []).forEach((m) => {
-      const ctx = `Czynność #${idx + 1} — ${a.category || '—'}`
-      if (m.kind === 'image') allPhotos.push({ ...m, context: ctx })
-    })
-  })
-  ;(report.media || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Dokumentacja ogólna' })
-    else if (m.kind === 'video') allVideos.push({ ...m, context: 'Dokumentacja ogólna' })
-  })
-  const { photosHtml, videosHtml } = renderPhotosVideosHtml(allPhotos, allVideos)
+  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   const actionsHtml = (report.actions || []).length > 0 ? `
     <table class="stops">
@@ -621,21 +716,19 @@ function buildServiceHtml(report) {
   `
 }
 
-export async function generateServicePdf(report) {
+export async function generateServicePackage(report) {
   const r = await resolveReportPhotos(report)
-  await renderHtmlToPdf(buildServiceHtml(r), pdfFilename(r, 'serwis'))
+  const { photos, videos } = collectAllMedia(r)
+  const html = buildServiceHtml(r, photos, videos)
+  const pdfBlob = await renderHtmlToBlob(html)
+  const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r, 'serwis'))
+  downloadBlob(pack.blob, pack.filename)
 }
 
 const SAMPLE_METHOD_LABELS = {
   print3d: 'Druk 3D',
   cnc: 'Obróbka CNC',
   other: 'Inne',
-}
-
-const POINT_RESULT_LABELS = {
-  ok: '✓ OK',
-  nok: '✗ NOK',
-  cond: '~ Warunkowo',
 }
 
 const OVERALL_RESULT_LABELS = {
@@ -650,33 +743,11 @@ const DECISION_LABELS = {
   reject: '✗ Odrzucić koncepcję',
 }
 
-function buildPrototypeHtml(report) {
+function buildPrototypeHtml(report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const cond = report.conditions || {}
-
-  const allPhotos = []
-  const allVideos = []
-  ;(report.info?.media || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Sekcja A — Informacje o teście' })
-  })
-  ;(report.points || []).forEach((pt, idx) => {
-    ;(pt.media || []).forEach((m) => {
-      const ctx = `Punkt #${idx + 1}${pt.description ? ' — ' + pt.description : ''} (${POINT_RESULT_LABELS[pt.result] || ''})`
-      if (m.kind === 'image') allPhotos.push({ ...m, context: ctx })
-    })
-  })
-  ;(report.resultsMedia || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Sekcja C — Wyniki testu (ogólne)' })
-  })
-  ;(report.observationsMedia || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Sekcja D — Obserwacje i wnioski' })
-  })
-  ;(report.media || []).forEach((m) => {
-    if (m.kind === 'image') allPhotos.push({ ...m, context: 'Dokumentacja ogólna' })
-    else if (m.kind === 'video') allVideos.push({ ...m, context: 'Dokumentacja ogólna' })
-  })
-  const { photosHtml, videosHtml } = renderPhotosVideosHtml(allPhotos, allVideos)
+  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   const sampleMethod = info.sampleMethod === 'other'
     ? (info.sampleMethodOther || 'Inne')
@@ -798,10 +869,14 @@ function buildPrototypeHtml(report) {
   `
 }
 
-export async function generatePrototypePdf(report) {
+export async function generatePrototypePackage(report) {
   const r = await resolveReportPhotos(report)
+  const { photos, videos } = collectAllMedia(r)
+  const html = buildPrototypeHtml(r, photos, videos)
+  const pdfBlob = await renderHtmlToBlob(html)
   const iter = r.info?.iteration || 1
-  const baseName = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
-  const fname = `${baseName}_test${iter}_${r.header?.date || 'data'}.pdf`
-  await renderHtmlToPdf(buildPrototypeHtml(r), fname)
+  const baseNum = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
+  const baseName = `${baseNum}_test${iter}_${r.header?.date || 'data'}`
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  downloadBlob(pack.blob, pack.filename)
 }
