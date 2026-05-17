@@ -147,7 +147,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
           type="button"
           onClick={() => photoCamInput.current?.click()}
           disabled={busy}
-          className="btn-secondary text-sm py-2 px-3 flex-1 min-w-[140px]"
+          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
         >
           📷 Zrób zdjęcie
         </button>
@@ -156,7 +156,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
             type="button"
             onClick={() => videoCamInput.current?.click()}
             disabled={busy}
-            className="btn-secondary text-sm py-2 px-3 flex-1 min-w-[140px]"
+            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
           >
             🎬 Nagraj wideo
           </button>
@@ -165,7 +165,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
           type="button"
           onClick={() => galleryInput.current?.click()}
           disabled={busy}
-          className="btn-secondary text-sm py-2 px-3 flex-1 min-w-[140px]"
+          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
         >
           🖼 {photoOnly ? 'Wybierz zdjęcie' : 'Wybierz z galerii'}
         </button>
@@ -188,7 +188,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                     <button
                       type="button"
                       onClick={() => setEditingPhotoId(m.photoId)}
-                      className="bg-sure-blue hover:bg-blue-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center"
+                      className="btn-icon-sm bg-sure-blue hover:bg-blue-700 focus:ring-blue-500/40 text-sm"
                       aria-label="Edytuj zdjęcie (adnotacje)"
                       title="Adnotacje"
                     >
@@ -198,7 +198,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                   <button
                     type="button"
                     onClick={() => removeItem(m.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center"
+                    className="btn-icon-sm bg-red-600 hover:bg-red-700 focus:ring-red-500/40 text-sm"
                     aria-label="Usuń zdjęcie"
                   >
                     ✕
@@ -207,7 +207,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                 {url ? (
                   <img src={url} alt={m.filename} className="w-full h-32 object-cover" />
                 ) : (
-                  <div className="w-full h-32 flex items-center justify-center text-xs text-gray-400">Ładowanie…</div>
+                  <div className="w-full h-32 skeleton" aria-label="Ładowanie miniatury" />
                 )}
                 <input
                   type="text"
@@ -262,7 +262,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
               <button
                 type="button"
                 onClick={() => removeItem(m.id)}
-                className="bg-red-600 hover:bg-red-700 text-white w-6 h-6 rounded-full text-xs flex items-center justify-center flex-shrink-0"
+                className="btn-icon-sm bg-red-600 hover:bg-red-700 focus:ring-red-500/40 text-sm flex-shrink-0"
                 aria-label="Usuń wideo"
               >
                 ✕

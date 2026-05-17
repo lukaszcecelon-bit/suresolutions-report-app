@@ -6,6 +6,7 @@ import ServiceReport from './components/reports/ServiceReport.jsx'
 import PrototypeReport from './components/reports/PrototypeReport.jsx'
 import InstallPrompt from './components/common/InstallPrompt.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
+import { ToastProvider } from './components/common/Toast.jsx'
 import logo from './assets/logo.png'
 
 function parseHash() {
@@ -35,35 +36,37 @@ export default function App() {
   else page = <Home navigate={navigate} />
 
   return (
-    <div className="min-h-full flex flex-col">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button
-            onClick={() => navigate('')}
-            className="flex items-center gap-3 hover:opacity-80 transition"
-            aria-label="Strona główna"
-          >
-            <img src={logo} alt="SureSolutions" className="h-10 w-auto" />
-            <span className="hidden sm:inline text-sm font-semibold text-sure-dark">Raporty</span>
-          </button>
-          <div className="text-xs text-gray-500">v0.1 · Faza 1</div>
-        </div>
-      </header>
+    <ToastProvider>
+      <div className="min-h-full flex flex-col">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={() => navigate('')}
+              className="flex items-center gap-3 hover:opacity-80 transition"
+              aria-label="Strona główna"
+            >
+              <img src={logo} alt="SureSolutions" className="h-10 w-auto" />
+              <span className="hidden sm:inline text-sm font-semibold text-sure-dark">Raporty</span>
+            </button>
+            <div className="text-xs text-gray-500">v0.2</div>
+          </div>
+        </header>
 
-      <main className="flex-1">
-        <div className="max-w-5xl mx-auto px-4 py-6">
-          {page}
-        </div>
-      </main>
+        <main className="flex-1">
+          <div className="max-w-5xl mx-auto px-4 py-6">
+            {page}
+          </div>
+        </main>
 
-      <footer className="border-t border-gray-200 bg-white">
-        <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500 text-center">
-          SureSolutions — aplikacja raportowa
-        </div>
-      </footer>
+        <footer className="border-t border-gray-200 bg-white">
+          <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500 text-center">
+            SureSolutions — aplikacja raportowa
+          </div>
+        </footer>
 
-      <UpdatePrompt />
-      <InstallPrompt />
-    </div>
+        <UpdatePrompt />
+        <InstallPrompt />
+      </div>
+    </ToastProvider>
   )
 }

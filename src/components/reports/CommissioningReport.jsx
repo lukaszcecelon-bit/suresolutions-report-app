@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
+import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import { useToast, useConfirm } from '../common/Toast.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
 
@@ -80,11 +82,18 @@ export default function CommissioningReport({ navigate, reportId }) {
     return () => clearInterval(t)
   }, [report.phase])
 
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [savedAt, setSavedAt] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const [attemptedStart, setAttemptedStart] = useState(false)
+
   // auto-save on every change
   const isFirstRender = useRef(true)
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
     upsert(report)
+    setSavedAt(Date.now())
   }, [report])
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
@@ -97,7 +106,8 @@ export default function CommissioningReport({ navigate, reportId }) {
 
   const startSession = () => {
     if (!canStart) {
-      alert('Uzupełnij wszystkie pola nagłówka przed startem.')
+      setAttemptedStart(true)
+      toast.error('Uzupełnij wszystkie pola nagłówka oznaczone *')
       return
     }
     setReport((r) => ({
@@ -149,14 +159,17 @@ export default function CommissioningReport({ navigate, reportId }) {
   }
 
   // ==== PHASE 3: FINISH ====
-  const finishSession = () => {
-    if (!window.confirm('Zakończyć sesję? Po zakończeniu nie można dodawać kolejnych zatrzymań.')) return
+  const finishSession = async () => {
+    if (!(await confirm('Zakończyć sesję? Po zakończeniu nie można dodawać kolejnych zatrzymań.', {
+      title: 'Zakończenie sesji', confirmLabel: 'Zakończ', variant: 'danger'
+    }))) return
     setReport((r) => ({
       ...r,
       phase: 'finished',
       sessionEndAt: nowISO(),
       status: 'completed',
     }))
+    toast.success('Sesja zakończona')
   }
 
   // ==== STATS ====
@@ -184,27 +197,42 @@ export default function CommissioningReport({ navigate, reportId }) {
     : 0
 
   const downloadPdf = async () => {
-    try { await generateCommissioningPackage(report) }
-    catch (e) { alert('Błąd generowania paczki: ' + e.message) }
+    setDownloading(true)
+    try {
+      await generateCommissioningPackage(report)
+      toast.success('Paczka pobrana')
+    } catch (e) {
+      toast.error('Błąd: ' + (e.message || e))
+    } finally {
+      setDownloading(false)
+    }
   }
 
   // ============ RENDER ============
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 pb-4">
+      <div className="flex items-center justify-between gap-2">
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <div className="text-xs text-gray-500">
-          {report.phase === 'setup' && 'Faza 1: Start sesji'}
-          {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
-          {report.phase === 'stopped' && 'Faza 2: Zatrzymanie maszyny'}
-          {report.phase === 'finished' && 'Faza 3: Podsumowanie'}
+        <div className="flex items-center gap-3">
+          <AutoSaveIndicator savedAt={savedAt} />
+          <div className="text-xs text-gray-500">
+            {report.phase === 'setup' && 'Faza 1: Start sesji'}
+            {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
+            {report.phase === 'stopped' && 'Faza 2: Zatrzymanie maszyny'}
+            {report.phase === 'finished' && 'Faza 3: Podsumowanie'}
+          </div>
         </div>
       </div>
 
       {/* FAZA 1 */}
       {report.phase === 'setup' && (
         <>
-          <Header header={report.header} onChange={updateHeader} reportType="commissioning" />
+          <Header
+            header={report.header}
+            onChange={updateHeader}
+            reportType="commissioning"
+            showErrors={attemptedStart}
+          />
           <div className="card text-center">
             <p className="text-gray-600 mb-4">
               Po uzupełnieniu nagłówka kliknij <strong>START MASZYNY</strong> — uruchomi się timer
@@ -212,18 +240,17 @@ export default function CommissioningReport({ navigate, reportId }) {
             </p>
             <button
               onClick={startSession}
-              disabled={!canStart}
               className={
                 'w-full text-2xl font-bold py-8 rounded-xl shadow-lg transition ' +
                 (canStart
                   ? 'bg-emerald-600 hover:bg-emerald-700 text-white active:scale-[0.98]'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed')
+                  : 'bg-emerald-600/60 text-white/90 hover:bg-emerald-600/70')
               }
             >
               ▶ START MASZYNY
             </button>
             {!canStart && (
-              <p className="text-sm text-amber-600 mt-3">Uzupełnij wszystkie pola nagłówka.</p>
+              <p className="text-sm text-amber-600 mt-3">Uzupełnij wszystkie pola nagłówka oznaczone *</p>
             )}
           </div>
         </>
@@ -264,13 +291,13 @@ export default function CommissioningReport({ navigate, reportId }) {
           <div className="card">
             <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
             {report.stops.length === 0 ? (
-              <p className="text-sm text-gray-500">Brak zatrzymań — maszyna pracuje bez przestojów.</p>
+              <p className="text-sm text-gray-500 italic">Maszyna pracuje bez przestojów — brak zatrzymań do zalogowania.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-gray-500">
                     <tr>
-                      <th className="py-2 pr-2">#</th>
+                      <th className="py-2 pr-2">Nr</th>
                       <th className="py-2 pr-2">Godzina</th>
                       <th className="py-2 pr-2">Czas</th>
                       <th className="py-2 pr-2">Powód</th>
@@ -284,7 +311,7 @@ export default function CommissioningReport({ navigate, reportId }) {
                       const videos = (s.media || []).filter((m) => m.kind === 'video').length
                       return (
                         <tr key={s.id} className="border-t border-gray-100">
-                          <td className="py-2 pr-2 font-semibold">{i + 1}</td>
+                          <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
                           <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
                           <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
                           <td className="py-2 pr-2">
@@ -418,7 +445,7 @@ export default function CommissioningReport({ navigate, reportId }) {
                       const videos = (s.media || []).filter((m) => m.kind === 'video').length
                       return (
                         <tr key={s.id} className="border-t border-gray-100">
-                          <td className="py-2 pr-2 font-semibold">{i + 1}</td>
+                          <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
                           <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
                           <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
                           <td className="py-2 pr-2">
@@ -474,9 +501,19 @@ export default function CommissioningReport({ navigate, reportId }) {
             />
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button onClick={downloadPdf} className="btn-primary flex-1">📦 Pobierz paczkę (PDF + media)</button>
-            <button onClick={() => navigate('')} className="btn-secondary flex-1">Zapisz i wyjdź</button>
+          <div className="action-bar">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={downloadPdf}
+                disabled={downloading}
+                className="btn-primary flex-[2] text-base"
+              >
+                {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
+              </button>
+              <button onClick={() => navigate('')} className="btn-secondary flex-1">
+                Zapisz i wyjdź
+              </button>
+            </div>
           </div>
         </>
       )}
