@@ -206,52 +206,122 @@ const CSS = `
   * { box-sizing: border-box; }
   .page {
     width: 794px;
-    padding: 40px 48px;
+    padding: 56px 56px 80px;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: #1F2937;
     background: #fff;
-    font-size: 12px;
-    line-height: 1.45;
+    font-size: 12.5px;
+    line-height: 1.55;
   }
   .hdr {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    border-bottom: 2px solid #1F2937; padding-bottom: 14px; margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 3px solid #3D70B2; padding-bottom: 18px; margin-bottom: 22px;
   }
-  .hdr-left { display: flex; align-items: center; gap: 14px; }
-  .logo { height: 56px; width: auto; }
-  .company { font-size: 18px; font-weight: 700; color: #1F2937; }
+  .hdr-left { display: flex; align-items: center; gap: 16px; }
+  .logo { height: 60px; width: auto; }
+  .company { font-size: 20px; font-weight: 700; color: #1F2937; letter-spacing: -0.3px; }
   .hdr-right { text-align: right; }
-  .title { font-size: 16px; font-weight: 700; color: #1F2937; letter-spacing: 0.3px; }
-  .num { font-size: 13px; color: #4B5563; margin-top: 4px; }
-  .meta { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
-  .meta td { padding: 4px 8px; vertical-align: top; }
-  .lbl { color: #6B7280; font-size: 11px; }
-  h2 {
-    font-size: 13px; text-transform: uppercase; letter-spacing: 0.6px;
-    color: #1F2937; margin: 18px 0 8px 0; border-bottom: 1px solid #D1D5DB; padding-bottom: 4px;
+  .title {
+    font-size: 14px; font-weight: 700; color: #3D70B2; text-transform: uppercase;
+    letter-spacing: 0.5px; line-height: 1.3;
   }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-  .stat { background: #F3F4F6; border-left: 3px solid #3D70B2; padding: 10px 12px; border-radius: 4px; }
-  .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: #6B7280; }
-  .stat-val { font-size: 18px; font-weight: 700; color: #1F2937; margin-top: 2px; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  table.stops { width: 100%; border-collapse: collapse; font-size: 11px; }
-  table.stops th, table.stops td { border: 1px solid #D1D5DB; padding: 6px 8px; text-align: left; vertical-align: top; }
-  table.stops th { background: #F3F4F6; font-weight: 600; color: #1F2937; }
-  table.stops tr:nth-child(even) td { background: #FAFAFA; }
-  .text-block { white-space: pre-wrap; background: #FAFAFA; border: 1px solid #E5E7EB; padding: 10px 12px; border-radius: 4px; min-height: 40px; }
-  .empty { color: #6B7280; font-style: italic; }
-  .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .photo { border: 1px solid #D1D5DB; border-radius: 4px; overflow: hidden; background: #FAFAFA; }
-  .photo img { width: 100%; height: 140px; object-fit: cover; display: block; }
-  .photo-num { font-size: 10px; font-weight: 700; padding: 4px 8px 0; color: #1F2937; }
-  .photo-ctx { font-size: 9px; color: #6B7280; padding: 0 8px; }
-  .photo-desc { font-size: 10px; color: #1F2937; padding: 2px 8px; }
-  .photo-file { font-size: 8px; color: #9CA3AF; padding: 2px 8px 6px; font-family: ui-monospace, monospace; word-break: break-all; }
-  .note { font-size: 10px; color: #6B7280; font-style: italic; margin-top: 4px; }
+  .num {
+    font-size: 16px; color: #1F2937; margin-top: 6px; font-weight: 600;
+  }
+  .num .lbl-inline { color: #6B7280; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; margin-right: 4px; }
+
+  table.meta {
+    width: 100%; border-collapse: collapse; margin-bottom: 18px;
+    background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px;
+    overflow: hidden;
+  }
+  table.meta td {
+    padding: 10px 14px; vertical-align: top; font-size: 12px;
+    border-top: 1px solid #E5E7EB;
+  }
+  table.meta tr:first-child td { border-top: none; }
+  .lbl {
+    color: #6B7280; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600; margin-right: 4px;
+  }
+
+  h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
+    color: #3D70B2; margin: 26px 0 12px 0; padding-bottom: 6px;
+    border-bottom: 2px solid #3D70B2;
+  }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .stat {
+    background: #F9FAFB; border-left: 4px solid #3D70B2; padding: 12px 14px; border-radius: 4px;
+  }
+  .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6B7280; font-weight: 600; }
+  .stat-val { font-size: 20px; font-weight: 700; color: #1F2937; margin-top: 4px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -0.5px; }
+
+  table.stops {
+    width: 100%; border-collapse: collapse; font-size: 11.5px;
+    margin-bottom: 6px;
+  }
+  table.stops th, table.stops td {
+    border: 1px solid #E5E7EB; padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  table.stops th {
+    background: #3D70B2; font-weight: 600; color: #fff; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  table.stops tr:nth-child(even) td { background: #F9FAFB; }
+
+  .text-block {
+    white-space: pre-wrap; background: #F9FAFB; border: 1px solid #E5E7EB;
+    padding: 12px 14px; border-radius: 4px; min-height: 44px;
+    font-size: 12.5px; line-height: 1.6;
+  }
+  .empty { color: #9CA3AF; font-style: italic; padding: 8px 0; }
+
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+  }
+  .badge.completed { background: #D1FAE5; color: #065F46; }
+  .badge.warning   { background: #FEF3C7; color: #92400E; }
+  .badge.info      { background: #DBEAFE; color: #1E40AF; }
+
+  .photos {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    margin-bottom: 10px;
+  }
+  .photo {
+    border: 1px solid #E5E7EB; border-radius: 6px; overflow: hidden; background: #fff;
+  }
+  .photo img { width: 100%; height: 220px; object-fit: cover; display: block; background: #F3F4F6; }
+  .photo-num {
+    font-size: 11px; font-weight: 700; color: #3D70B2; padding: 8px 12px 0;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .photo-ctx { font-size: 10.5px; color: #6B7280; padding: 1px 12px 0; }
+  .photo-desc { font-size: 12px; color: #1F2937; padding: 3px 12px 0; line-height: 1.45; }
+  .photo-file {
+    font-size: 9.5px; color: #9CA3AF; padding: 5px 12px 10px;
+    font-family: ui-monospace, monospace; word-break: break-all;
+  }
+
+  .note { font-size: 10.5px; color: #6B7280; font-style: italic; margin: 4px 0 8px; }
+
+  .section-block { margin-bottom: 4px; }
+  .pair-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px;
+    margin-bottom: 10px;
+  }
+  .pair-item .lbl {
+    color: #6B7280; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600; display: block; margin-bottom: 2px;
+  }
+  .pair-item .val { font-size: 12.5px; color: #1F2937; }
+
   .footer {
-    margin-top: 28px; padding-top: 10px; border-top: 1px solid #D1D5DB;
-    display: flex; justify-content: space-between; font-size: 10px; color: #6B7280;
+    margin-top: 36px; padding-top: 12px; border-top: 1px solid #E5E7EB;
+    display: flex; justify-content: space-between; font-size: 10px; color: #9CA3AF;
   }
 `
 
@@ -281,6 +351,14 @@ async function renderHtmlToPdf(html, fname) {
     ))
 
     const node = content.querySelector('.page')
+
+    // Collect ranges (in canvas-px) of elements that must not be split across pages.
+    // We compute these BEFORE html2canvas to use live DOM measurements; the scale
+    // factor is constant since the source node has a fixed CSS width.
+    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, h2'
+    const nodeRect = node.getBoundingClientRect()
+    const sourceHeightPx = node.offsetHeight
+
     const canvas = await html2canvas(node, {
       scale: 2,
       backgroundColor: '#ffffff',
@@ -298,10 +376,44 @@ async function renderHtmlToPdf(html, fname) {
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgW, imgH)
     } else {
       const pageHeightPx = Math.floor((pageH * canvas.width) / pageW)
+      const scaleY = canvas.height / sourceHeightPx
+
+      // Build sorted list of no-break ranges in canvas-px space
+      const ranges = []
+      for (const el of node.querySelectorAll(NO_BREAK_SELECTORS)) {
+        const r = el.getBoundingClientRect()
+        const top = Math.round((r.top - nodeRect.top) * scaleY)
+        const bottom = Math.round((r.bottom - nodeRect.top) * scaleY)
+        const h = bottom - top
+        // Only protect elements that can actually fit on one page
+        if (h > 0 && h <= pageHeightPx - 20) ranges.push([top, bottom])
+      }
+      ranges.sort((a, b) => a[0] - b[0])
+
       let y = 0
       let isFirst = true
       while (y < canvas.height) {
-        const sliceH = Math.min(pageHeightPx, canvas.height - y)
+        let pageEnd = Math.min(y + pageHeightPx, canvas.height)
+
+        // Pull pageEnd up so we don't slice through a protected element.
+        // Iterate because pulling back may reveal an earlier conflict.
+        for (let iter = 0; iter < 100; iter++) {
+          let conflict = null
+          for (const [top, bottom] of ranges) {
+            if (top >= pageEnd) break
+            if (top < pageEnd && bottom > pageEnd && top > y) {
+              conflict = top
+              break
+            }
+          }
+          if (conflict === null) break
+          pageEnd = conflict
+        }
+
+        // Fallback: if we couldn't fit anything (element too tall), force-fill the page.
+        if (pageEnd <= y) pageEnd = Math.min(y + pageHeightPx, canvas.height)
+
+        const sliceH = pageEnd - y
         const slice = document.createElement('canvas')
         slice.width = canvas.width
         slice.height = sliceH
@@ -313,7 +425,7 @@ async function renderHtmlToPdf(html, fname) {
         if (!isFirst) pdf.addPage()
         pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgW, sliceImgH)
         isFirst = false
-        y += sliceH
+        y = pageEnd
       }
     }
     pdf.save(fname)
