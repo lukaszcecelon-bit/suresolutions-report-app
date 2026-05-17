@@ -1,15 +1,16 @@
-import { deleteImages, deleteVideos } from './imageStore.js'
+import { deleteImages, deleteVideos, deleteOriginals } from './imageStore.js'
 
 const KEY = 'suresolutions.reports.v1'
 
 export function collectMediaIds(value, out) {
-  if (!out) out = { photos: new Set(), videos: new Set() }
+  if (!out) out = { photos: new Set(), originals: new Set(), videos: new Set() }
   if (value === null || typeof value !== 'object') return out
   if (Array.isArray(value)) {
     for (const v of value) collectMediaIds(v, out)
     return out
   }
   if (value.kind === 'image' && value.photoId) out.photos.add(value.photoId)
+  if (value.kind === 'image' && value.originalId) out.originals.add(value.originalId)
   if (value.kind === 'video' && value.videoId) out.videos.add(value.videoId)
   for (const k of Object.keys(value)) collectMediaIds(value[k], out)
   return out
@@ -53,6 +54,9 @@ export function remove(id) {
     const m = collectMediaIds(report)
     if (m.photos.size > 0) {
       deleteImages(Array.from(m.photos)).catch((e) => console.warn('photo cleanup failed', e))
+    }
+    if (m.originals.size > 0) {
+      deleteOriginals(Array.from(m.originals)).catch((e) => console.warn('original cleanup failed', e))
     }
     if (m.videos.size > 0) {
       deleteVideos(Array.from(m.videos)).catch((e) => console.warn('video cleanup failed', e))

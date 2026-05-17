@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { compressImageFile } from '../../utils/imageCompressor.js'
+import { compressImageBlob } from '../../utils/imageCompressor.js'
 import { newId } from '../../utils/storage.js'
-import { putImage, getImages, deleteImage, putVideo, deleteVideo, replaceImage } from '../../utils/imageStore.js'
+import {
+  putImage, getImages, deleteImage, replaceImage,
+  putVideo, deleteVideo,
+  putOriginal, getOriginal, deleteOriginal, replaceOriginal,
+} from '../../utils/imageStore.js'
 import PhotoAnnotator from './PhotoAnnotator.jsx'
 
 function fmtSize(bytes) {
@@ -19,8 +23,65 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
   const [error, setError] = useState('')
   // cache: photoId → dataUrl, used purely for rendering thumbnails
   const [resolved, setResolved] = useState({})
-  // photoId of image currently being annotated (null when no editor open)
-  const [editingPhotoId, setEditingPhotoId] = useState(null)
+  // media item currently being annotated (null when no editor open)
+  const [editingItem, setEditingItem] = useState(null)
+  // src for the open annotator (object URL for full original blob, or dataURL fallback)
+  const [annotatorSrc, setAnnotatorSrc] = useState(null)
+  const [annotatorIsBlob, setAnnotatorIsBlob] = useState(false)
+
+  const openAnnotator = async (item) => {
+    // Prefer the full-resolution original from IDB; fall back to the thumbnail dataURL
+    // (legacy items uploaded before originals were stored).
+    if (item.originalId) {
+      try {
+        const blob = await getOriginal(item.originalId)
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          setAnnotatorSrc(url)
+          setAnnotatorIsBlob(true)
+          setEditingItem(item)
+          return
+        }
+      } catch (e) {
+        console.warn('getOriginal failed', e)
+      }
+    }
+    const fallback = item.dataUrl || (item.photoId ? resolved[item.photoId] : null)
+    if (!fallback) return
+    setAnnotatorSrc(fallback)
+    setAnnotatorIsBlob(false)
+    setEditingItem(item)
+  }
+
+  const closeAnnotator = () => {
+    if (annotatorIsBlob && annotatorSrc) {
+      try { URL.revokeObjectURL(annotatorSrc) } catch {}
+    }
+    setAnnotatorSrc(null)
+    setAnnotatorIsBlob(false)
+    setEditingItem(null)
+  }
+
+  const onAnnotationSave = async (annotatedBlob) => {
+    const item = editingItem
+    if (!item || !annotatedBlob) { closeAnnotator(); return }
+    try {
+      // Replace the full-resolution original (if we have one tracked).
+      if (item.originalId) {
+        await replaceOriginal(item.originalId, annotatedBlob)
+      }
+      // Re-generate the small thumbnail from the annotated full image.
+      const thumb = await compressImageBlob(annotatedBlob)
+      if (item.photoId) {
+        await replaceImage(item.photoId, thumb.dataUrl)
+        setResolved((prev) => ({ ...prev, [item.photoId]: thumb.dataUrl }))
+      }
+    } catch (e) {
+      alert('Błąd zapisu zdjęcia: ' + (e.message || e))
+    } finally {
+      closeAnnotator()
+    }
+  }
 
   // Load dataUrls from IndexedDB for any photoIds we don't yet have cached.
   useEffect(() => {
@@ -58,6 +119,9 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
     if (m?.photoId) {
       deleteImage(m.photoId).catch((e) => console.warn('deleteImage failed', e))
     }
+    if (m?.originalId) {
+      deleteOriginal(m.originalId).catch((e) => console.warn('deleteOriginal failed', e))
+    }
     if (m?.videoId) {
       deleteVideo(m.videoId).catch((e) => console.warn('deleteVideo failed', e))
     }
@@ -72,14 +136,20 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
       const newlyResolved = {}
       for (const f of files) {
         if (f.type.startsWith('image/')) {
-          const c = await compressImageFile(f)
+          // 1. Save the ORIGINAL file at full resolution — goes into ZIP zdjecia/
+          const originalId = await putOriginal(f)
+          // 2. Compress to a 400×300 JPEG thumbnail — used in UI + embedded in PDF
+          const c = await compressImageBlob(f)
           const photoId = await putImage(c.dataUrl)
           newlyResolved[photoId] = c.dataUrl
           out.push({
             id: newId(),
             kind: 'image',
-            photoId,
+            photoId,            // thumbnail (for UI + PDF embed)
+            originalId,         // full-resolution blob (for ZIP)
             filename: f.name,
+            mimeType: f.type,
+            size: f.size,
             description: '',
           })
         } else if (f.type.startsWith('video/') && !photoOnly) {
@@ -187,7 +257,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                   {m.photoId && url && (
                     <button
                       type="button"
-                      onClick={() => setEditingPhotoId(m.photoId)}
+                      onClick={() => openAnnotator(m)}
                       className="btn-icon-sm bg-sure-blue hover:bg-blue-700 focus:ring-blue-500/40 text-sm"
                       aria-label="Edytuj zdjęcie (adnotacje)"
                       title="Adnotacje"
@@ -222,19 +292,11 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
         </div>
       )}
 
-      {editingPhotoId && resolved[editingPhotoId] && (
+      {annotatorSrc && (
         <PhotoAnnotator
-          sourceDataUrl={resolved[editingPhotoId]}
-          onCancel={() => setEditingPhotoId(null)}
-          onSave={async (newDataUrl) => {
-            try {
-              await replaceImage(editingPhotoId, newDataUrl)
-              setResolved((prev) => ({ ...prev, [editingPhotoId]: newDataUrl }))
-            } catch (e) {
-              alert('Błąd zapisu zdjęcia: ' + (e.message || e))
-            }
-            setEditingPhotoId(null)
-          }}
+          source={annotatorSrc}
+          onCancel={closeAnnotator}
+          onSave={onAnnotationSave}
         />
       )}
 

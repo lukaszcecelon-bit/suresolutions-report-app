@@ -2,7 +2,7 @@ import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip'
 import logoUrl from '../assets/logo.png'
-import { getImages, getVideos } from './imageStore.js'
+import { getImages, getVideos, getOriginals } from './imageStore.js'
 import { collectPhotoIds } from './storage.js'
 
 function slugify(s) {
@@ -36,6 +36,16 @@ function extFromMime(mime) {
   if (/3gpp/i.test(mime)) return '3gp'
   if (/ogg/i.test(mime)) return 'ogv'
   return null
+}
+
+function extFromImageBlob(blob) {
+  if (!blob || !blob.type) return null
+  const m = blob.type.match(/^image\/([a-z0-9.+-]+)/i)
+  if (!m) return null
+  const sub = m[1].toLowerCase()
+  if (sub === 'jpeg') return 'jpg'
+  if (sub === 'svg+xml') return 'svg'
+  return sub
 }
 
 function downloadBlob(blob, filename) {
@@ -527,10 +537,35 @@ async function assemblePackage(pdfBlob, photos, videos, baseName) {
 
   if (photos.length > 0) {
     const folder = zip.folder('zdjecia')
-    for (const p of photos) {
-      if (!p.dataUrl) continue
-      const base64 = p.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '')
-      folder.file(p._zipFilename, base64, { base64: true })
+
+    // Resolve full-resolution originals up-front. Photos uploaded before originals
+    // were stored have only a thumbnail dataURL — those fall back to embedding the
+    // compressed thumbnail bytes.
+    const originalIds = photos.map((p) => p.originalId).filter(Boolean)
+    const originalsMap = originalIds.length > 0 ? await getOriginals(originalIds) : new Map()
+
+    let legacyCount = 0
+    photos.forEach((p, i) => {
+      const original = p.originalId ? originalsMap.get(p.originalId) : null
+      if (original) {
+        // Full-resolution path: use the blob as-is, infer extension from its MIME type.
+        const ext = (extFromImageBlob(original) || extractExt(p.filename) || 'jpg').toLowerCase()
+        const fname = makeFilename(i, p._ctxSlug, p.description, ext)
+        p._zipFilename = fname  // keep PDF caption in sync with the actual file we packed
+        folder.file(fname, original)
+      } else if (p.dataUrl) {
+        // Legacy fallback (no original stored — only compressed thumb in IDB).
+        legacyCount++
+        const base64 = p.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '')
+        folder.file(p._zipFilename, base64, { base64: true })
+      }
+    })
+    if (legacyCount > 0) {
+      folder.file(
+        'UWAGA-zdjecia-skompresowane.txt',
+        `Uwaga: ${legacyCount} zdjęć w tym raporcie zostało dodane przed wprowadzeniem przechowywania oryginałów ` +
+        `i jest dostępnych wyłącznie w wersji skompresowanej (400×300). Dotyczy starszych raportów.\r\n`
+      )
     }
   }
 

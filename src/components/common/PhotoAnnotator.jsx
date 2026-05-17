@@ -23,7 +23,10 @@ const TOOLS = [
   { key: 'text',     label: 'Tekst',     icon: 'A' },
 ]
 
-export default function PhotoAnnotator({ sourceDataUrl, onSave, onCancel }) {
+// `source` can be either a dataURL (string starting with "data:") or an object URL
+// for a Blob/File. The annotator draws on a canvas at the image's native resolution
+// so the saved Blob preserves the full quality of the original.
+export default function PhotoAnnotator({ source, onSave, onCancel }) {
   const canvasRef = useRef(null)
   const imgRef = useRef(null)
   const [tool, setTool] = useState('arrow')
@@ -43,9 +46,9 @@ export default function PhotoAnnotator({ sourceDataUrl, onSave, onCancel }) {
       canvas.height = img.naturalHeight || 300
       redraw([])
     }
-    img.src = sourceDataUrl
+    img.src = source
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceDataUrl])
+  }, [source])
 
   // Redraw on every shape change
   useEffect(() => { redraw(drawing ? [...shapes, drawing] : shapes) }, [shapes, drawing])
@@ -199,8 +202,15 @@ export default function PhotoAnnotator({ sourceDataUrl, onSave, onCancel }) {
     if (!canvas || !imgRef.current) return
     // Re-render once cleanly (without any in-progress shape)
     redraw(shapes)
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
-    onSave(dataUrl)
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        // Older browsers / very edge cases — fall back to dataURL → Blob conversion.
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+        fetch(dataUrl).then((r) => r.blob()).then(onSave)
+        return
+      }
+      onSave(blob)
+    }, 'image/jpeg', 0.9)
   }
 
   return (
