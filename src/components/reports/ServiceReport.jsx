@@ -5,6 +5,7 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import { MicTextarea } from '../common/VoiceMic.jsx'
 import { useToast, useConfirm } from '../common/Toast.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
 import { generateServicePackage } from '../../utils/pdfGenerator.js'
@@ -206,8 +207,7 @@ export default function ServiceReport({ navigate, reportId }) {
                   aria-label="Usuń czynność"
                 >✕</button>
               </div>
-              <textarea
-                className="field-textarea"
+              <MicTextarea
                 placeholder="Opis czynności…"
                 value={a.description}
                 onChange={(e) => updateAction(a.id, { description: e.target.value })}
@@ -279,8 +279,7 @@ export default function ServiceReport({ navigate, reportId }) {
 
       <div id="sec-d" className="card">
         <h3 className="section-title">D. Obserwacje własne</h3>
-        <textarea
-          className="field-textarea"
+        <MicTextarea
           value={report.observations}
           onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
           placeholder="Co zauważyłeś podczas wizyty?"
@@ -289,8 +288,7 @@ export default function ServiceReport({ navigate, reportId }) {
 
       <div id="sec-e" className="card">
         <h3 className="section-title">E. Rekomendacje</h3>
-        <textarea
-          className="field-textarea"
+        <MicTextarea
           value={report.recommendations}
           onChange={(e) => setReport((r) => ({ ...r, recommendations: e.target.value }))}
           placeholder="Co rekomendujesz klientowi / dalsze kroki…"

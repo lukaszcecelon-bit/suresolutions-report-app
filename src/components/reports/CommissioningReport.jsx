@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import { MicTextarea } from '../common/VoiceMic.jsx'
 import { useToast, useConfirm } from '../common/Toast.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
@@ -381,8 +382,7 @@ export default function CommissioningReport({ navigate, reportId }) {
                 )}
                 <div>
                   <label className="field-label">Komentarz</label>
-                  <textarea
-                    className="field-textarea"
+                  <MicTextarea
                     value={stopModal.comment}
                     onChange={(e) => setStopModal({ ...stopModal, comment: e.target.value })}
                     placeholder="Krótki opis sytuacji…"
@@ -472,8 +472,7 @@ export default function CommissioningReport({ navigate, reportId }) {
 
           <div className="card">
             <h3 className="section-title">Obserwacje ogólne</h3>
-            <textarea
-              className="field-textarea"
+            <MicTextarea
               value={report.observations}
               onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
               placeholder="Co zauważyłeś podczas obserwacji maszyny?"
@@ -482,8 +481,7 @@ export default function CommissioningReport({ navigate, reportId }) {
 
           <div className="card">
             <h3 className="section-title">Wnioski i rekomendacje</h3>
-            <textarea
-              className="field-textarea"
+            <MicTextarea
               value={report.conclusions}
               onChange={(e) => setReport((r) => ({ ...r, conclusions: e.target.value }))}
               placeholder="Wnioski, propozycje usprawnień, dalsze kroki…"
