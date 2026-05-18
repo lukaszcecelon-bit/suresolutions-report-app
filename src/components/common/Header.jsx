@@ -75,8 +75,9 @@ export default function Header({
           </div>
         </div>
 
-        {/* Short fields — narrower side-by-side row */}
-        <div className="grid grid-cols-2 gap-3 mt-3">
+        {/* Short fields — stacked on phones (iOS native date input is wider than
+            it should be on narrow viewports), side-by-side on tablet+ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
           <div className="min-w-0">
             <label className={labelCls('date')}>Data</label>
             <input

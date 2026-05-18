@@ -195,7 +195,7 @@ export default function PrototypeReport({ navigate, reportId }) {
               value={report.info.component}
               onChange={(e) => setInfo('component', e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Numer iteracji (Test #)</label>
             <input type="number" min="1" className="field-input"
               value={report.info.iteration}

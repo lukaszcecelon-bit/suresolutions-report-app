@@ -56,6 +56,12 @@
     @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base
            focus:border-sure-blue focus:outline-none focus:ring-2 focus:ring-sure-blue/30;
     min-height: 44px;
+    /* iOS Safari gives <input type="date|time"> a wider intrinsic min-width than
+       fits in narrow columns. min-width:0 + max-width:100% lets them shrink with
+       their parent instead of overflowing. */
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
   }
   .field-input.is-invalid {
     @apply border-red-400 focus:border-red-500 focus:ring-red-300/40;
@@ -64,6 +70,9 @@
     @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base
            focus:border-sure-blue focus:outline-none focus:ring-2 focus:ring-sure-blue/30;
     min-height: 88px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6; }

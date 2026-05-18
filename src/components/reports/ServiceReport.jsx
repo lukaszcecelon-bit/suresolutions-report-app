@@ -169,13 +169,13 @@ export default function ServiceReport({ navigate, reportId }) {
               value={report.visit.location}
               onChange={(e) => updateVisit('location', e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Godzina przyjazdu</label>
             <input type="time" className="field-input"
               value={report.visit.arrival}
               onChange={(e) => updateVisit('arrival', e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Godzina odjazdu</label>
             <input type="time" className="field-input"
               value={report.visit.departure}
