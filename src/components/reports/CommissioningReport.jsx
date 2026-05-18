@@ -4,7 +4,8 @@ import MediaUploader from '../common/MediaUploader.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import { useToast, useConfirm } from '../common/Toast.jsx'
-import { upsert, getById, newId } from '../../utils/storage.js'
+import { getById, newId } from '../../utils/storage.js'
+import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
 
 const STOP_REASONS = [
@@ -85,17 +86,11 @@ export default function CommissioningReport({ navigate, reportId }) {
 
   const toast = useToast()
   const confirm = useConfirm()
-  const [savedAt, setSavedAt] = useState(null)
   const [downloading, setDownloading] = useState(false)
   const [attemptedStart, setAttemptedStart] = useState(false)
 
-  // auto-save on every change
-  const isFirstRender = useRef(true)
-  useEffect(() => {
-    if (isFirstRender.current) { isFirstRender.current = false; return }
-    upsert(report)
-    setSavedAt(Date.now())
-  }, [report])
+  // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
+  const savedAt = useAutoSave(report)
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
 

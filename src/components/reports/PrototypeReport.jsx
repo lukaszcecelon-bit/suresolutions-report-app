@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
@@ -8,7 +8,8 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { useToast, useConfirm } from '../common/Toast.jsx'
-import { upsert, getById, newId } from '../../utils/storage.js'
+import { getById, newId } from '../../utils/storage.js'
+import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
 
 const SAMPLE_METHOD_ITEMS = [
@@ -88,15 +89,10 @@ export default function PrototypeReport({ navigate, reportId }) {
 
   const toast = useToast()
   const confirm = useConfirm()
-  const [savedAt, setSavedAt] = useState(null)
   const [downloading, setDownloading] = useState(false)
 
-  const isFirst = useRef(true)
-  useEffect(() => {
-    if (isFirst.current) { isFirst.current = false; return }
-    upsert(report)
-    setSavedAt(Date.now())
-  }, [report])
+  // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
+  const savedAt = useAutoSave(report)
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
   const setInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))

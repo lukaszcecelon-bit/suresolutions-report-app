@@ -65,6 +65,24 @@ function AppShell() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
+  // After first paint, idly preload the heavy PDF/ZIP libs so the first
+  // "Pobierz paczkę" click doesn't pay the network cost. Doesn't block
+  // initial render — only warms the browser module cache in the background.
+  useEffect(() => {
+    const preload = () => {
+      import('./utils/pdfGenerator.js')
+        .then((m) => m.warmupLibs?.())
+        .catch(() => {})
+    }
+    if (typeof requestIdleCallback !== 'undefined') {
+      const handle = requestIdleCallback(preload, { timeout: 5000 })
+      return () => cancelIdleCallback?.(handle)
+    } else {
+      const t = setTimeout(preload, 2000)
+      return () => clearTimeout(t)
+    }
+  }, [])
+
   const navigate = (path) => { window.location.hash = path }
 
   let page

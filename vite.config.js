@@ -6,8 +6,22 @@ import { VitePWA } from 'vite-plugin-pwa'
 //  - './' produces relative paths that work both for `npm run preview` (root)
 //    and GitHub Pages project pages (https://user.github.io/repo/) without
 //    needing to know the repo name at build time.
+//
+// Chunking strategy: React is split into its own vendor chunk so it stays
+// cached across our app-code deploys. The heavy PDF/ZIP libraries (jspdf,
+// html2canvas, jszip) are dynamically imported from pdfGenerator.js — Vite
+// auto-chunks them on its own, so no manualChunks entry needed.
 export default defineConfig({
   base: './',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
