@@ -1,29 +1,11 @@
-import { useId } from 'react'
-
-// Drop-in replacement for a plain `<input>` that adds native-browser autocomplete
-// via <datalist>. Native datalist works the same as a stock browser dropdown,
-// renders consistently on mobile (Android shows it on focus, iOS as a chip bar),
-// and doesn't fight with the existing keyboard/touch behavior of regular inputs.
+// Drop-in replacement for a plain `<input>` that was wired to add native-browser
+// autocomplete via <datalist>. Disabled 2026-05-18 — iOS Safari proved laggy
+// while typing (datalist rebuild per keystroke jank). Kept as a pass-through so
+// the existing call sites still compile and we can re-enable the feature later
+// by restoring the datalist branch without touching every form.
 //
-// Pass `suggestions={[...]}` with deduplicated string options. Empty array is a
-// no-op (the input behaves like a plain input). Other props are forwarded.
-export default function SuggestInput({ suggestions = [], className = '', ...inputProps }) {
-  const id = useId()
-  const hasSuggestions = suggestions && suggestions.length > 0
-
-  return (
-    <>
-      <input
-        {...inputProps}
-        list={hasSuggestions ? id : undefined}
-        autoComplete={hasSuggestions ? 'off' : inputProps.autoComplete}
-        className={className}
-      />
-      {hasSuggestions && (
-        <datalist id={id}>
-          {suggestions.map((s, i) => <option key={i} value={s} />)}
-        </datalist>
-      )}
-    </>
-  )
+// `suggestions` is accepted but ignored. All other props go straight to <input>.
+// eslint-disable-next-line no-unused-vars
+export default function SuggestInput({ suggestions, className = '', ...inputProps }) {
+  return <input {...inputProps} className={className} />
 }
