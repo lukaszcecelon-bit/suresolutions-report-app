@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { loadAll, remove } from '../utils/storage.js'
+import { useEffect, useMemo, useState } from 'react'
+import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
 import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage } from '../utils/pdfGenerator.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 
@@ -15,12 +15,58 @@ const TYPE_ICONS = {
   prototype: '🧪',
 }
 
+const TYPE_FILTER_ITEMS = [
+  { key: 'commissioning', label: '▶ Uruchomienie' },
+  { key: 'service',       label: '🔧 Serwis' },
+  { key: 'prototype',     label: '🧪 Prototyp' },
+]
+
+const STATUS_FILTER_ITEMS = [
+  { key: 'draft',     label: 'Robocze' },
+  { key: 'completed', label: 'Ukończone' },
+]
+
 const ONBOARDING_KEY = 'suresolutions.onboarding.v1.dismissed'
+
+// Polish-aware case-insensitive substring match (strips diacritics on both sides)
+function normalize(s) {
+  return (s || '')
+    .toString()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+}
+
+function getSearchableText(r) {
+  const parts = []
+  const push = (v) => { if (v && typeof v === 'string') parts.push(v) }
+  const h = r.header || {}
+  push(h.reportNumber); push(h.projectName); push(h.machineName); push(h.author)
+  if (r.type === 'service') {
+    push(r.visit?.client); push(r.visit?.location)
+    push(r.observations); push(r.recommendations)
+    for (const a of (r.actions || [])) { push(a.description); push(a.category) }
+    for (const p of (r.parts || [])) { push(p.name); push(p.catalogNo); push(p.comment) }
+  } else if (r.type === 'prototype') {
+    push(r.info?.component); push(r.info?.goal)
+    push(r.observations); push(r.decisionNotes); push(r.conditions?.setup)
+    for (const p of (r.conditions?.params || [])) { push(p.key); push(p.value) }
+    for (const p of (r.points || [])) { push(p.description); push(p.comment) }
+  } else if (r.type === 'commissioning') {
+    push(r.observations); push(r.conclusions)
+    for (const s of (r.stops || [])) { push(s.comment); push(s.customReason); push(s.reason) }
+  }
+  return normalize(parts.join(' '))
+}
 
 export default function Home({ navigate }) {
   const [reports, setReports] = useState([])
   const [busyId, setBusyId] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState(new Set())
+  const [statusFilter, setStatusFilter] = useState(new Set())
+
   const toast = useToast()
   const confirm = useConfirm()
 
@@ -71,13 +117,43 @@ export default function Home({ navigate }) {
     else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
   }
 
-  // Sort by updatedAt desc — most recent first.
-  const sorted = [...reports].sort((a, b) => {
+  const handleClone = (r) => {
+    const fresh = cloneReport(r)
+    upsert(fresh)
+    refresh()
+    toast.success('Utworzono kopię — rozpocznij edycję nowego raportu')
+    if (fresh.type === 'commissioning') navigate(`commissioning/${fresh.id}`)
+    else if (fresh.type === 'service') navigate(`service/${fresh.id}`)
+    else if (fresh.type === 'prototype') navigate(`prototype/${fresh.id}`)
+  }
+
+  // Sort by updatedAt desc (most recent first)
+  const sorted = useMemo(() => [...reports].sort((a, b) => {
     const ta = new Date(a.updatedAt || a.createdAt || 0).getTime()
     const tb = new Date(b.updatedAt || b.createdAt || 0).getTime()
     return tb - ta
-  })
+  }), [reports])
+
   const mostRecentId = sorted[0]?.id
+
+  // Apply search + filters
+  const filtered = useMemo(() => {
+    const q = normalize(query.trim())
+    return sorted.filter((r) => {
+      if (typeFilter.size > 0 && !typeFilter.has(r.type)) return false
+      const isCompleted = r.status === 'completed'
+      const statusKey = isCompleted ? 'completed' : 'draft'
+      if (statusFilter.size > 0 && !statusFilter.has(statusKey)) return false
+      if (q && !getSearchableText(r).includes(q)) return false
+      return true
+    })
+  }, [sorted, query, typeFilter, statusFilter])
+
+  const toggleFilter = (set, setter, key) => {
+    const next = new Set(set)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    setter(next)
+  }
 
   const fmtUpdated = (iso) => {
     if (!iso) return ''
@@ -87,6 +163,8 @@ export default function Home({ navigate }) {
     if (isToday) return `dziś ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
     return d.toISOString().slice(0, 10)
   }
+
+  const hasFiltersActive = query.trim() || typeFilter.size > 0 || statusFilter.size > 0
 
   return (
     <div className="space-y-6">
@@ -123,14 +201,97 @@ export default function Home({ navigate }) {
 
       <section>
         <h2 className="section-title no-rule">Zapisane raporty</h2>
+
+        {/* Search + filters — only show if there's anything to filter */}
+        {sorted.length > 0 && (
+          <div className="space-y-2 mb-4">
+            <div className="relative">
+              <input
+                type="search"
+                inputMode="search"
+                placeholder="🔍 Szukaj (numer, projekt, klient, treść…)"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="field-input pr-10"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs"
+                  aria-label="Wyczyść"
+                >✕</button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {TYPE_FILTER_ITEMS.map((t) => {
+                const active = typeFilter.has(t.key)
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => toggleFilter(typeFilter, setTypeFilter, t.key)}
+                    className={
+                      'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                      (active
+                        ? 'bg-sure-blue text-white border-transparent'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400')
+                    }
+                  >
+                    {t.label}
+                  </button>
+                )
+              })}
+              <span className="w-px self-stretch bg-gray-200 mx-1" />
+              {STATUS_FILTER_ITEMS.map((s) => {
+                const active = statusFilter.has(s.key)
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => toggleFilter(statusFilter, setStatusFilter, s.key)}
+                    className={
+                      'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                      (active
+                        ? (s.key === 'completed'
+                            ? 'bg-emerald-600 text-white border-transparent'
+                            : 'bg-amber-500 text-white border-transparent')
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400')
+                    }
+                  >
+                    {s.label}
+                  </button>
+                )
+              })}
+              {hasFiltersActive && (
+                <button
+                  onClick={() => { setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+                  className="ml-auto text-xs text-sure-blue px-2 py-1.5 hover:underline"
+                >
+                  Wyczyść filtry
+                </button>
+              )}
+            </div>
+            <div className="text-xs text-gray-500">
+              {filtered.length === sorted.length
+                ? `${sorted.length} ${sorted.length === 1 ? 'raport' : sorted.length < 5 ? 'raporty' : 'raportów'}`
+                : `${filtered.length} z ${sorted.length}`}
+            </div>
+          </div>
+        )}
+
         {sorted.length === 0 ? (
           <div className="card text-center text-gray-500">
             Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy raport"</span> aby zacząć.
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="card text-center text-gray-500">
+            Nic nie pasuje do bieżących filtrów. Zmień zapytanie lub
+            <button onClick={() => { setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+              className="ml-1 text-sure-blue underline">wyczyść filtry</button>.
+          </div>
         ) : (
           <div className="space-y-3">
-            {sorted.map((r) => {
-              const isRecent = r.id === mostRecentId
+            {filtered.map((r) => {
+              const isRecent = r.id === mostRecentId && !hasFiltersActive
               const completed = r.status === 'completed'
               const isBusy = busyId === r.id
               return (
@@ -177,6 +338,13 @@ export default function Home({ navigate }) {
                       onClick={() => handleOpen(r)}
                     >
                       Otwórz
+                    </button>
+                    <button
+                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50"
+                      onClick={() => handleClone(r)}
+                      title="Utwórz kopię tego raportu jako szablon"
+                    >
+                      📋 Duplikuj
                     </button>
                     <button
                       className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50"

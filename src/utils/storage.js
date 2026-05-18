@@ -68,3 +68,91 @@ export function remove(id) {
 export function newId() {
   return `r_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
+
+// Clones a report into a fresh "template" — keeps reusable bits (header, client,
+// project, conditions/params for prototypes) but **drops everything specific to
+// the original visit/test**: stops, actions, parts, points, photos, descriptions,
+// statuses. Goal: speed up the start of a recurring visit / next iteration.
+//
+// Photos are intentionally NOT cloned so the ZIP package won't ship duplicates
+// referencing photos that "belong" to another visit.
+export function cloneReport(source) {
+  const todayISO = () => new Date().toISOString().slice(0, 10)
+  const now = new Date().toISOString()
+
+  const base = {
+    id: newId(),
+    type: source.type,
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+    header: {
+      ...source.header,
+      // Each new report must have its own unique number; date defaults to today
+      reportNumber: '',
+      date: todayISO(),
+    },
+  }
+
+  if (source.type === 'commissioning') {
+    return {
+      ...base,
+      phase: 'setup',
+      sessionStartAt: null,
+      sessionEndAt: null,
+      activeStop: null,
+      stops: [],          // never carry over stops
+      observations: '',
+      conclusions: '',
+      generalMedia: [],
+    }
+  }
+
+  if (source.type === 'service') {
+    return {
+      ...base,
+      visit: {
+        client: source.visit?.client || '',     // keep — recurring client
+        location: source.visit?.location || '', // keep — same site
+        arrival: '',                            // reset — this visit
+        departure: '',
+      },
+      actions: [],
+      parts: [],
+      observations: '',
+      recommendations: '',
+      visitStatus: 'completed',
+      media: [],
+    }
+  }
+
+  if (source.type === 'prototype') {
+    return {
+      ...base,
+      info: {
+        component: source.info?.component || '',                 // keep — same part
+        iteration: (source.info?.iteration || 1) + 1,            // bump for next iteration
+        sampleMethod: source.info?.sampleMethod || 'print3d',    // keep
+        sampleMethodOther: source.info?.sampleMethodOther || '',
+        goal: '',                                                // each iteration sets its own
+        media: [],
+      },
+      conditions: {
+        setup: source.conditions?.setup || '',                   // keep — same setup
+        params: (source.conditions?.params || []).map((p) => ({  // keep — parameter template
+          id: newId(), key: p.key || '', value: p.value || '',
+        })),
+      },
+      points: [],
+      overallResult: '',
+      resultsMedia: [],
+      observations: '',
+      observationsMedia: [],
+      decision: '',
+      decisionNotes: '',
+      media: [],
+    }
+  }
+
+  return base
+}

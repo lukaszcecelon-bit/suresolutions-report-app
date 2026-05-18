@@ -5,6 +5,8 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import SuggestInput from '../common/SuggestInput.jsx'
+import { suggestComponents } from '../../utils/suggestions.js'
 import { useToast, useConfirm } from '../common/Toast.jsx'
 import { upsert, getById, newId } from '../../utils/storage.js'
 import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
@@ -186,9 +188,10 @@ export default function PrototypeReport({ navigate, reportId }) {
       <div id="sec-a" className="card">
         <h3 className="section-title">A. Informacje o teście</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Testowany podzespół</label>
-            <input type="text" className="field-input"
+            <SuggestInput type="text" className="field-input"
+              suggestions={suggestComponents()}
               value={report.info.component}
               onChange={(e) => setInfo('component', e.target.value)} />
           </div>

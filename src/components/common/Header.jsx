@@ -1,3 +1,6 @@
+import SuggestInput from './SuggestInput.jsx'
+import { suggestAuthors, suggestProjectNames, suggestMachineNames } from '../../utils/suggestions.js'
+
 const TYPE_TITLES = {
   commissioning: 'Raport uruchomienia / obserwacji maszyny',
   service: 'Raport serwisu na obiekcie',
@@ -52,18 +55,20 @@ export default function Header({
           </div>
           <div className="min-w-0">
             <label className={labelCls('projectName')}>Nazwa projektu</label>
-            <input
+            <SuggestInput
               type="text"
               className={inputCls('projectName')}
+              suggestions={suggestProjectNames()}
               value={header.projectName || ''}
               onChange={(e) => set('projectName', e.target.value)}
             />
           </div>
           <div className="sm:col-span-2 min-w-0">
             <label className={labelCls('machineName')}>Nazwa / numer maszyny</label>
-            <input
+            <SuggestInput
               type="text"
               className={inputCls('machineName')}
+              suggestions={suggestMachineNames(header.projectName)}
               value={header.machineName || ''}
               onChange={(e) => set('machineName', e.target.value)}
             />
@@ -83,9 +88,10 @@ export default function Header({
           </div>
           <div className="min-w-0">
             <label className={labelCls('author')}>Autor</label>
-            <input
+            <SuggestInput
               type="text"
               className={inputCls('author')}
+              suggestions={suggestAuthors()}
               value={header.author || ''}
               onChange={(e) => set('author', e.target.value)}
             />

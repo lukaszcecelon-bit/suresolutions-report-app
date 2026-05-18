@@ -6,7 +6,12 @@ import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
+import SuggestInput from '../common/SuggestInput.jsx'
 import { useToast, useConfirm } from '../common/Toast.jsx'
+import {
+  suggestClients, suggestLocations,
+  suggestPartNames, suggestPartCatalogNos,
+} from '../../utils/suggestions.js'
 import { upsert, getById, newId } from '../../utils/storage.js'
 import { generateServicePackage } from '../../utils/pdfGenerator.js'
 
@@ -150,15 +155,17 @@ export default function ServiceReport({ navigate, reportId }) {
       <div id="sec-a" className="card">
         <h3 className="section-title">A. Dane wizyty</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Nazwa klienta</label>
-            <input type="text" className="field-input"
+            <SuggestInput type="text" className="field-input"
+              suggestions={suggestClients()}
               value={report.visit.client}
               onChange={(e) => updateVisit('client', e.target.value)} />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className="field-label">Lokalizacja / adres obiektu</label>
-            <input type="text" className="field-input"
+            <SuggestInput type="text" className="field-input"
+              suggestions={suggestLocations(report.visit.client)}
               value={report.visit.location}
               onChange={(e) => updateVisit('location', e.target.value)} />
           </div>
@@ -245,8 +252,9 @@ export default function ServiceReport({ navigate, reportId }) {
             <div key={p.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
               <div className="flex items-center gap-2">
                 <span className="index-badge">{i + 1}</span>
-                <input type="text" className="field-input flex-1"
+                <SuggestInput type="text" className="field-input flex-1 min-w-0"
                   placeholder="Nazwa elementu"
+                  suggestions={suggestPartNames()}
                   value={p.name}
                   onChange={(e) => updatePart(p.id, { name: e.target.value })} />
                 <button
@@ -255,8 +263,9 @@ export default function ServiceReport({ navigate, reportId }) {
                   aria-label="Usuń element"
                 >✕</button>
               </div>
-              <input type="text" className="field-input"
+              <SuggestInput type="text" className="field-input"
                 placeholder="Numer katalogowy (opcjonalny)"
+                suggestions={suggestPartCatalogNos()}
                 value={p.catalogNo}
                 onChange={(e) => updatePart(p.id, { catalogNo: e.target.value })} />
               <ToggleGroup
