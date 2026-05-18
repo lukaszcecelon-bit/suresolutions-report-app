@@ -35,9 +35,12 @@ export default function Header({
       <div className="card">
         <h3 className="section-title no-rule">Nagłówek raportu</h3>
 
-        {/* Long, primary identifiers — full width on mobile, two columns on desktop */}
+        {/* Long, primary identifiers — full width on mobile, two columns on desktop.
+            min-w-0 on cells lets the inputs shrink instead of pushing the row
+            past the container — important for iOS Safari where some input types
+            (most notably type="date") have a wider intrinsic min-width. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
+          <div className="min-w-0">
             <label className={labelCls('reportNumber')}>Numer raportu</label>
             <input
               type="text"
@@ -47,7 +50,7 @@ export default function Header({
               onChange={(e) => set('reportNumber', e.target.value)}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={labelCls('projectName')}>Nazwa projektu</label>
             <input
               type="text"
@@ -56,7 +59,7 @@ export default function Header({
               onChange={(e) => set('projectName', e.target.value)}
             />
           </div>
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 min-w-0">
             <label className={labelCls('machineName')}>Nazwa / numer maszyny</label>
             <input
               type="text"
@@ -69,7 +72,7 @@ export default function Header({
 
         {/* Short fields — narrower side-by-side row */}
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <div>
+          <div className="min-w-0">
             <label className={labelCls('date')}>Data</label>
             <input
               type="date"
@@ -78,7 +81,7 @@ export default function Header({
               onChange={(e) => set('date', e.target.value)}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={labelCls('author')}>Autor</label>
             <input
               type="text"

@@ -18,7 +18,9 @@ export function ToastProvider({ children }) {
   const push = useCallback((type, message, opts = {}) => {
     const id = nextId++
     setItems((arr) => [...arr, { id, type, message }])
-    const duration = opts.duration ?? (type === 'error' ? 6000 : 3500)
+    // Short by default so the toast doesn't sit over the action area for long.
+    // Errors get a touch longer because they need to be read.
+    const duration = opts.duration ?? (type === 'error' ? 3500 : 1800)
     setTimeout(() => dismiss(id), duration)
   }, [dismiss])
 
@@ -52,21 +54,25 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={{ toast, confirm }}>
       {children}
 
-      {/* Toasts */}
+      {/* Toasts — tap anywhere on toast to dismiss; the surrounding area lets
+          clicks pass through to the page (pointer-events-none on wrapper). */}
       <div className="fixed top-20 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
         {items.map((t) => (
-          <div key={t.id} className={`toast toast-${t.type} slide-in-right`}>
+          <div
+            key={t.id}
+            onClick={() => dismiss(t.id)}
+            className={`toast toast-${t.type} slide-in-right cursor-pointer`}
+          >
             <span className="text-base leading-none">
               {t.type === 'success' && '✓'}
               {t.type === 'error' && '⚠'}
               {t.type === 'info' && 'ℹ'}
             </span>
             <div className="flex-1 text-sm leading-snug">{t.message}</div>
-            <button
-              onClick={() => dismiss(t.id)}
-              className="text-white/70 hover:text-white text-base leading-none"
+            <span
+              className="text-white/70 text-base leading-none"
               aria-label="Zamknij"
-            >×</button>
+            >×</span>
           </div>
         ))}
       </div>
