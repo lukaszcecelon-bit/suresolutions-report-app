@@ -1,21 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useRegisterSW } from 'virtual:pwa-register/react'
+import { useSW } from './SWManager.jsx'
 
+// Renders the "new version available" and "ready to work offline" banners.
+// The SW state lives in SWProvider; this component is purely a consumer.
 export default function UpdatePrompt() {
+  const { needRefresh, offlineReady, setNeedRefresh, setOfflineReady, updateNow } = useSW()
   const [showOffline, setShowOffline] = useState(false)
-
-  const {
-    needRefresh: [needRefresh, setNeedRefresh],
-    offlineReady: [offlineReady, setOfflineReady],
-    updateServiceWorker,
-  } = useRegisterSW({
-    onRegisteredSW(swUrl) {
-      console.log('SW registered:', swUrl)
-    },
-    onRegisterError(error) {
-      console.warn('SW registration error:', error)
-    },
-  })
 
   useEffect(() => {
     if (offlineReady) {
@@ -34,7 +24,7 @@ export default function UpdatePrompt() {
           <div className="font-semibold">Nowa wersja aplikacji</div>
           <div className="text-sm opacity-90 mt-1">Kliknij aby odświeżyć i załadować nową wersję.</div>
           <div className="mt-3 flex gap-2">
-            <button onClick={() => updateServiceWorker(true)} className="bg-white text-sure-blue px-3 py-1.5 rounded font-medium text-sm flex-1">Odśwież</button>
+            <button onClick={updateNow} className="bg-white text-sure-blue px-3 py-1.5 rounded font-medium text-sm flex-1">Odśwież</button>
             <button onClick={() => setNeedRefresh(false)} className="bg-white/20 text-white px-3 py-1.5 rounded text-sm">Później</button>
           </div>
         </div>
