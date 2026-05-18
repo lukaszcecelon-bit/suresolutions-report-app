@@ -220,7 +220,6 @@ function buildCommissioningHtml(report, photos, videos) {
     <div class="hdr">
       <div class="hdr-left">
         <img src="${logoUrl}" class="logo" />
-        <div class="company">SureSolutions</div>
       </div>
       <div class="hdr-right">
         <div class="title">${esc(TYPE_TITLES.commissioning)}</div>
@@ -269,7 +268,6 @@ function buildCommissioningHtml(report, photos, videos) {
 
     <div class="footer">
       <span>Wygenerowano: ${nowStamp()}</span>
-      <span>SureSolutions</span>
     </div>
   </div>
   `
@@ -713,7 +711,6 @@ function buildServiceHtml(report, photos, videos) {
     <div class="hdr">
       <div class="hdr-left">
         <img src="${logoUrl}" class="logo" />
-        <div class="company">SureSolutions</div>
       </div>
       <div class="hdr-right">
         <div class="title">${esc(TYPE_TITLES.service)}</div>
@@ -762,7 +759,6 @@ function buildServiceHtml(report, photos, videos) {
 
     <div class="footer">
       <span>Wygenerowano: ${nowStamp()}</span>
-      <span>SureSolutions</span>
     </div>
   </div>
   `
@@ -858,7 +854,6 @@ function buildPrototypeHtml(report, photos, videos) {
     <div class="hdr">
       <div class="hdr-left">
         <img src="${logoUrl}" class="logo" />
-        <div class="company">SureSolutions</div>
       </div>
       <div class="hdr-right">
         <div class="title">${esc(TYPE_TITLES.prototype)} · Test #${esc(info.iteration || 1)}</div>
@@ -915,7 +910,6 @@ function buildPrototypeHtml(report, photos, videos) {
 
     <div class="footer">
       <span>Wygenerowano: ${nowStamp()}</span>
-      <span>SureSolutions</span>
     </div>
   </div>
   `
