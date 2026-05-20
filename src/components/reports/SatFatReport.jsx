@@ -558,25 +558,36 @@ function ParticipantsList({ title, icon, items, onAdd, onUpdate, onRemove }) {
           </div>
         )}
         {items.map((p, i) => (
-          <div key={p.id} className="flex items-center gap-2">
-            <span className="index-badge">{i + 1}</span>
+          // Mobile: dwa rzędy (imię + delete na górze, funkcja pod spodem).
+          // Desktop (sm+): wszystko w jednej linii. Przycisk usuń wyrenderowany
+          // dwa razy z `sm:hidden` / `hidden sm:inline-flex` — sprzęga dwa różne
+          // layouty bez zewnętrznych helperów, klik z każdej kopii woła onRemove.
+          <div key={p.id} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2 sm:flex-1">
+              <span className="index-badge shrink-0">{i + 1}</span>
+              <input
+                type="text"
+                className="field-input flex-1 min-w-0"
+                placeholder="Imię i nazwisko"
+                value={p.name}
+                onChange={(e) => onUpdate(p.id, { name: e.target.value })}
+              />
+              <button
+                onClick={() => onRemove(p.id)}
+                className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0 sm:hidden"
+                aria-label="Usuń osobę"
+              >✕</button>
+            </div>
             <input
               type="text"
-              className="field-input flex-1 min-w-0"
-              placeholder="Imię i nazwisko"
-              value={p.name}
-              onChange={(e) => onUpdate(p.id, { name: e.target.value })}
-            />
-            <input
-              type="text"
-              className="field-input flex-1 min-w-0"
+              className="field-input min-w-0 sm:flex-1"
               placeholder="Funkcja / stanowisko"
               value={p.role}
               onChange={(e) => onUpdate(p.id, { role: e.target.value })}
             />
             <button
               onClick={() => onRemove(p.id)}
-              className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0"
+              className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0 hidden sm:inline-flex"
               aria-label="Usuń osobę"
             >✕</button>
           </div>

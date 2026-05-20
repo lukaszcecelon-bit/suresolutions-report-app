@@ -43,11 +43,13 @@
     min-height: 40px;
   }
 
-  /* Circular icon button with proper 40×40 hit area. Visual circle remains compact. */
+  /* Circular icon button — sized to match `.field-input` height (44px) so that
+     in `flex items-center` rows the button + input centers line up exactly.
+     Also satisfies Apple HIG minimum touch target. */
   .btn-icon {
     @apply inline-flex items-center justify-center rounded-full text-white transition select-none active:scale-90
            focus:outline-none focus:ring-2 focus:ring-offset-1;
-    width: 40px; height: 40px;
+    width: 44px; height: 44px;
   }
   .btn-icon-sm {
     @apply inline-flex items-center justify-center rounded-full text-white transition select-none active:scale-90
@@ -64,13 +66,30 @@
     @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-base
            dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500
            focus:border-sure-blue focus:outline-none focus:ring-2 focus:ring-sure-blue/30;
-    min-height: 44px;
+    /* IMPORTANT: fixed `height` instead of `min-height` so date/time/select inputs
+       render at EXACTLY the same height as text inputs on iOS Safari (otherwise
+       the native widgets are a few px taller, breaking alignment in side-by-side
+       rows). For multi-line growable fields use .field-textarea instead. */
+    height: 44px;
     /* iOS Safari gives <input type="date|time"> a wider intrinsic min-width than
        fits in narrow columns. min-width:0 + max-width:100% lets them shrink with
        their parent instead of overflowing. */
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
+    /* Normalize iOS Safari's native chrome on date/time inputs so they line up
+       with text inputs visually. Tap still opens the native picker. */
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* Restore the dropdown arrow on <select> (appearance:none above would hide it).
+     We draw a small chevron via inline SVG background so the arrow looks the
+     same across browsers / themes. */
+  select.field-input {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1L6 6L11 1' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
   }
   .field-input.is-invalid {
     @apply border-red-400 focus:border-red-500 focus:ring-red-300/40;
