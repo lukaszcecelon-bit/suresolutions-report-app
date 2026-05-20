@@ -25,7 +25,14 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' (nie 'autoUpdate') — z autoUpdate Workbox robi skipWaiting
+      // automatycznie i strona już-uruchomionego JS-a nie wie że jest nowa
+      // wersja. Banner UpdatePrompt nie fire-uje, user klika "Sprawdź
+      // aktualizacje" i dostaje "Apka jest aktualna" mimo że SW w tle pobrał
+      // nową wersję. Tryb 'prompt' trzyma nowy SW w "waiting" stanie, fire-uje
+      // needRefresh → banner pokazuje "Dostępna aktualizacja" → user klika
+      // "Odśwież" → SW skipWaiting + reload page → user widzi nowy numer.
+      registerType: 'prompt',
       includeAssets: ['logo.png', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'Raporty SURE',
