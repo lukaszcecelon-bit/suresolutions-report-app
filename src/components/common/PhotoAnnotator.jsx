@@ -9,10 +9,13 @@ const COLORS = [
   { key: 'white',  value: '#FFFFFF' },
 ]
 
+// Width values are in *screen CSS pixels* — the actual canvas lineWidth is
+// these × display-scale (see drawShape). Bumped from 3/6/10 because on mobile
+// even 6 screen-px arrows were near-invisible against busy photo backgrounds.
 const WIDTHS = [
-  { key: 'thin',   px: 3,  label: 'Cienka' },
-  { key: 'medium', px: 6,  label: 'Średnia' },
-  { key: 'thick',  px: 10, label: 'Gruba' },
+  { key: 'thin',   px: 6,  label: 'Cienka' },
+  { key: 'medium', px: 12, label: 'Średnia' },
+  { key: 'thick',  px: 22, label: 'Gruba' },
 ]
 
 const TOOLS = [
@@ -53,6 +56,30 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
   // Redraw on every shape change
   useEffect(() => { redraw(drawing ? [...shapes, drawing] : shapes) }, [shapes, drawing])
 
+  // Re-render on resize so widths stay visually consistent if user rotates phone.
+  useEffect(() => {
+    const onResize = () => redraw(drawing ? [...shapes, drawing] : shapes)
+    window.addEventListener('resize', onResize)
+    window.addEventListener('orientationchange', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('orientationchange', onResize)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, drawing])
+
+  // Scale factor: canvas is at image's native res (e.g. 3024px) but displayed
+  // at e.g. 360px on phone. Without scaling, a 6px line is invisible on mobile.
+  // We treat WIDTHS values as "visible screen pixels" and multiply by this ratio
+  // when drawing so a "medium" line always looks the same thickness on any device.
+  function getDisplayScale() {
+    const canvas = canvasRef.current
+    if (!canvas) return 1
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0) return 1
+    return canvas.width / rect.width
+  }
+
   function redraw(list) {
     const canvas = canvasRef.current
     const img = imgRef.current
@@ -60,18 +87,20 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    for (const s of list) drawShape(ctx, s)
+    const scale = getDisplayScale()
+    for (const s of list) drawShape(ctx, s, scale)
   }
 
-  function drawShape(ctx, s) {
+  function drawShape(ctx, s, scale = 1) {
     ctx.save()
+    const w = s.width * scale
     ctx.strokeStyle = s.color
     ctx.fillStyle = s.color
-    ctx.lineWidth = s.width
+    ctx.lineWidth = w
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     if (s.type === 'arrow') {
-      drawArrow(ctx, s.x1, s.y1, s.x2, s.y2, s.width)
+      drawArrow(ctx, s.x1, s.y1, s.x2, s.y2, w)
     } else if (s.type === 'rect') {
       const x = Math.min(s.x1, s.x2)
       const y = Math.min(s.y1, s.y2)
@@ -94,11 +123,11 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
       ctx.stroke()
     } else if (s.type === 'text') {
-      const fontPx = Math.max(14, s.width * 4)
+      const fontPx = Math.max(14 * scale, w * 4)
       ctx.font = `bold ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`
       ctx.textBaseline = 'top'
       // outline for legibility on any background
-      ctx.lineWidth = Math.max(2, s.width / 2)
+      ctx.lineWidth = Math.max(2 * scale, w / 2)
       ctx.strokeStyle = s.color === '#FFFFFF' ? '#111827' : '#FFFFFF'
       ctx.strokeText(s.text || '', s.x1, s.y1)
       ctx.fillStyle = s.color
@@ -112,7 +141,9 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
     const dy = y2 - y1
     const len = Math.hypot(dx, dy)
     if (len < 1) return
-    const headLen = Math.max(14, w * 3.5)
+    // headLen scales with line width — w is already display-scaled by caller,
+    // so the head ends up the same visible size on any device.
+    const headLen = w * 3.5
     const ux = dx / len
     const uy = dy / len
     const baseX = x2 - ux * headLen
