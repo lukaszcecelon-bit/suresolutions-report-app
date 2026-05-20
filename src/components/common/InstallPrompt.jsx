@@ -36,13 +36,13 @@ export default function InstallPrompt() {
 
   return (
     <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-4 sm:max-w-sm z-40">
-      <div className="bg-white border border-gray-300 rounded-xl shadow-lg p-4">
+      <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl shadow-lg p-4">
         <div className="flex items-start gap-3">
           <div className="text-2xl">📲</div>
           <div className="flex-1">
-            <div className="font-semibold text-sure-dark">Zainstaluj aplikację</div>
-            <div className="text-sm text-gray-600 mt-1">
-              Dodaj „SureSolutions Raporty" na ekran główny — szybszy dostęp i działa offline.
+            <div className="font-semibold text-sure-dark dark:text-gray-100">Zainstaluj aplikację</div>
+            <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+              Dodaj „Raporty SURE" na ekran główny — szybszy dostęp i działa offline.
             </div>
             <div className="mt-3 flex gap-2">
               <button onClick={install} className="btn-primary text-sm py-2 px-3 flex-1">Zainstaluj</button>

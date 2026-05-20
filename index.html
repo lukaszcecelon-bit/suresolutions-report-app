@@ -8,8 +8,23 @@
     <meta name="theme-color" content="#3D70B2" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="SS Raporty" />
-    <title>SureSolutions Raporty</title>
+    <meta name="apple-mobile-web-app-title" content="Raporty SURE" />
+    <title>Raporty SURE</title>
+    <!--
+      Apply the persisted theme BEFORE React hydrates to prevent a flash of the
+      wrong palette on cold boot. ThemeProvider takes over from there.
+    -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('suresolutions.theme');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (t === 'dark' || (!t && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -22,7 +22,7 @@ export default function AutoSaveIndicator({ savedAt }) {
   return (
     <span className={
       'text-xs transition-colors ' +
-      (highlight ? 'text-emerald-700 font-medium' : 'text-gray-400')
+      (highlight ? 'text-emerald-700 dark:text-emerald-400 font-medium' : 'text-gray-400 dark:text-gray-500')
     }>
       💾 Zapisano {highlight ? '' : `o ${time}`}
     </span>

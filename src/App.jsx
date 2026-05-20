@@ -8,6 +8,7 @@ import InstallPrompt from './components/common/InstallPrompt.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import { ToastProvider, useToast } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
+import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
 import logo from './assets/logo.png'
 
 function parseHash() {
@@ -44,11 +45,11 @@ function VersionBadge() {
     <button
       onClick={onClick}
       disabled={checking}
-      className="text-xs text-gray-500 hover:text-sure-blue hover:bg-gray-100 px-2 py-1.5 rounded transition flex items-center gap-1.5"
+      className="text-xs text-gray-500 dark:text-gray-300 hover:text-sure-blue hover:bg-gray-100 dark:hover:bg-gray-700 px-2 py-1.5 rounded transition flex items-center gap-1.5"
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.4</span>
+      <span>v0.5</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -95,17 +96,20 @@ function AppShell() {
 
   return (
     <div className="min-h-full flex flex-col">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <button
             onClick={() => navigate('')}
-            className="flex items-center gap-3 hover:opacity-80 transition"
+            className="flex items-center gap-3 hover:opacity-80 transition min-w-0"
             aria-label="Strona główna"
           >
             <img src={logo} alt="SureSolutions" className="h-10 w-auto" />
-            <span className="hidden sm:inline text-sm font-semibold text-sure-dark">Raporty</span>
+            <span className="hidden sm:inline text-sm font-semibold text-sure-dark dark:text-gray-100">Raporty SURE</span>
           </button>
-          <VersionBadge />
+          <div className="flex items-center gap-1 shrink-0">
+            <ThemeToggle />
+            <VersionBadge />
+          </div>
         </div>
       </header>
 
@@ -115,8 +119,8 @@ function AppShell() {
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 bg-white">
-        <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500 text-center">
+      <footer className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+        <div className="max-w-5xl mx-auto px-4 py-3 text-xs text-gray-500 dark:text-gray-400 text-center">
           SureSolutions — aplikacja raportowa
         </div>
       </footer>
@@ -128,13 +132,19 @@ function AppShell() {
 }
 
 export default function App() {
-  // SWProvider must wrap ToastProvider's consumers (VersionBadge uses both).
-  // Order: SWProvider → ToastProvider → AppShell.
+  // Provider order:
+  //   ThemeProvider (no deps)
+  //   → SWProvider (no deps on theme/toast)
+  //   → ToastProvider (consumers exist)
+  //   → AppShell
+  // VersionBadge uses both useSW and useToast; ThemeToggle uses useTheme.
   return (
-    <SWProvider>
-      <ToastProvider>
-        <AppShell />
-      </ToastProvider>
-    </SWProvider>
+    <ThemeProvider>
+      <SWProvider>
+        <ToastProvider>
+          <AppShell />
+        </ToastProvider>
+      </SWProvider>
+    </ThemeProvider>
   )
 }

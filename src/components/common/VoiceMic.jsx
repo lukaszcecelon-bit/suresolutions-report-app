@@ -75,7 +75,7 @@ export function MicButton({ value = '', onChange, lang = 'pl-PL', size = 'sm' })
         sizeCls + ' ' +
         (listening
           ? 'bg-red-600 text-white animate-pulse focus:ring-red-500/40'
-          : 'bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-gray-400/40')
+          : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 focus:ring-gray-400/40')
       }
       aria-label={listening ? 'Zatrzymaj nagrywanie' : 'Dyktuj (polski)'}
       title={listening ? 'Zatrzymaj nagrywanie' : 'Dyktuj (pl-PL)'}

@@ -28,8 +28,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['logo.png', 'icons/apple-touch-icon.png'],
       manifest: {
-        name: 'SureSolutions Raporty',
-        short_name: 'SS Raporty',
+        name: 'Raporty SURE',
+        short_name: 'Raporty SURE',
         description: 'Aplikacja do tworzenia raportów testów, serwisów i uruchomień maszyn — SureSolutions',
         lang: 'pl',
         start_url: './',

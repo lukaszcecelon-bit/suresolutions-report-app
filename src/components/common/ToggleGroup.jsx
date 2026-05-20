@@ -20,7 +20,7 @@ export default function ToggleGroup({ items, value, onChange, size = 'md' }) {
               sizeCls + ' ' +
               (active
                 ? (it.activeClass || 'bg-sure-blue text-white border-transparent')
-                : (it.inactiveClass || 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'))
+                : (it.inactiveClass || 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500'))
             }
           >
             {it.icon ? <span className="mr-1.5">{it.icon}</span> : null}

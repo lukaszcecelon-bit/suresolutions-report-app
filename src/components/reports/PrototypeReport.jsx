@@ -171,7 +171,7 @@ export default function PrototypeReport({ navigate, reportId }) {
         <AutoSaveIndicator savedAt={savedAt} />
       </div>
 
-      <div className="text-xs text-gray-500 text-right">
+      <div className="text-xs text-gray-500 dark:text-gray-400 text-right">
         Test #{report.info.iteration || 1}
       </div>
 
@@ -272,7 +272,7 @@ export default function PrototypeReport({ navigate, reportId }) {
           <button
             onClick={addParam}
             disabled={report.conditions.params.length >= MAX_PARAMS}
-            className="mt-2 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 w-full"
+            className="mt-2 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full"
           >
             + Dodaj parametr
           </button>
@@ -280,10 +280,10 @@ export default function PrototypeReport({ navigate, reportId }) {
       </div>
 
       <div id="sec-c" className="card">
-        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-sure-dark mb-0">C. Wyniki testu</h3>
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">C. Wyniki testu</h3>
           {report.points.length > 0 && (
-            <span className="text-xs text-gray-500 tabular-nums">
+            <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
               ✓ {okCount} · ✗ {nokCount} · ~ {condCount}
             </span>
           )}
@@ -297,7 +297,7 @@ export default function PrototypeReport({ navigate, reportId }) {
             />
           )}
           {report.points.map((p, i) => (
-            <div key={p.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+            <div key={p.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
                 <span className="index-badge">{i + 1}</span>
                 <input type="text" className="field-input flex-1"
@@ -329,7 +329,7 @@ export default function PrototypeReport({ navigate, reportId }) {
             </div>
           ))}
         </div>
-        <button onClick={addPoint} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 w-full">
+        <button onClick={addPoint} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj punkt
         </button>
 
@@ -380,7 +380,7 @@ export default function PrototypeReport({ navigate, reportId }) {
 
       <div id="sec-f" className="card">
         <h3 className="section-title">F. Dokumentacja fotograficzna</h3>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
           Zdjęcia / wideo do całego testu (nieprzypisane do konkretnego punktu).
         </p>
         <MediaUploader

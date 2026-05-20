@@ -217,7 +217,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
           type="button"
           onClick={() => photoCamInput.current?.click()}
           disabled={busy}
-          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
+          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 flex-1 min-w-[140px]"
         >
           📷 Zrób zdjęcie
         </button>
@@ -226,7 +226,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
             type="button"
             onClick={() => videoCamInput.current?.click()}
             disabled={busy}
-            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
+            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 flex-1 min-w-[140px]"
           >
             🎬 Nagraj wideo
           </button>
@@ -235,13 +235,13 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
           type="button"
           onClick={() => galleryInput.current?.click()}
           disabled={busy}
-          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 flex-1 min-w-[140px]"
+          className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 flex-1 min-w-[140px]"
         >
           🖼 {photoOnly ? 'Wybierz zdjęcie' : 'Wybierz z galerii'}
         </button>
       </div>
 
-      {busy && <div className="text-sm text-gray-500">Przetwarzanie…</div>}
+      {busy && <div className="text-sm text-gray-500 dark:text-gray-400">Przetwarzanie…</div>}
       {error && <div className="text-sm text-red-600">{error}</div>}
 
       {imageItems.length > 0 && (
@@ -249,7 +249,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
           {imageItems.map((m, i) => {
             const url = dataUrlFor(m)
             return (
-              <div key={m.id} className="relative border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+              <div key={m.id} className="relative border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-700">
                 <div className="absolute top-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded z-10">
                   Zdj. {i + 1}
                 </div>
@@ -284,7 +284,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                   placeholder="Opis (opcjonalny)"
                   value={m.description || ''}
                   onChange={(e) => updateItem(m.id, { description: e.target.value })}
-                  className="w-full text-xs px-2 py-1.5 border-t border-gray-200 focus:outline-none"
+                  className="w-full text-xs px-2 py-1.5 border-t border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-gray-100 focus:outline-none"
                 />
               </div>
             )
@@ -303,14 +303,14 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
       {videoItems.length > 0 && (
         <div className="space-y-2">
           {videoItems.map((m, i) => (
-            <div key={m.id} className="border border-gray-200 rounded-lg p-2 bg-gray-50 flex items-start gap-2">
+            <div key={m.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-2 bg-gray-50 dark:bg-gray-700 flex items-start gap-2">
               <div className="text-2xl">🎬</div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium flex items-center gap-2">
                   <span>Wideo {i + 1}</span>
-                  {m.size > 0 && <span className="text-xs text-gray-400 font-normal">({fmtSize(m.size)})</span>}
+                  {m.size > 0 && <span className="text-xs text-gray-400 dark:text-gray-500 font-normal">({fmtSize(m.size)})</span>}
                 </div>
-                <div className="text-xs text-gray-500 truncate" title={m.filename}>
+                <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={m.filename}>
                   Plik: {m.filename}
                 </div>
                 <input
@@ -318,7 +318,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
                   placeholder="Opis wideo (opcjonalny)"
                   value={m.description || ''}
                   onChange={(e) => updateItem(m.id, { description: e.target.value })}
-                  className="mt-1 w-full text-xs px-2 py-1.5 border border-gray-200 rounded focus:outline-none"
+                  className="mt-1 w-full text-xs px-2 py-1.5 border border-gray-200 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-gray-100 focus:outline-none"
                 />
               </div>
               <button

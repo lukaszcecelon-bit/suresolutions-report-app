@@ -211,7 +211,7 @@ export default function CommissioningReport({ navigate, reportId }) {
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
         <div className="flex items-center gap-3">
           <AutoSaveIndicator savedAt={savedAt} />
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             {report.phase === 'setup' && 'Faza 1: Start sesji'}
             {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
             {report.phase === 'stopped' && 'Faza 2: Zatrzymanie maszyny'}
@@ -230,7 +230,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             showErrors={attemptedStart}
           />
           <div className="card text-center">
-            <p className="text-gray-600 mb-4">
+            <p className="text-gray-600 dark:text-gray-300 mb-4">
               Po uzupełnieniu nagłówka kliknij <strong>START MASZYNY</strong> — uruchomi się timer
               i będziesz mógł logować zatrzymania na żywo.
             </p>
@@ -287,11 +287,11 @@ export default function CommissioningReport({ navigate, reportId }) {
           <div className="card">
             <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
             {report.stops.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">Maszyna pracuje bez przestojów — brak zatrzymań do zalogowania.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 italic">Maszyna pracuje bez przestojów — brak zatrzymań do zalogowania.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-gray-500">
+                  <thead className="text-left text-gray-500 dark:text-gray-400">
                     <tr>
                       <th className="py-2 pr-2">Nr</th>
                       <th className="py-2 pr-2">Godzina</th>
@@ -306,15 +306,15 @@ export default function CommissioningReport({ navigate, reportId }) {
                       const photos = (s.media || []).filter((m) => m.kind === 'image').length
                       const videos = (s.media || []).filter((m) => m.kind === 'video').length
                       return (
-                        <tr key={s.id} className="border-t border-gray-100">
+                        <tr key={s.id} className="border-t border-gray-100 dark:border-gray-700">
                           <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
                           <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
                           <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
                           <td className="py-2 pr-2">
                             {s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}
                           </td>
-                          <td className="py-2 pr-2 text-gray-600">{s.comment || '—'}</td>
-                          <td className="py-2 pr-2 text-gray-600 whitespace-nowrap">
+                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300">{s.comment || '—'}</td>
+                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                             {photos === 0 && videos === 0 ? '—' : (
                               <span>
                                 {photos > 0 && <span>📷 {photos}</span>}
@@ -345,10 +345,10 @@ export default function CommissioningReport({ navigate, reportId }) {
           {/* Stop modal */}
           {stopModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 overflow-y-auto">
-              <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-4 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-5 space-y-4 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <div>
-                  <h3 className="text-lg font-bold">Zatrzymanie maszyny</h3>
-                  <p className="text-sm text-gray-600">
+                  <h3 className="text-lg font-bold dark:text-gray-100">Zatrzymanie maszyny</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
                     Godzina: <span className="font-mono">{timeHHMM(report.activeStop.startAt)}</span>
                     {' · Trwa: '}
                     <span className="font-mono">{formatDurationShort(activeStopMs)}</span>
@@ -424,7 +424,7 @@ export default function CommissioningReport({ navigate, reportId }) {
               <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-gray-500">
+                  <thead className="text-left text-gray-500 dark:text-gray-400">
                     <tr>
                       <th className="py-2 pr-2">#</th>
                       <th className="py-2 pr-2">Godzina</th>
@@ -439,15 +439,15 @@ export default function CommissioningReport({ navigate, reportId }) {
                       const photos = (s.media || []).filter((m) => m.kind === 'image').length
                       const videos = (s.media || []).filter((m) => m.kind === 'video').length
                       return (
-                        <tr key={s.id} className="border-t border-gray-100">
+                        <tr key={s.id} className="border-t border-gray-100 dark:border-gray-700">
                           <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
                           <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
                           <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
                           <td className="py-2 pr-2">
                             {s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}
                           </td>
-                          <td className="py-2 pr-2 text-gray-600">{s.comment || '—'}</td>
-                          <td className="py-2 pr-2 text-gray-600 whitespace-nowrap">
+                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300">{s.comment || '—'}</td>
+                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                             {photos === 0 && videos === 0 ? '—' : (
                               <span>
                                 {photos > 0 && <span>📷 {photos}</span>}
@@ -485,7 +485,7 @@ export default function CommissioningReport({ navigate, reportId }) {
 
           <div className="card">
             <h3 className="section-title">Dokumentacja fotograficzna (ogólna)</h3>
-            <p className="text-sm text-gray-500 mb-3">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
               Zdjęcia / wideo nieprzypisane do konkretnego zatrzymania.
             </p>
             <MediaUploader

@@ -80,10 +80,10 @@ export function ToastProvider({ children }) {
       {/* Confirm modal */}
       {confirmState && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-4 fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-5 space-y-4 fade-in">
             <div>
-              <h3 className="text-lg font-bold text-sure-dark">{confirmState.title}</h3>
-              <p className="text-sm text-gray-600 mt-1.5 whitespace-pre-line">{confirmState.message}</p>
+              <h3 className="text-lg font-bold text-sure-dark dark:text-gray-100">{confirmState.title}</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1.5 whitespace-pre-line">{confirmState.message}</p>
             </div>
             <div className="flex flex-col-reverse sm:flex-row gap-2">
               <button onClick={() => closeConfirm(false)} className="btn-secondary flex-1">

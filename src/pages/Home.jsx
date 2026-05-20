@@ -173,8 +173,8 @@ export default function Home({ navigate }) {
           <div className="flex items-start gap-3">
             <div className="text-3xl">👋</div>
             <div className="flex-1">
-              <h2 className="font-semibold text-sure-dark">Witaj w SureSolutions Raporty</h2>
-              <p className="text-sm text-gray-600 mt-1">
+              <h2 className="font-semibold text-sure-dark dark:text-gray-100">Witaj w Raporty SURE</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
                 Zacznij od kliknięcia <strong>„+ Nowy raport"</strong> i wybierz typ.
                 Twoje raporty zapisują się automatycznie w tej przeglądarce — żadnego logowania.
                 Po skończeniu pobierzesz paczkę ZIP (PDF + multimedia).
@@ -218,7 +218,7 @@ export default function Home({ navigate }) {
                 <button
                   type="button"
                   onClick={() => setQuery('')}
-                  className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs"
+                  className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 text-xs"
                   aria-label="Wyczyść"
                 >✕</button>
               )}
@@ -234,14 +234,14 @@ export default function Home({ navigate }) {
                       'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
                       (active
                         ? 'bg-sure-blue text-white border-transparent'
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400')
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
                     }
                   >
                     {t.label}
                   </button>
                 )
               })}
-              <span className="w-px self-stretch bg-gray-200 mx-1" />
+              <span className="w-px self-stretch bg-gray-200 dark:bg-gray-700 mx-1" />
               {STATUS_FILTER_ITEMS.map((s) => {
                 const active = statusFilter.has(s.key)
                 return (
@@ -254,7 +254,7 @@ export default function Home({ navigate }) {
                         ? (s.key === 'completed'
                             ? 'bg-emerald-600 text-white border-transparent'
                             : 'bg-amber-500 text-white border-transparent')
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400')
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
                     }
                   >
                     {s.label}
@@ -270,7 +270,7 @@ export default function Home({ navigate }) {
                 </button>
               )}
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               {filtered.length === sorted.length
                 ? `${sorted.length} ${sorted.length === 1 ? 'raport' : sorted.length < 5 ? 'raporty' : 'raportów'}`
                 : `${filtered.length} z ${sorted.length}`}
@@ -279,11 +279,11 @@ export default function Home({ navigate }) {
         )}
 
         {sorted.length === 0 ? (
-          <div className="card text-center text-gray-500">
+          <div className="card text-center text-gray-500 dark:text-gray-400">
             Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy raport"</span> aby zacząć.
           </div>
         ) : filtered.length === 0 ? (
-          <div className="card text-center text-gray-500">
+          <div className="card text-center text-gray-500 dark:text-gray-400">
             Nic nie pasuje do bieżących filtrów. Zmień zapytanie lub
             <button onClick={() => { setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
               className="ml-1 text-sure-blue underline">wyczyść filtry</button>.
@@ -303,7 +303,7 @@ export default function Home({ navigate }) {
                   }
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                       <span className="text-lg leading-none">{TYPE_ICONS[r.type] || '📄'}</span>
                       <span className="truncate">{TYPE_LABELS[r.type] || r.type}</span>
                       {isRecent && (
@@ -314,40 +314,40 @@ export default function Home({ navigate }) {
                       <span className={
                         'ml-auto text-xs px-2 py-0.5 rounded-full border ' +
                         (completed
-                          ? 'border-emerald-400 text-emerald-700 bg-emerald-50'
-                          : 'border-amber-400 text-amber-700 bg-amber-50')
+                          ? 'border-emerald-400 text-emerald-700 bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-300 dark:bg-emerald-900/30'
+                          : 'border-amber-400 text-amber-700 bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:bg-amber-900/30')
                       }>
                         {completed ? 'Ukończony' : 'Roboczy'}
                       </span>
                     </div>
-                    <div className="mt-1.5 font-semibold text-sure-dark truncate">
+                    <div className="mt-1.5 font-semibold text-sure-dark dark:text-gray-100 truncate">
                       {r.header?.reportNumber || '(brak nr)'} · {r.header?.projectName || '(brak projektu)'}
                     </div>
-                    <div className="text-xs text-gray-500 mt-0.5">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                       Maszyna: {r.header?.machineName || '—'} · Data: {r.header?.date || '—'} · Autor: {r.header?.author || '—'}
                     </div>
                     {r.updatedAt && (
-                      <div className="text-[11px] text-gray-400 mt-0.5">
+                      <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">
                         Zmienione {fmtUpdated(r.updatedAt)}
                       </div>
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap">
                     <button
-                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50"
+                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
                       onClick={() => handleOpen(r)}
                     >
                       Otwórz
                     </button>
                     <button
-                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50"
+                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
                       onClick={() => handleClone(r)}
                       title="Utwórz kopię tego raportu jako szablon"
                     >
                       📋 Duplikuj
                     </button>
                     <button
-                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50"
+                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
                       disabled={isBusy}
                       onClick={() => handlePdf(r)}
                     >

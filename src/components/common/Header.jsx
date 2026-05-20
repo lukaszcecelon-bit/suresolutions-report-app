@@ -30,7 +30,7 @@ export default function Header({
   return (
     <div className="space-y-3">
       {/* Context bar — type + readonly badge above the form */}
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500">
+      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
         <span className="text-base">{TYPE_ICONS[reportType] || '📋'}</span>
         <span className="font-medium">{TYPE_TITLES[reportType] || reportType}</span>
       </div>

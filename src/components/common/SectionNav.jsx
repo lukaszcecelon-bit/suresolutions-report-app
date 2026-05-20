@@ -41,7 +41,7 @@ export default function SectionNav({ sections }) {
   }
 
   return (
-    <nav className="sticky top-[60px] z-20 -mx-4 px-3 py-2 bg-white/95 backdrop-blur border-y border-gray-200">
+    <nav className="sticky top-[60px] z-20 -mx-4 px-3 py-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-y border-gray-200 dark:border-gray-700">
       <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
         {sections.map((s) => {
           const isActive = active === s.id
@@ -53,7 +53,7 @@ export default function SectionNav({ sections }) {
                 'whitespace-nowrap text-xs px-3 py-1.5 rounded-full font-medium transition shrink-0 ' +
                 (isActive
                   ? 'bg-sure-blue text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700')
               }
             >
               {s.label}

@@ -181,9 +181,9 @@ export default function ServiceReport({ navigate, reportId }) {
       </div>
 
       <div id="sec-b" className="card">
-        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-sure-dark mb-0">B. Wykonane czynności</h3>
-          <span className="text-xs text-gray-500">{report.actions.length}</span>
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">B. Wykonane czynności</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{report.actions.length}</span>
         </div>
         <div className="space-y-3">
           {report.actions.length === 0 && (
@@ -194,7 +194,7 @@ export default function ServiceReport({ navigate, reportId }) {
             />
           )}
           {report.actions.map((a, i) => (
-            <div key={a.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+            <div key={a.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
                 <span className="index-badge">{i + 1}</span>
                 <select
@@ -226,15 +226,15 @@ export default function ServiceReport({ navigate, reportId }) {
             </div>
           ))}
         </div>
-        <button onClick={addAction} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 w-full">
+        <button onClick={addAction} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj czynność
         </button>
       </div>
 
       <div id="sec-c" className="card">
-        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-sure-dark mb-0">C. Elementy do wymiany / uwagi</h3>
-          <span className="text-xs text-gray-500">{report.parts.length}</span>
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">C. Elementy do wymiany / uwagi</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{report.parts.length}</span>
         </div>
         <div className="space-y-3">
           {report.parts.length === 0 && (
@@ -245,7 +245,7 @@ export default function ServiceReport({ navigate, reportId }) {
             />
           )}
           {report.parts.map((p, i) => (
-            <div key={p.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
+            <div key={p.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
                 <span className="index-badge">{i + 1}</span>
                 <SuggestInput type="text" className="field-input flex-1 min-w-0"
@@ -277,7 +277,7 @@ export default function ServiceReport({ navigate, reportId }) {
             </div>
           ))}
         </div>
-        <button onClick={addPart} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 w-full">
+        <button onClick={addPart} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj element
         </button>
       </div>

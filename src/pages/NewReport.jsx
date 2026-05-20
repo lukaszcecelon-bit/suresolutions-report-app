@@ -28,7 +28,7 @@ export default function NewReport({ navigate }) {
   return (
     <div className="space-y-4">
       <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Wróć</button>
-      <h2 className="text-2xl font-bold text-sure-dark">Wybierz typ raportu</h2>
+      <h2 className="text-2xl font-bold text-sure-dark dark:text-gray-100">Wybierz typ raportu</h2>
       <div className="space-y-3">
         {TYPES.map((t) => (
           <button
@@ -42,8 +42,8 @@ export default function NewReport({ navigate }) {
           >
             <div className="text-3xl shrink-0">{t.icon}</div>
             <div className="flex-1">
-              <div className="font-semibold text-sure-dark text-base">{t.title}</div>
-              <div className="text-sm text-gray-600 mt-1">{t.desc}</div>
+              <div className="font-semibold text-sure-dark dark:text-gray-100 text-base">{t.title}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">{t.desc}</div>
             </div>
             <div className="text-sure-blue text-2xl shrink-0 self-center" aria-hidden="true">›</div>
           </button>
