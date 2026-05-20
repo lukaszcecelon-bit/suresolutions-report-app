@@ -29,7 +29,7 @@ const STATUS_FILTER_ITEMS = [
   { key: 'completed', label: 'Ukończone' },
 ]
 
-const ONBOARDING_KEY = 'suresolutions.onboarding.v1.dismissed'
+// (v1 inline onboarding card zastąpiony przez OnboardingTour w App.jsx)
 
 // Polish-aware case-insensitive substring match (strips diacritics on both sides)
 function normalize(s) {
@@ -72,7 +72,6 @@ function getSearchableText(r) {
 export default function Home({ navigate }) {
   const [reports, setReports] = useState([])
   const [busyId, setBusyId] = useState(null)
-  const [showOnboarding, setShowOnboarding] = useState(false)
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState(new Set())
   const [statusFilter, setStatusFilter] = useState(new Set())
@@ -81,19 +80,10 @@ export default function Home({ navigate }) {
   const confirm = useConfirm()
 
   useEffect(() => {
-    const all = loadAll()
-    setReports(all)
-    if (all.length === 0 && localStorage.getItem(ONBOARDING_KEY) !== '1') {
-      setShowOnboarding(true)
-    }
+    setReports(loadAll())
   }, [])
 
   const refresh = () => setReports(loadAll())
-
-  const dismissOnboarding = () => {
-    localStorage.setItem(ONBOARDING_KEY, '1')
-    setShowOnboarding(false)
-  }
 
   const handleDelete = async (r) => {
     const ok = await confirm(`Usunąć raport „${r.header?.reportNumber || 'bez numeru'}"? Tej operacji nie można cofnąć.`, {
@@ -181,28 +171,6 @@ export default function Home({ navigate }) {
 
   return (
     <div className="space-y-6">
-      {showOnboarding && (
-        <div className="card bg-sure-blue/5 border-sure-blue/30">
-          <div className="flex items-start gap-3">
-            <div className="text-3xl">👋</div>
-            <div className="flex-1">
-              <h2 className="font-semibold text-sure-dark dark:text-gray-100">Witaj w Raporty SURE</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
-                Zacznij od kliknięcia <strong>„+ Nowy raport"</strong> i wybierz typ.
-                Twoje raporty zapisują się automatycznie w tej przeglądarce — żadnego logowania.
-                Po skończeniu pobierzesz paczkę ZIP (PDF + multimedia).
-              </p>
-              <button
-                onClick={dismissOnboarding}
-                className="mt-3 text-sm text-sure-blue font-medium hover:underline"
-              >
-                Rozumiem
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <section>
         <button
           onClick={() => navigate('new')}

@@ -7,6 +7,8 @@ import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
+import { ensureValidOrConfirm } from '../../utils/validateReport.js'
+import LoadingOverlay from '../common/LoadingOverlay.jsx'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -193,6 +195,7 @@ export default function CommissioningReport({ navigate, reportId }) {
     : 0
 
   const downloadPdf = async () => {
+    if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
       await generateCommissioningPackage(report)
@@ -493,6 +496,8 @@ export default function CommissioningReport({ navigate, reportId }) {
               onChange={(m) => setReport((r) => ({ ...r, generalMedia: m }))}
             />
           </div>
+
+          <LoadingOverlay visible={downloading} />
 
           <div className="action-bar">
             <div className="flex flex-col sm:flex-row gap-2">

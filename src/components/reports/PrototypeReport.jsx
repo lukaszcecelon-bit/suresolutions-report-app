@@ -5,12 +5,15 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import LoadingOverlay from '../common/LoadingOverlay.jsx'
+import SortableList from '../common/SortableList.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
+import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 
 const SAMPLE_METHOD_ITEMS = [
   { key: 'print3d', label: 'Druk 3D' },
@@ -149,6 +152,7 @@ export default function PrototypeReport({ navigate, reportId }) {
   }
 
   const downloadPdf = async () => {
+    if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
       await generatePrototypePackage(report)
@@ -289,16 +293,22 @@ export default function PrototypeReport({ navigate, reportId }) {
           )}
         </div>
         <div className="space-y-3">
-          {report.points.length === 0 && (
+          {report.points.length === 0 ? (
             <EmptyState
               icon="✅"
               title="Brak punktów kontrolnych"
-              hint="Dodaj punkty i oznacz ich wyniki (OK / NOK / Warunkowo)."
+              hint="Dodaj punkty i oznacz ich wyniki (OK / NOK / Warunkowo). ≡ pozwala zmieniać kolejność."
             />
-          )}
-          {report.points.map((p, i) => (
-            <div key={p.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+          ) : (
+          <SortableList
+            items={report.points}
+            onReorder={(newList) => setReport((r) => ({ ...r, points: newList }))}
+            getId={(p) => p.id}
+          >
+            {(p, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
+                {dragHandle}
                 <span className="index-badge">{i + 1}</span>
                 <input type="text" className="field-input flex-1"
                   placeholder="Opis punktu kontrolnego"
@@ -327,7 +337,9 @@ export default function PrototypeReport({ navigate, reportId }) {
                   onChange={(m) => updatePoint(p.id, { media: m })} />
               </div>
             </div>
-          ))}
+            )}
+          </SortableList>
+          )}
         </div>
         <button onClick={addPoint} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj punkt
@@ -387,6 +399,8 @@ export default function PrototypeReport({ navigate, reportId }) {
           media={report.media}
           onChange={(m) => setReport((r) => ({ ...r, media: m }))} />
       </div>
+
+      <LoadingOverlay visible={downloading} />
 
       <div className="action-bar">
         <div className="flex flex-col sm:flex-row gap-2">

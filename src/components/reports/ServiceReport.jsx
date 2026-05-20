@@ -5,6 +5,8 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import LoadingOverlay from '../common/LoadingOverlay.jsx'
+import SortableList from '../common/SortableList.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { useToast, useConfirm } from '../common/Toast.jsx'
@@ -15,6 +17,7 @@ import {
 import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateServicePackage } from '../../utils/pdfGenerator.js'
+import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 
 const CATEGORIES = ['Mechanika', 'Elektryka', 'Pneumatyka', 'Hydraulika', 'Software', 'Inne']
 
@@ -124,6 +127,7 @@ export default function ServiceReport({ navigate, reportId }) {
   }
 
   const downloadPdf = async () => {
+    if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
       await generateServicePackage(report)
@@ -186,16 +190,22 @@ export default function ServiceReport({ navigate, reportId }) {
           <span className="text-xs text-gray-500 dark:text-gray-400">{report.actions.length}</span>
         </div>
         <div className="space-y-3">
-          {report.actions.length === 0 && (
+          {report.actions.length === 0 ? (
             <EmptyState
               icon="🛠️"
               title="Brak czynności"
-              hint={'Kliknij „+ Dodaj czynność" poniżej aby dodać pierwszą.'}
+              hint={'Kliknij „+ Dodaj czynność" poniżej aby dodać pierwszą. Po dodaniu możesz przeciągać ≡ aby zmieniać kolejność.'}
             />
-          )}
-          {report.actions.map((a, i) => (
-            <div key={a.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+          ) : (
+          <SortableList
+            items={report.actions}
+            onReorder={(newList) => setReport((r) => ({ ...r, actions: newList }))}
+            getId={(a) => a.id}
+          >
+            {(a, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
+                {dragHandle}
                 <span className="index-badge">{i + 1}</span>
                 <select
                   className="field-input flex-1"
@@ -224,7 +234,9 @@ export default function ServiceReport({ navigate, reportId }) {
                 />
               </div>
             </div>
-          ))}
+            )}
+          </SortableList>
+          )}
         </div>
         <button onClick={addAction} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj czynność
@@ -237,16 +249,22 @@ export default function ServiceReport({ navigate, reportId }) {
           <span className="text-xs text-gray-500 dark:text-gray-400">{report.parts.length}</span>
         </div>
         <div className="space-y-3">
-          {report.parts.length === 0 && (
+          {report.parts.length === 0 ? (
             <EmptyState
               icon="🔩"
               title="Brak elementów"
-              hint="Dodaj części wymagające wymiany lub punkty wymagające obserwacji."
+              hint="Dodaj części wymagające wymiany lub punkty wymagające obserwacji. ≡ pozwala zmieniać kolejność."
             />
-          )}
-          {report.parts.map((p, i) => (
-            <div key={p.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+          ) : (
+          <SortableList
+            items={report.parts}
+            onReorder={(newList) => setReport((r) => ({ ...r, parts: newList }))}
+            getId={(p) => p.id}
+          >
+            {(p, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
+                {dragHandle}
                 <span className="index-badge">{i + 1}</span>
                 <SuggestInput type="text" className="field-input flex-1 min-w-0"
                   placeholder="Nazwa elementu"
@@ -275,7 +293,9 @@ export default function ServiceReport({ navigate, reportId }) {
                 value={p.comment}
                 onChange={(e) => updatePart(p.id, { comment: e.target.value })} />
             </div>
-          ))}
+            )}
+          </SortableList>
+          )}
         </div>
         <button onClick={addPart} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj element
@@ -316,6 +336,8 @@ export default function ServiceReport({ navigate, reportId }) {
           onChange={(m) => setReport((r) => ({ ...r, media: m }))}
         />
       </div>
+
+      <LoadingOverlay visible={downloading} />
 
       {/* Sticky action bar */}
       <div className="action-bar">

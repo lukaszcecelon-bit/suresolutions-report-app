@@ -7,6 +7,7 @@ import PrototypeReport from './components/reports/PrototypeReport.jsx'
 import SatFatReport from './components/reports/SatFatReport.jsx'
 import InstallPrompt from './components/common/InstallPrompt.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
+import OnboardingTour from './components/common/OnboardingTour.jsx'
 import { ToastProvider, useToast } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
 import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
@@ -50,7 +51,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.7</span>
+      <span>v0.8</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -129,6 +130,7 @@ function AppShell() {
 
       <UpdatePrompt />
       <InstallPrompt />
+      <OnboardingTour />
     </div>
   )
 }

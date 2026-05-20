@@ -5,6 +5,8 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import LoadingOverlay from '../common/LoadingOverlay.jsx'
+import SortableList from '../common/SortableList.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
@@ -12,6 +14,7 @@ import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateSatFatPackage } from '../../utils/pdfGenerator.js'
+import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 
 // FAT (Factory Acceptance Test) vs SAT (Site Acceptance Test): identyczna
 // struktura raportu, tylko inna etykieta i miejsce. Jeden komponent obsługuje oba,
@@ -197,6 +200,7 @@ export default function SatFatReport({ navigate, reportId }) {
   }
 
   const downloadPdf = async () => {
+    if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
       await generateSatFatPackage(report)
@@ -316,16 +320,22 @@ export default function SatFatReport({ navigate, reportId }) {
           </div>
         </div>
         <div className="space-y-3">
-          {report.tests.length === 0 && (
+          {report.tests.length === 0 ? (
             <EmptyState
               icon="🧪"
               title="Brak testów"
-              hint={'Kliknij „+ Dodaj test" poniżej. Listę budujesz na bieżąco — opis + kryterium + wynik.'}
+              hint={'Kliknij „+ Dodaj test" poniżej. Listę budujesz na bieżąco — opis + kryterium + wynik. Po dodaniu możesz przeciągać ≡ aby zmieniać kolejność.'}
             />
-          )}
-          {report.tests.map((t, i) => (
-            <div key={t.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+          ) : (
+          <SortableList
+            items={report.tests}
+            onReorder={(newList) => setReport((r) => ({ ...r, tests: newList }))}
+            getId={(t) => t.id}
+          >
+            {(t, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
+                {dragHandle}
                 <span className="index-badge">{i + 1}</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400 flex-1 truncate">
                   {t.description ? t.description.slice(0, 60) : 'Nowy test'}
@@ -379,7 +389,9 @@ export default function SatFatReport({ navigate, reportId }) {
                 />
               </div>
             </div>
-          ))}
+            )}
+          </SortableList>
+          )}
         </div>
         <button onClick={addTest} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj test
@@ -392,16 +404,22 @@ export default function SatFatReport({ navigate, reportId }) {
           <span className="text-xs text-gray-500 dark:text-gray-400">{report.punchlist.length}</span>
         </div>
         <div className="space-y-3">
-          {report.punchlist.length === 0 && (
+          {report.punchlist.length === 0 ? (
             <EmptyState
               icon="📝"
               title="Brak usterek"
               hint="Dodawaj uwagi do naprawy/uzupełnienia przed finalnym odbiorem (krytyczne / istotne / drobne)."
             />
-          )}
-          {report.punchlist.map((p, i) => (
-            <div key={p.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+          ) : (
+          <SortableList
+            items={report.punchlist}
+            onReorder={(newList) => setReport((r) => ({ ...r, punchlist: newList }))}
+            getId={(p) => p.id}
+          >
+            {(p, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
               <div className="flex items-center gap-2">
+                {dragHandle}
                 <span className="index-badge">{i + 1}</span>
                 <input
                   type="text"
@@ -430,7 +448,9 @@ export default function SatFatReport({ navigate, reportId }) {
                 onChange={(e) => updatePunchItem(p.id, { notes: e.target.value })}
               />
             </div>
-          ))}
+            )}
+          </SortableList>
+          )}
         </div>
         <button onClick={addPunchItem} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
           + Dodaj usterkę
@@ -514,6 +534,8 @@ export default function SatFatReport({ navigate, reportId }) {
           onChange={(m) => setReport((r) => ({ ...r, media: m }))}
         />
       </div>
+
+      <LoadingOverlay visible={downloading} />
 
       {/* Sticky action bar */}
       <div className="action-bar">
