@@ -126,6 +126,33 @@ export function cloneReport(source) {
     }
   }
 
+  if (source.type === 'satfat') {
+    return {
+      ...base,
+      testType: source.testType || 'fat',                  // keep — repeat odbioru same type
+      info: {
+        client: source.info?.client || '',                 // keep — same client
+        location: source.info?.location || '',             // keep — same site
+        referenceDoc: source.info?.referenceDoc || '',     // keep — same procedure
+      },
+      participants: {
+        // Keep participant lists but strip IDs — fresh entries on a new visit
+        client: (source.participants?.client || []).map((p) => ({
+          id: newId(), name: p.name || '', role: p.role || '',
+        })),
+        vendor: (source.participants?.vendor || []).map((p) => ({
+          id: newId(), name: p.name || '', role: p.role || '',
+        })),
+      },
+      tests: [],                                            // tests are per-session — never carry over
+      punchlist: [],                                        // ditto
+      finalStatus: 'accepted',
+      conclusions: '',
+      signatures: { clientName: '', clientDate: '', vendorName: '', vendorDate: '' },
+      media: [],
+    }
+  }
+
   if (source.type === 'prototype') {
     return {
       ...base,

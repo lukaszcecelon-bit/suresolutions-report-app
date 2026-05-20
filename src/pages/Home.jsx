@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
-import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage } from '../utils/pdfGenerator.js'
+import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage, generateSatFatPackage } from '../utils/pdfGenerator.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 
 const TYPE_LABELS = {
   commissioning: 'Uruchomienie / obserwacja maszyny',
   service: 'Serwis na obiekcie',
   prototype: 'Testy prototypu / podzespołu',
+  satfat: 'SAT / FAT — odbiór maszyny',
 }
 
 const TYPE_ICONS = {
   commissioning: '▶',
   service: '🔧',
   prototype: '🧪',
+  satfat: '📋',
 }
 
 const TYPE_FILTER_ITEMS = [
   { key: 'commissioning', label: '▶ Uruchomienie' },
   { key: 'service',       label: '🔧 Serwis' },
   { key: 'prototype',     label: '🧪 Prototyp' },
+  { key: 'satfat',        label: '📋 SAT/FAT' },
 ]
 
 const STATUS_FILTER_ITEMS = [
@@ -55,6 +58,13 @@ function getSearchableText(r) {
   } else if (r.type === 'commissioning') {
     push(r.observations); push(r.conclusions)
     for (const s of (r.stops || [])) { push(s.comment); push(s.customReason); push(s.reason) }
+  } else if (r.type === 'satfat') {
+    push(r.info?.client); push(r.info?.location); push(r.info?.referenceDoc)
+    push(r.conclusions)
+    for (const t of (r.tests || [])) { push(t.description); push(t.criterion); push(t.notes) }
+    for (const p of (r.punchlist || [])) { push(p.description); push(p.notes) }
+    for (const pp of (r.participants?.client || [])) { push(pp.name); push(pp.role) }
+    for (const pp of (r.participants?.vendor || [])) { push(pp.name); push(pp.role) }
   }
   return normalize(parts.join(' '))
 }
@@ -101,6 +111,7 @@ export default function Home({ navigate }) {
       if (r.type === 'commissioning') await generateCommissioningPackage(r)
       else if (r.type === 'service') await generateServicePackage(r)
       else if (r.type === 'prototype') await generatePrototypePackage(r)
+      else if (r.type === 'satfat') await generateSatFatPackage(r)
       else toast.info('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.')
       toast.success('Paczka pobrana')
     } catch (e) {
@@ -114,6 +125,7 @@ export default function Home({ navigate }) {
     if (r.type === 'commissioning') navigate(`commissioning/${r.id}`)
     else if (r.type === 'service') navigate(`service/${r.id}`)
     else if (r.type === 'prototype') navigate(`prototype/${r.id}`)
+    else if (r.type === 'satfat') navigate(`satfat/${r.id}`)
     else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
   }
 
@@ -125,6 +137,7 @@ export default function Home({ navigate }) {
     if (fresh.type === 'commissioning') navigate(`commissioning/${fresh.id}`)
     else if (fresh.type === 'service') navigate(`service/${fresh.id}`)
     else if (fresh.type === 'prototype') navigate(`prototype/${fresh.id}`)
+    else if (fresh.type === 'satfat') navigate(`satfat/${fresh.id}`)
   }
 
   // Sort by updatedAt desc (most recent first)

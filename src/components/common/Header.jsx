@@ -5,12 +5,14 @@ const TYPE_TITLES = {
   commissioning: 'Raport uruchomienia / obserwacji maszyny',
   service: 'Raport serwisu na obiekcie',
   prototype: 'Raport testów prototypu',
+  satfat: 'Raport odbioru SAT / FAT',
 }
 
 const TYPE_ICONS = {
   commissioning: '▶',
   service: '🔧',
   prototype: '🧪',
+  satfat: '📋',
 }
 
 // `requiredFields` (default: all) — which header fields are validated as required.

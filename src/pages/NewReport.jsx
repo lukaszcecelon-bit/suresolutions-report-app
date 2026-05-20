@@ -22,6 +22,13 @@ const TYPES = [
     desc: 'Iteracyjne testy podzespołów — każda iteracja jako osobny PDF.',
     path: 'prototype',
   },
+  {
+    key: 'satfat',
+    icon: '📋',
+    title: 'SAT / FAT — odbiór maszyny',
+    desc: 'Lista testów odbiorowych z punchlistą — live na placu / w fabryce.',
+    path: 'satfat',
+  },
 ]
 
 export default function NewReport({ navigate }) {

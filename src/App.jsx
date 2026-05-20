@@ -4,6 +4,7 @@ import NewReport from './pages/NewReport.jsx'
 import CommissioningReport from './components/reports/CommissioningReport.jsx'
 import ServiceReport from './components/reports/ServiceReport.jsx'
 import PrototypeReport from './components/reports/PrototypeReport.jsx'
+import SatFatReport from './components/reports/SatFatReport.jsx'
 import InstallPrompt from './components/common/InstallPrompt.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import { ToastProvider, useToast } from './components/common/Toast.jsx'
@@ -49,7 +50,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.5</span>
+      <span>v0.6</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -92,6 +93,7 @@ function AppShell() {
   else if (route.name === 'commissioning') page = <CommissioningReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'service') page = <ServiceReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'prototype') page = <PrototypeReport navigate={navigate} reportId={route.id} />
+  else if (route.name === 'satfat') page = <SatFatReport navigate={navigate} reportId={route.id} />
   else page = <Home navigate={navigate} />
 
   return (

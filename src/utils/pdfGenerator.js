@@ -93,6 +93,34 @@ const TYPE_TITLES = {
   commissioning: 'RAPORT URUCHOMIENIA / OBSERWACJI MASZYNY',
   service: 'RAPORT SERWISU NA OBIEKCIE',
   prototype: 'RAPORT TESTÓW PROTOTYPU',
+  satfat_fat: 'RAPORT ODBIORU FABRYCZNEGO (FAT)',
+  satfat_sat: 'RAPORT ODBIORU NA OBIEKCIE (SAT)',
+}
+
+const TEST_STATUS_LABELS = {
+  pass:        '✓ Zaliczony',
+  fail:        '✗ Niezaliczony',
+  conditional: '~ Warunkowo',
+  na:          '— N/A',
+}
+
+const TEST_STATUS_SLUGS = {
+  pass:        'PASS',
+  fail:        'FAIL',
+  conditional: 'COND',
+  na:          'NA',
+}
+
+const PUNCHLIST_PRIORITY_LABELS = {
+  critical: '🔴 Krytyczne',
+  major:    '🟡 Istotne',
+  minor:    '🟢 Drobne',
+}
+
+const FINAL_STATUS_LABELS = {
+  accepted:    '✓ Zaakceptowano',
+  conditional: '~ Zaakceptowano warunkowo',
+  rejected:    '✗ Odrzucono',
 }
 
 const POINT_RESULT_LABELS = {
@@ -142,6 +170,16 @@ function collectAllMedia(report) {
     })
     push(report.resultsMedia, 'Sekcja C — Wyniki testu (ogólne)', 'Sekcja-C_Wyniki')
     push(report.observationsMedia, 'Sekcja D — Obserwacje i wnioski', 'Sekcja-D_Obserwacje')
+    push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
+  } else if (report.type === 'satfat') {
+    ;(report.tests || []).forEach((t, idx) => {
+      const desc = t.description ? ' — ' + t.description.slice(0, 50) : ''
+      const ctxLabel = `Test #${idx + 1}${desc} (${TEST_STATUS_LABELS[t.status] || ''})`
+      const descSlug = t.description ? '_' + slugify(t.description) : ''
+      push(t.media,
+        ctxLabel,
+        `Test-${idx + 1}_${TEST_STATUS_SLUGS[t.status] || 'X'}${descSlug}`)
+    })
     push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
   }
 
@@ -366,7 +404,36 @@ const CSS = `
   }
   .badge.completed { background: #D1FAE5; color: #065F46; }
   .badge.warning   { background: #FEF3C7; color: #92400E; }
+  .badge.rejected  { background: #FEE2E2; color: #991B1B; }
   .badge.info      { background: #DBEAFE; color: #1E40AF; }
+
+  .info-card {
+    background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px;
+    padding: 10px 14px;
+  }
+
+  /* SAT/FAT signature blocks — two side-by-side boxes with a line for hand-signing */
+  .signatures {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin-top: 10px;
+  }
+  .sig-box {
+    border: 1px solid #D1D5DB; border-radius: 6px; padding: 16px 18px 14px;
+    background: #fff; min-height: 110px;
+  }
+  .sig-lbl {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #6B7280; font-weight: 600; margin-bottom: 26px;
+  }
+  .sig-line {
+    border-top: 1px solid #9CA3AF; margin-top: 8px; padding-top: 6px;
+  }
+  .sig-name {
+    font-size: 12px; color: #1F2937; font-weight: 600; min-height: 16px;
+  }
+  .sig-date {
+    font-size: 10px; color: #6B7280; margin-top: 2px; min-height: 12px;
+  }
 
   .photos {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
@@ -449,7 +516,7 @@ async function renderHtmlToBlob(html) {
     // IMPORTANT: measure ALL atomic-element bounds BEFORE html2canvas, so we use
     // the exact same layout that html2canvas will render. (Doing it after has
     // caused off-by-N-px discrepancies that produced visually clipped elements.)
-    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, h2'
+    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
@@ -942,6 +1009,206 @@ export async function generatePrototypePackage(report) {
   const iter = r.info?.iteration || 1
   const baseNum = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
   const baseName = `${baseNum}_test${iter}_${r.header?.date || 'data'}`
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  downloadBlob(pack.blob, pack.filename)
+}
+
+// ============================== SAT / FAT ==============================
+
+function buildSatFatHtml(report, photos, videos) {
+  const h = report.header || {}
+  const info = report.info || {}
+  const sigs = report.signatures || {}
+  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
+
+  const titleKey = report.testType === 'sat' ? 'satfat_sat' : 'satfat_fat'
+  const title = TYPE_TITLES[titleKey]
+
+  const passCount = (report.tests || []).filter((t) => t.status === 'pass').length
+  const failCount = (report.tests || []).filter((t) => t.status === 'fail').length
+  const condCount = (report.tests || []).filter((t) => t.status === 'conditional').length
+  const naCount   = (report.tests || []).filter((t) => t.status === 'na').length
+
+  const participantsHtml = (list) => {
+    if (!list || list.length === 0) {
+      return '<p class="empty">Nie podano osób.</p>'
+    }
+    return `
+      <table class="stops">
+        <thead>
+          <tr><th style="width:36px">Nr</th><th>Imię i nazwisko</th><th>Funkcja / stanowisko</th></tr>
+        </thead>
+        <tbody>
+          ${list.map((p, i) => `
+            <tr>
+              <td>${i + 1}</td>
+              <td>${esc(p.name || '—')}</td>
+              <td>${esc(p.role || '—')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `
+  }
+
+  const testsHtml = (report.tests || []).length > 0 ? `
+    <table class="stops">
+      <thead>
+        <tr>
+          <th style="width:36px">Nr</th>
+          <th>Opis testu / co testowane</th>
+          <th>Kryterium akceptacji</th>
+          <th style="width:110px">Wynik</th>
+          <th>Uwagi</th>
+          <th style="width:60px">Zdj.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(report.tests || []).map((t, i) => {
+          const photoCount = (t.media || []).filter((m) => m.kind === 'image').length
+          return `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${esc(t.description || '—').replace(/\n/g, '<br/>')}</td>
+            <td>${esc(t.criterion || '—')}</td>
+            <td>${esc(TEST_STATUS_LABELS[t.status] || '—')}</td>
+            <td>${esc(t.notes || '—').replace(/\n/g, '<br/>')}</td>
+            <td>${photoCount > 0 ? `📷 ${photoCount}` : '—'}</td>
+          </tr>
+        `}).join('')}
+      </tbody>
+    </table>
+  ` : '<p class="empty">Brak zdefiniowanych testów.</p>'
+
+  const punchHtml = (report.punchlist || []).length > 0 ? `
+    <table class="stops">
+      <thead>
+        <tr>
+          <th style="width:36px">Nr</th>
+          <th style="width:110px">Priorytet</th>
+          <th>Opis usterki</th>
+          <th>Uwagi</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(report.punchlist || []).map((p, i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${esc(PUNCHLIST_PRIORITY_LABELS[p.priority] || p.priority || '—')}</td>
+            <td>${esc(p.description || '—')}</td>
+            <td>${esc(p.notes || '—')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  ` : '<p class="empty">Brak usterek — wszystko OK.</p>'
+
+  // Pick a badge class for the final status banner
+  const finalBadgeClass =
+    report.finalStatus === 'accepted'    ? 'completed' :
+    report.finalStatus === 'conditional' ? 'warning'   :
+    report.finalStatus === 'rejected'    ? 'rejected'  : 'info'
+
+  return `
+  <div class="page">
+    <div class="hdr">
+      <div class="hdr-left">
+        <img src="${logoUrl}" class="logo" />
+      </div>
+      <div class="hdr-right">
+        <div class="title">${esc(title)}</div>
+        <div class="num">Nr: <strong>${esc(h.reportNumber || '—')}</strong></div>
+      </div>
+    </div>
+
+    <table class="meta">
+      <tr>
+        <td><span class="lbl">Projekt:</span> ${esc(h.projectName || '—')}</td>
+        <td><span class="lbl">Maszyna:</span> ${esc(h.machineName || '—')}</td>
+        <td><span class="lbl">Data:</span> ${esc(h.date || '—')}</td>
+      </tr>
+      <tr>
+        <td><span class="lbl">Autor:</span> ${esc(h.author || '—')}</td>
+        <td><span class="lbl">Typ odbioru:</span> <strong>${esc(report.testType === 'sat' ? 'SAT (na obiekcie)' : 'FAT (u producenta)')}</strong></td>
+        <td><span class="lbl">Status:</span> <span class="badge ${finalBadgeClass}">${esc(FINAL_STATUS_LABELS[report.finalStatus] || '—')}</span></td>
+      </tr>
+    </table>
+
+    <h2>A. Kontekst odbioru</h2>
+    <table class="meta">
+      <tr>
+        <td><span class="lbl">Klient:</span> ${esc(info.client || '—')}</td>
+        <td><span class="lbl">Lokalizacja:</span> ${esc(info.location || '—')}</td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="lbl">Dokument referencyjny:</span> ${esc(info.referenceDoc || '—')}</td>
+      </tr>
+    </table>
+
+    <h2>B. Uczestnicy odbioru</h2>
+    <div class="info-card">
+      <div class="lbl" style="margin-bottom:4px">Strona klienta</div>
+      ${participantsHtml(report.participants?.client)}
+    </div>
+    <div class="info-card" style="margin-top:10px">
+      <div class="lbl" style="margin-bottom:4px">Strona wykonawcy (SureSolutions)</div>
+      ${participantsHtml(report.participants?.vendor)}
+    </div>
+
+    <h2>C. Testy odbiorowe</h2>
+    <div class="stats">
+      <div class="stat"><div class="stat-lbl">Wszystkie</div><div class="stat-val">${report.tests?.length || 0}</div></div>
+      <div class="stat"><div class="stat-lbl">Zaliczone</div><div class="stat-val">${passCount}</div></div>
+      <div class="stat"><div class="stat-lbl">Warunkowo</div><div class="stat-val">${condCount}</div></div>
+      <div class="stat"><div class="stat-lbl">Niezaliczone</div><div class="stat-val">${failCount}</div></div>
+    </div>
+    ${naCount > 0 ? `<p class="note">Pominięte (N/A): ${naCount}</p>` : ''}
+    <div style="margin-top:10px"></div>
+    ${testsHtml}
+
+    <h2>D. Lista usterek (punchlist) (${report.punchlist?.length || 0})</h2>
+    ${punchHtml}
+
+    <h2>E. Status końcowy odbioru</h2>
+    <div style="margin-bottom:6px"><span class="badge ${finalBadgeClass}" style="font-size:13px;padding:6px 14px">${esc(FINAL_STATUS_LABELS[report.finalStatus] || '—')}</span></div>
+
+    <h2>F. Wnioski i komentarze</h2>
+    <div class="text-block">${esc(report.conclusions || '—').replace(/\n/g, '<br/>')}</div>
+
+    <h2>G. Podpisy stron</h2>
+    <div class="signatures">
+      <div class="sig-box">
+        <div class="sig-lbl">Strona klienta</div>
+        <div class="sig-line"></div>
+        <div class="sig-name">${esc(sigs.clientName || '')}</div>
+        <div class="sig-date">${esc(sigs.clientDate || '')}</div>
+      </div>
+      <div class="sig-box">
+        <div class="sig-lbl">Strona wykonawcy</div>
+        <div class="sig-line"></div>
+        <div class="sig-name">${esc(sigs.vendorName || '')}</div>
+        <div class="sig-date">${esc(sigs.vendorDate || '')}</div>
+      </div>
+    </div>
+
+    ${photosHtml}
+    ${videosHtml}
+
+    <div class="footer">
+      <span>Wygenerowano: ${nowStamp()}</span>
+    </div>
+  </div>
+  `
+}
+
+export async function generateSatFatPackage(report) {
+  const r = await resolveReportPhotos(report)
+  const { photos, videos } = collectAllMedia(r)
+  const html = buildSatFatHtml(r, photos, videos)
+  const pdfBlob = await renderHtmlToBlob(html)
+  const typeTag = (r.testType || 'fat').toUpperCase()
+  const baseNum = (r.header?.reportNumber || 'odbior').replace(/[^\w\-]+/g, '_')
+  const baseName = `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
   const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
   downloadBlob(pack.blob, pack.filename)
 }
