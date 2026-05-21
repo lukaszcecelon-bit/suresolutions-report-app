@@ -538,7 +538,10 @@ async function renderHtmlToBlob(html) {
     // IMPORTANT: measure ALL atomic-element bounds BEFORE html2canvas, so we use
     // the exact same layout that html2canvas will render. (Doing it after has
     // caused off-by-N-px discrepancies that produced visually clipped elements.)
-    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, .text-line, h2'
+    // `.text-block` chroni cały kawałek przed cięciem — jeśli mieści się w jednej stronie.
+    // Jeśli text-block jest za wysoki (filter `b - t <= fullPageHeightPx - 40` go wyklucza),
+    // dolny poziom granularności daje `.text-line` — każda linia osobno.
+    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
