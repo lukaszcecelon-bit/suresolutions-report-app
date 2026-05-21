@@ -236,6 +236,21 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
+// Każdy logiczny wiersz (rozdzielony \n) trafia do osobnego <div class="text-line">.
+// Dzięki temu algorytm łamania stron mierzy bounding rect KAŻDEJ linii osobno
+// i jeśli granica strony wypada w środku text-bloku, cofa się DO POCZĄTKU linii,
+// która by została pocięta — zamiast tnąć ją poziomo na pół.
+// Bez tego wszystkie linie text-bloku renderowane przez `.replace(/\n/g, '<br/>')`
+// były jednym ciągłym blokiem i slicer canvas tnął gdzie wypadnie.
+function textLines(s) {
+  if (s === null || s === undefined || !String(s).trim()) {
+    return '<div class="text-line">—</div>'
+  }
+  return String(s).split('\n').map((line) => {
+    return `<div class="text-line">${line ? esc(line) : '&nbsp;'}</div>`
+  }).join('')
+}
+
 function buildCommissioningHtml(report, photos, videos) {
   const h = report.header || {}
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
@@ -306,10 +321,10 @@ function buildCommissioningHtml(report, photos, videos) {
     ` : '<p class="empty">Brak zatrzymań — maszyna pracowała bez przestojów.</p>'}
 
     <h2>Obserwacje ogólne</h2>
-    <div class="text-block">${esc(report.observations || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.observations)}</div>
 
     <h2>Wnioski i rekomendacje</h2>
-    <div class="text-block">${esc(report.conclusions || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.conclusions)}</div>
 
     ${photosHtml}
     ${videosHtml}
@@ -392,9 +407,16 @@ const CSS = `
   table.stops tr:nth-child(even) td { background: #F9FAFB; }
 
   .text-block {
-    white-space: pre-wrap; background: #F9FAFB; border: 1px solid #E5E7EB;
+    background: #F9FAFB; border: 1px solid #E5E7EB;
     padding: 12px 14px; border-radius: 4px; min-height: 44px;
     font-size: 12.5px; line-height: 1.6;
+  }
+  /* Każda linia text-bloku jest osobnym blokiem — slicer canvas mierzy
+     ją indywidualnie i łamie strony POMIĘDZY liniami, nigdy w połowie. */
+  .text-line {
+    display: block;
+    line-height: 1.6;
+    min-height: 1em;
   }
   .empty { color: #9CA3AF; font-style: italic; padding: 8px 0; }
 
@@ -516,7 +538,7 @@ async function renderHtmlToBlob(html) {
     // IMPORTANT: measure ALL atomic-element bounds BEFORE html2canvas, so we use
     // the exact same layout that html2canvas will render. (Doing it after has
     // caused off-by-N-px discrepancies that produced visually clipped elements.)
-    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, h2'
+    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, .text-line, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
@@ -835,10 +857,10 @@ function buildServiceHtml(report, photos, videos) {
     ${partsHtml}
 
     <h2>D. Obserwacje własne</h2>
-    <div class="text-block">${esc(report.observations || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.observations)}</div>
 
     <h2>E. Rekomendacje</h2>
-    <div class="text-block">${esc(report.recommendations || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.recommendations)}</div>
 
     ${photosHtml}
     ${videosHtml}
@@ -967,10 +989,10 @@ function buildPrototypeHtml(report, photos, videos) {
         <td><span class="lbl">Metoda próbki:</span> ${esc(sampleMethod)}</td>
       </tr>
     </table>
-    <div class="text-block" style="margin-top:8px"><span class="lbl">Cel testu:</span><br/>${esc(info.goal || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block" style="margin-top:8px"><span class="lbl">Cel testu:</span>${textLines(info.goal)}</div>
 
     <h2>B. Warunki testu</h2>
-    <div class="text-block"><span class="lbl">Setup:</span><br/>${esc(cond.setup || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block"><span class="lbl">Setup:</span>${textLines(cond.setup)}</div>
     <div style="margin-top:8px"><span class="lbl">Parametry:</span></div>
     ${paramsHtml}
 
@@ -985,11 +1007,11 @@ function buildPrototypeHtml(report, photos, videos) {
     ${pointsHtml}
 
     <h2>D. Obserwacje i wnioski</h2>
-    <div class="text-block">${esc(report.observations || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.observations)}</div>
 
     <h2>E. Decyzja</h2>
     <div style="margin-bottom:6px"><strong>${esc(DECISION_LABELS[report.decision] || '—')}</strong></div>
-    <div class="text-block">${esc(report.decisionNotes || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.decisionNotes)}</div>
 
     ${photosHtml}
     ${videosHtml}
@@ -1173,7 +1195,7 @@ function buildSatFatHtml(report, photos, videos) {
     <div style="margin-bottom:6px"><span class="badge ${finalBadgeClass}" style="font-size:13px;padding:6px 14px">${esc(FINAL_STATUS_LABELS[report.finalStatus] || '—')}</span></div>
 
     <h2>F. Wnioski i komentarze</h2>
-    <div class="text-block">${esc(report.conclusions || '—').replace(/\n/g, '<br/>')}</div>
+    <div class="text-block">${textLines(report.conclusions)}</div>
 
     <h2>G. Podpisy stron</h2>
     <div class="signatures">
