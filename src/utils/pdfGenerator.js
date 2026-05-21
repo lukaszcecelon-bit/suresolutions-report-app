@@ -547,7 +547,27 @@ async function renderHtmlToBlob(html) {
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
       .map((el) => {
         const r = el.getBoundingClientRect()
-        return [r.top - nodeRect.top, r.bottom - nodeRect.top]
+        let bottom = r.bottom - nodeRect.top
+
+        // "Keep with next" dla nagłówków sekcji h2: rozszerz ich dolną granicę
+        // tak, żeby sięgała ZA początek pierwszego widocznego siblinga (treść
+        // sekcji). Dzięki temu jeśli pageEnd wypadnie MIĘDZY h2 a jego treścią
+        // (czyli h2 zostałby sam na poprzedniej stronie), algorytm wykryje
+        // konflikt i przeniesie h2 razem z treścią na nową stronę.
+        // +1px bo `bottom > pageEnd` to ostry warunek; przy bottom === pageEnd
+        // (np. pageEnd właśnie ustawiony na top siblinga) nie byłby konfliktu.
+        if (el.tagName === 'H2') {
+          let next = el.nextElementSibling
+          while (next && (next.offsetHeight === 0 || next.offsetWidth === 0)) {
+            next = next.nextElementSibling
+          }
+          if (next) {
+            const nextTopRel = next.getBoundingClientRect().top - nodeRect.top
+            bottom = Math.max(bottom, nextTopRel + 1)
+          }
+        }
+
+        return [r.top - nodeRect.top, bottom]
       })
 
     const canvas = await html2canvas(node, {
