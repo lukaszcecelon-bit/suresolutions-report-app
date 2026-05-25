@@ -9,6 +9,7 @@ import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import LoadingOverlay from '../common/LoadingOverlay.jsx'
+import { exportReportPackage, shareOrDownload, makePackageFilename } from '../../utils/syncPackage.js'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -89,6 +90,7 @@ export default function CommissioningReport({ navigate, reportId }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [downloading, setDownloading] = useState(false)
+  const [sending, setSending] = useState(false)
   const [attemptedStart, setAttemptedStart] = useState(false)
 
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
@@ -193,6 +195,21 @@ export default function CommissioningReport({ navigate, reportId }) {
   const activeStopMs = report.activeStop
     ? (Date.now() - new Date(report.activeStop.startAt))
     : 0
+
+  // Synchronizacja — paczka .suresync do przesłania na inne urządzenie.
+  const sendToDevice = async () => {
+    setSending(true)
+    try {
+      const blob = await exportReportPackage(report)
+      const filename = makePackageFilename(report)
+      await shareOrDownload(blob, filename, `Raport ${report.header?.reportNumber || ''}`)
+      toast.success('Paczka gotowa do przesłania')
+    } catch (e) {
+      toast.error('Błąd: ' + (e.message || e))
+    } finally {
+      setSending(false)
+    }
+  }
 
   const downloadPdf = async () => {
     if (!(await ensureValidOrConfirm(report, confirm))) return
@@ -507,6 +524,14 @@ export default function CommissioningReport({ navigate, reportId }) {
                 className="btn-primary flex-[2] text-base"
               >
                 {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
+              </button>
+              <button
+                onClick={sendToDevice}
+                disabled={sending}
+                className="btn-secondary flex-1"
+                title="Wyślij paczkę synchronizacyjną do innego urządzenia"
+              >
+                {sending ? '⏳ Pakowanie…' : '📤 Wyślij'}
               </button>
               <button onClick={() => navigate('')} className="btn-secondary flex-1">
                 Zapisz i wyjdź

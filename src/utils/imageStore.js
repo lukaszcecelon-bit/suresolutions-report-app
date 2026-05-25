@@ -110,6 +110,19 @@ export const getVideos = (ids) => getManyGeneric(STORE_VIDEOS, ids)
 export const deleteVideo = (id) => deleteManyGeneric(STORE_VIDEOS, [id])
 export const deleteVideos = (ids) => deleteManyGeneric(STORE_VIDEOS, ids)
 
+// Wstawia wideo z KONKRETNYM id (zamiast generować nowe) — używane przy
+// imporcie paczek synchronizacyjnych żeby zachować referencje z report.json.
+export async function replaceVideo(id, blob) {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_VIDEOS, 'readwrite')
+    tx.objectStore(STORE_VIDEOS).put(blob, id)
+    tx.oncomplete = () => resolve(id)
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
 // ---- Originals (Blob/File) — full-resolution photos used by ZIP package ----
 export const putOriginal = (blob) => putGeneric(STORE_ORIGINALS, blob, 'o')
 export const getOriginal = (id) => getGeneric(STORE_ORIGINALS, id)

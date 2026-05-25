@@ -1,0 +1,360 @@
+// Eksport / import paczek synchronizacyjnych (.suresync) — format ZIP.
+// Pozwala przenosić raporty między urządzeniami (np. telefon → komputer)
+// bez backendu: paczka → Web Share API (AirDrop / Mail / OneDrive / ...) →
+// import na drugim urządzeniu przez file picker.
+//
+// Dwa tryby paczki:
+//   - `single-report` — jeden raport + jego media (use case sync między urządzeniami)
+//   - `all-reports`   — wszystkie raporty + ich media (use case backup całej bazy)
+//
+// Format:
+// ┌─ {nazwa}.suresync (ZIP)
+// │   ├─ manifest.json           — format, version, bundleType, timestamp, stats
+// │   ├─ report.json             — pojedynczy raport (single-report mode)
+// │   │   ALBO
+// │   ├─ reports.json            — tablica wszystkich raportów (all-reports mode)
+// │   ├─ images/thumb_{id}.jpg   — kompresowane miniatury
+// │   ├─ originals/orig_{id}.ext — pełnowymiarowe oryginały zdjęć
+// │   └─ videos/{id}.ext         — pliki wideo
+
+import {
+  getImages, getOriginals, getVideos,
+  replaceImage, replaceOriginal, replaceVideo,
+} from './imageStore.js'
+import { collectMediaIds, loadAll, upsert, newId } from './storage.js'
+
+const FORMAT = 'suresync-v1'
+
+// ---------- Helpers ----------
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error || new Error('blob read failed'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+function extFromImageBlob(blob) {
+  if (!blob || !blob.type) return null
+  const m = blob.type.match(/^image\/([a-z0-9.+-]+)/i)
+  if (!m) return null
+  const sub = m[1].toLowerCase()
+  if (sub === 'jpeg') return 'jpg'
+  if (sub === 'svg+xml') return 'svg'
+  return sub
+}
+
+function extFromVideoBlob(blob) {
+  if (!blob || !blob.type) return null
+  if (/mp4|quicktime/i.test(blob.type)) return 'mp4'
+  if (/webm/i.test(blob.type)) return 'webm'
+  if (/3gpp/i.test(blob.type)) return '3gp'
+  if (/ogg/i.test(blob.type)) return 'ogv'
+  return 'mp4'
+}
+
+function slugForFilename(s) {
+  return (s || '')
+    .replace(/[ąĄ]/g, 'a').replace(/[ćĆ]/g, 'c').replace(/[ęĘ]/g, 'e')
+    .replace(/[łŁ]/g, 'l').replace(/[ńŃ]/g, 'n').replace(/[óÓ]/g, 'o')
+    .replace(/[śŚ]/g, 's').replace(/[źŹżŻ]/g, 'z')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+    .slice(0, 60)
+}
+
+// ---------- Adding media to ZIP ----------
+
+async function addMediaToZip(zip, mediaIds) {
+  // Photos (miniatury — stored as base64 dataURL stringów w IDB)
+  if (mediaIds.photos.size > 0) {
+    const images = await getImages(Array.from(mediaIds.photos))
+    const folder = zip.folder('images')
+    for (const [id, dataUrl] of images.entries()) {
+      const m = (dataUrl || '').match(/^data:image\/([a-z0-9.+-]+);base64,(.+)$/i)
+      if (!m) continue
+      const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase()
+      folder.file(`thumb_${id}.${ext}`, m[2], { base64: true })
+    }
+  }
+
+  // Originals (pełna rozdzielczość, stored as Blob)
+  if (mediaIds.originals.size > 0) {
+    const originals = await getOriginals(Array.from(mediaIds.originals))
+    const folder = zip.folder('originals')
+    for (const [id, blob] of originals.entries()) {
+      const ext = extFromImageBlob(blob) || 'jpg'
+      folder.file(`orig_${id}.${ext}`, blob)
+    }
+  }
+
+  // Videos (Blob)
+  if (mediaIds.videos.size > 0) {
+    const videos = await getVideos(Array.from(mediaIds.videos))
+    const folder = zip.folder('videos')
+    for (const [id, blob] of videos.entries()) {
+      const ext = extFromVideoBlob(blob) || 'mp4'
+      folder.file(`${id}.${ext}`, blob)
+    }
+  }
+}
+
+// ---------- Export single report ----------
+
+export async function exportReportPackage(report) {
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+  const mediaIds = collectMediaIds(report)
+
+  zip.file('manifest.json', JSON.stringify({
+    format: FORMAT,
+    bundleType: 'single-report',
+    exportedAt: new Date().toISOString(),
+    sourceUserAgent: navigator.userAgent,
+    reportId: report.id,
+    reportType: report.type,
+    reportNumber: report.header?.reportNumber || null,
+    updatedAt: report.updatedAt,
+    stats: {
+      photoCount: mediaIds.photos.size,
+      originalCount: mediaIds.originals.size,
+      videoCount: mediaIds.videos.size,
+    },
+  }, null, 2))
+
+  zip.file('report.json', JSON.stringify(report))
+
+  await addMediaToZip(zip, mediaIds)
+
+  return await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+}
+
+// ---------- Export all reports (backup) ----------
+
+export async function exportAllReportsPackage() {
+  const reports = loadAll()
+  const { default: JSZip } = await import('jszip')
+  const zip = new JSZip()
+
+  // Zbierz media ze wszystkich raportów do jednego zestawu
+  const allMedia = { photos: new Set(), originals: new Set(), videos: new Set() }
+  for (const r of reports) {
+    const m = collectMediaIds(r)
+    for (const id of m.photos) allMedia.photos.add(id)
+    for (const id of m.originals) allMedia.originals.add(id)
+    for (const id of m.videos) allMedia.videos.add(id)
+  }
+
+  zip.file('manifest.json', JSON.stringify({
+    format: FORMAT,
+    bundleType: 'all-reports',
+    exportedAt: new Date().toISOString(),
+    sourceUserAgent: navigator.userAgent,
+    reportCount: reports.length,
+    stats: {
+      photoCount: allMedia.photos.size,
+      originalCount: allMedia.originals.size,
+      videoCount: allMedia.videos.size,
+    },
+  }, null, 2))
+
+  zip.file('reports.json', JSON.stringify(reports))
+
+  await addMediaToZip(zip, allMedia)
+
+  return await zip.generateAsync({ type: 'blob', compression: 'STORE' })
+}
+
+// ---------- Import — odczyt manifestu ----------
+
+// Czyta paczkę z pliku i zwraca {zip, manifest, conflictingIds}.
+// conflictingIds — lista raportów o id które już istnieją lokalnie (do
+// pokazania UI conflict resolution).
+export async function readPackage(file) {
+  const { default: JSZip } = await import('jszip')
+  let zip
+  try {
+    zip = await JSZip.loadAsync(file)
+  } catch (e) {
+    throw new Error('Nie udało się otworzyć paczki — czy to jest plik .suresync?')
+  }
+
+  const manifestFile = zip.file('manifest.json')
+  if (!manifestFile) throw new Error('Paczka jest uszkodzona — brak manifest.json')
+
+  let manifest
+  try {
+    manifest = JSON.parse(await manifestFile.async('string'))
+  } catch (e) {
+    throw new Error('Manifest paczki nie jest prawidłowy JSON')
+  }
+
+  if (manifest.format !== FORMAT) {
+    throw new Error(`Nieobsługiwana wersja paczki: ${manifest.format} (apka obsługuje ${FORMAT})`)
+  }
+
+  // Wyciągnij dane raportu(ów) do podglądu w dialogu
+  let payload = null
+  if (manifest.bundleType === 'single-report') {
+    const rf = zip.file('report.json')
+    if (!rf) throw new Error('Paczka deklaruje single-report ale brak report.json')
+    const report = JSON.parse(await rf.async('string'))
+    payload = { mode: 'single', report }
+  } else if (manifest.bundleType === 'all-reports') {
+    const rf = zip.file('reports.json')
+    if (!rf) throw new Error('Paczka deklaruje all-reports ale brak reports.json')
+    const reports = JSON.parse(await rf.async('string'))
+    payload = { mode: 'all', reports }
+  } else {
+    throw new Error(`Nieznany bundleType: ${manifest.bundleType}`)
+  }
+
+  // Wykryj konflikty
+  const existing = loadAll()
+  const existingById = new Map(existing.map((r) => [r.id, r]))
+  const conflicts = []
+  const incomingReports = payload.mode === 'single' ? [payload.report] : payload.reports
+  for (const r of incomingReports) {
+    if (existingById.has(r.id)) {
+      conflicts.push({
+        id: r.id,
+        incoming: r,
+        existing: existingById.get(r.id),
+      })
+    }
+  }
+
+  return { zip, manifest, payload, conflicts }
+}
+
+// ---------- Import — restore media + raport(y) ----------
+
+// Odtwarza wszystkie media z paczki do IndexedDB.
+async function restoreMedia(zip) {
+  const files = zip.files
+
+  // Images (thumbnails) — odtwarzamy z base64 do dataURL
+  for (const filename of Object.keys(files)) {
+    const m = filename.match(/^images\/thumb_([^/]+)\.([a-z0-9]+)$/i)
+    if (!m) continue
+    const id = m[1]
+    const blob = await files[filename].async('blob')
+    const dataUrl = await blobToDataUrl(blob)
+    await replaceImage(id, dataUrl)
+  }
+
+  // Originals
+  for (const filename of Object.keys(files)) {
+    const m = filename.match(/^originals\/orig_([^/]+)\.([a-z0-9]+)$/i)
+    if (!m) continue
+    const id = m[1]
+    const blob = await files[filename].async('blob')
+    await replaceOriginal(id, blob)
+  }
+
+  // Videos
+  for (const filename of Object.keys(files)) {
+    const m = filename.match(/^videos\/([^/]+)\.([a-z0-9]+)$/i)
+    if (!m) continue
+    const id = m[1]
+    const blob = await files[filename].async('blob')
+    await replaceVideo(id, blob)
+  }
+}
+
+// Importuje paczkę — `resolutions` to obiekt mapujący id raportu → akcja
+// dla każdego konfliktu: 'overwrite' | 'copy' | 'skip'. Dla raportów które
+// nie istnieją lokalnie wstawiamy bezpośrednio.
+export async function importPackage(zip, payload, resolutions = {}) {
+  await restoreMedia(zip)
+
+  const incoming = payload.mode === 'single' ? [payload.report] : payload.reports
+  const existing = loadAll()
+  const existingById = new Map(existing.map((r) => [r.id, r]))
+
+  const imported = []
+  const skipped = []
+
+  for (const r of incoming) {
+    const isConflict = existingById.has(r.id)
+    const action = isConflict ? (resolutions[r.id] || 'skip') : 'overwrite'
+
+    if (action === 'skip') {
+      skipped.push(r)
+      continue
+    }
+
+    if (action === 'copy') {
+      const clone = {
+        ...r,
+        id: newId(),
+        status: r.status === 'completed' ? 'draft' : r.status,
+        header: {
+          ...r.header,
+          reportNumber: (r.header?.reportNumber || '') + ' (kopia)',
+        },
+        updatedAt: new Date().toISOString(),
+      }
+      upsert(clone)
+      imported.push(clone)
+    } else {
+      // 'overwrite' — replace existing (lub wstaw nowy jeśli nie istnieje)
+      upsert(r)
+      imported.push(r)
+    }
+  }
+
+  return { imported, skipped }
+}
+
+// ---------- Web Share API ----------
+
+// Próbuje udostępnić paczkę przez systemowe menu Share (AirDrop / Mail / etc).
+// Wraca true gdy się udało, false gdy przeglądarka nie wspiera lub user
+// anulował — wtedy caller robi fallback do downloadu.
+export async function shareOrDownload(blob, filename, title) {
+  const file = new File([blob], filename, { type: 'application/zip' })
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({
+        title: title || filename,
+        text: 'Paczka synchronizacyjna raportu — otwórz w aplikacji Raporty SURE.',
+        files: [file],
+      })
+      return true
+    } catch (e) {
+      // User anulował share sheet — to NIE error, po prostu zignoruj
+      if (e.name === 'AbortError') return false
+      // Inne błędy: fallback do download
+      console.warn('Web Share failed, falling back to download:', e)
+    }
+  }
+
+  // Fallback: download
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+    a.remove()
+  }, 200)
+  return false
+}
+
+export function makePackageFilename(report) {
+  const num = slugForFilename(report.header?.reportNumber || 'raport')
+  const date = report.header?.date || new Date().toISOString().slice(0, 10)
+  return `${num}_${date}.suresync`
+}
+
+export function makeBackupFilename() {
+  const stamp = new Date().toISOString().slice(0, 10)
+  return `raporty-sure-backup_${stamp}.suresync`
+}

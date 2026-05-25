@@ -14,6 +14,7 @@ import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
+import { exportReportPackage, shareOrDownload, makePackageFilename } from '../../utils/syncPackage.js'
 
 const SAMPLE_METHOD_ITEMS = [
   { key: 'print3d', label: 'Druk 3D' },
@@ -93,6 +94,7 @@ export default function PrototypeReport({ navigate, reportId }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [downloading, setDownloading] = useState(false)
+  const [sending, setSending] = useState(false)
 
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
@@ -149,6 +151,22 @@ export default function PrototypeReport({ navigate, reportId }) {
     }))) return
     setReport((r) => ({ ...r, status: 'completed' }))
     toast.success('Raport oznaczony jako ukończony')
+  }
+
+  // Synchronizacja — paczka .suresync do przesłania na inne urządzenie
+  // (np. telefon → komputer). Web Share API → systemowe menu Udostępnij.
+  const sendToDevice = async () => {
+    setSending(true)
+    try {
+      const blob = await exportReportPackage(report)
+      const filename = makePackageFilename(report)
+      await shareOrDownload(blob, filename, `Raport ${report.header?.reportNumber || ''}`)
+      toast.success('Paczka gotowa do przesłania')
+    } catch (e) {
+      toast.error('Błąd: ' + (e.message || e))
+    } finally {
+      setSending(false)
+    }
   }
 
   const downloadPdf = async () => {
@@ -416,6 +434,14 @@ export default function PrototypeReport({ navigate, reportId }) {
               ✓ Oznacz ukończony
             </button>
           )}
+          <button
+            onClick={sendToDevice}
+            disabled={sending}
+            className="btn-secondary flex-1"
+            title="Wyślij paczkę synchronizacyjną do innego urządzenia"
+          >
+            {sending ? '⏳ Pakowanie…' : '📤 Wyślij'}
+          </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź
           </button>

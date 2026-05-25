@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
 import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage, generateSatFatPackage } from '../utils/pdfGenerator.js'
+import { exportAllReportsPackage, shareOrDownload, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
+import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
 
 const TYPE_LABELS = {
   commissioning: 'Uruchomienie / obserwacja maszyny',
@@ -75,6 +77,9 @@ export default function Home({ navigate }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState(new Set())
   const [statusFilter, setStatusFilter] = useState(new Set())
+  const [importFile, setImportFile] = useState(null)        // wybrany .suresync do importu (modal)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const importInput = useRef(null)
 
   const toast = useToast()
   const confirm = useConfirm()
@@ -84,6 +89,40 @@ export default function Home({ navigate }) {
   }, [])
 
   const refresh = () => setReports(loadAll())
+
+  // Sync — import paczki przez file picker.
+  const handleImportClick = () => importInput.current?.click()
+  const handleImportFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportFile(file)
+    // Reset value żeby user mógł wybrać ten sam plik ponownie (np. po anulowaniu)
+    e.target.value = ''
+  }
+  const handleImported = (result) => {
+    refresh()
+    if (result.imported.length > 0) {
+      toast.success(`Zaimportowano ${result.imported.length} raport(ów)`)
+    }
+  }
+
+  // Backup wszystkich raportów do jednej paczki .suresync.
+  const handleBackup = async () => {
+    if (reports.length === 0) {
+      toast.info('Brak raportów do backupu')
+      return
+    }
+    setBackupBusy(true)
+    try {
+      const blob = await exportAllReportsPackage()
+      await shareOrDownload(blob, makeBackupFilename(), `Backup raportów SURE (${reports.length})`)
+      toast.success('Backup gotowy')
+    } catch (e) {
+      toast.error('Błąd backupu: ' + (e.message || e))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   const handleDelete = async (r) => {
     const ok = await confirm(`Usunąć raport „${r.header?.reportNumber || 'bez numeru'}"? Tej operacji nie można cofnąć.`, {
@@ -171,13 +210,40 @@ export default function Home({ navigate }) {
 
   return (
     <div className="space-y-6">
-      <section>
+      <section className="space-y-2">
         <button
           onClick={() => navigate('new')}
           className="w-full btn-primary text-lg py-6 shadow-sm"
         >
           + Nowy raport
         </button>
+        {/* Synchronizacja między urządzeniami — eksport pojedynczego raportu jest
+            w sticky bar wewnątrz raportu. Tu na Home: import nowego raportu z paczki
+            i backup wszystkich naraz. */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleImportClick}
+            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+            title="Wczytaj paczkę .suresync z innego urządzenia"
+          >
+            📥 Importuj raport
+          </button>
+          <button
+            onClick={handleBackup}
+            disabled={backupBusy || reports.length === 0}
+            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+            title="Eksportuj wszystkie raporty + media do jednej paczki .suresync"
+          >
+            {backupBusy ? '⏳ Pakowanie…' : '💾 Backup wszystko'}
+          </button>
+        </div>
+        <input
+          ref={importInput}
+          type="file"
+          accept=".suresync,.zip,application/zip"
+          onChange={handleImportFileChange}
+          className="hidden"
+        />
       </section>
 
       <section>
@@ -347,6 +413,14 @@ export default function Home({ navigate }) {
           </div>
         )}
       </section>
+
+      {importFile && (
+        <PackageImportDialog
+          file={importFile}
+          onClose={() => setImportFile(null)}
+          onImported={handleImported}
+        />
+      )}
     </div>
   )
 }
