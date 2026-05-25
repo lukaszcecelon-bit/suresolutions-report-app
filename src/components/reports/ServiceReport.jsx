@@ -18,7 +18,7 @@ import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateServicePackage } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import { exportReportPackage, shareOrDownload, makePackageFilename } from '../../utils/syncPackage.js'
+import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
 const CATEGORIES = ['Mechanika', 'Elektryka', 'Pneumatyka', 'Hydraulika', 'Software', 'Inne']
 
@@ -128,16 +128,24 @@ export default function ServiceReport({ navigate, reportId }) {
     toast.success('Raport oznaczony jako ukończony')
   }
 
-  // Synchronizacja — paczka .suresync z całym raportem + mediami do przesłania
-  // na inne urządzenie (np. telefon → komputer). Web Share API odpala systemowe
-  // menu Udostępnij (AirDrop/Mail/OneDrive); fallback: download.
-  const sendToDevice = async () => {
+  // Synchronizacja — paczka sync z całym raportem + mediami do przesłania
+  // na inne urządzenie. `forceDownload=false` → Web Share API (AirDrop/Mail/
+  // OneDrive systemowo). `forceDownload=true` → zawsze zapisz lokalnie (Files
+  // apka na iOS, "Pobrane" na Windows). Drugi tryb użyteczny gdy share sheet
+  // nie pokazuje wszystkich oczekiwanych apek (np. OneDrive iOS w niektórych
+  // konfiguracjach).
+  const sendToDevice = async (forceDownload = false) => {
     setSending(true)
     try {
       const blob = await exportReportPackage(report)
       const filename = makePackageFilename(report)
-      await shareOrDownload(blob, filename, `Raport ${report.header?.reportNumber || ''}`)
-      toast.success('Paczka gotowa do przesłania')
+      if (forceDownload) {
+        downloadBlob(blob, filename)
+        toast.success('Plik zapisany lokalnie')
+      } else {
+        await shareOrDownload(blob, filename)
+        toast.success('Paczka gotowa do przesłania')
+      }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
@@ -374,12 +382,20 @@ export default function ServiceReport({ navigate, reportId }) {
             </button>
           )}
           <button
-            onClick={sendToDevice}
+            onClick={() => sendToDevice(false)}
             disabled={sending}
             className="btn-secondary flex-1"
-            title="Wyślij paczkę synchronizacyjną do innego urządzenia"
+            title="Udostępnij paczkę przez systemowe menu (AirDrop/Mail/OneDrive)"
           >
-            {sending ? '⏳ Pakowanie…' : '📤 Wyślij'}
+            {sending ? '⏳' : '📤 Wyślij'}
+          </button>
+          <button
+            onClick={() => sendToDevice(true)}
+            disabled={sending}
+            className="btn-secondary flex-1"
+            title="Pobierz paczkę jako plik (do Pobranych/Files)"
+          >
+            {sending ? '⏳' : '💾 Pobierz plik'}
           </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź

@@ -9,7 +9,7 @@ import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import LoadingOverlay from '../common/LoadingOverlay.jsx'
-import { exportReportPackage, shareOrDownload, makePackageFilename } from '../../utils/syncPackage.js'
+import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -196,14 +196,19 @@ export default function CommissioningReport({ navigate, reportId }) {
     ? (Date.now() - new Date(report.activeStop.startAt))
     : 0
 
-  // Synchronizacja — paczka .suresync do przesłania na inne urządzenie.
-  const sendToDevice = async () => {
+  // Sync paczka. forceDownload=true → zawsze lokalnie. Patrz ServiceReport.
+  const sendToDevice = async (forceDownload = false) => {
     setSending(true)
     try {
       const blob = await exportReportPackage(report)
       const filename = makePackageFilename(report)
-      await shareOrDownload(blob, filename, `Raport ${report.header?.reportNumber || ''}`)
-      toast.success('Paczka gotowa do przesłania')
+      if (forceDownload) {
+        downloadBlob(blob, filename)
+        toast.success('Plik zapisany lokalnie')
+      } else {
+        await shareOrDownload(blob, filename)
+        toast.success('Paczka gotowa do przesłania')
+      }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
@@ -526,12 +531,20 @@ export default function CommissioningReport({ navigate, reportId }) {
                 {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
               </button>
               <button
-                onClick={sendToDevice}
+                onClick={() => sendToDevice(false)}
                 disabled={sending}
                 className="btn-secondary flex-1"
-                title="Wyślij paczkę synchronizacyjną do innego urządzenia"
+                title="Udostępnij paczkę przez systemowe menu (AirDrop/Mail/OneDrive)"
               >
-                {sending ? '⏳ Pakowanie…' : '📤 Wyślij'}
+                {sending ? '⏳' : '📤 Wyślij'}
+              </button>
+              <button
+                onClick={() => sendToDevice(true)}
+                disabled={sending}
+                className="btn-secondary flex-1"
+                title="Pobierz paczkę jako plik (do Pobranych/Files)"
+              >
+                {sending ? '⏳' : '💾 Pobierz plik'}
               </button>
               <button onClick={() => navigate('')} className="btn-secondary flex-1">
                 Zapisz i wyjdź

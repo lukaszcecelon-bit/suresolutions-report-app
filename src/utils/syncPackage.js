@@ -312,29 +312,10 @@ export async function importPackage(zip, payload, resolutions = {}) {
 
 // ---------- Web Share API ----------
 
-// Próbuje udostępnić paczkę przez systemowe menu Share (AirDrop / Mail / etc).
-// Wraca true gdy się udało, false gdy przeglądarka nie wspiera lub user
-// anulował — wtedy caller robi fallback do downloadu.
-export async function shareOrDownload(blob, filename, title) {
-  const file = new File([blob], filename, { type: 'application/zip' })
-
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try {
-      await navigator.share({
-        title: title || filename,
-        text: 'Paczka synchronizacyjna raportu — otwórz w aplikacji Raporty SURE.',
-        files: [file],
-      })
-      return true
-    } catch (e) {
-      // User anulował share sheet — to NIE error, po prostu zignoruj
-      if (e.name === 'AbortError') return false
-      // Inne błędy: fallback do download
-      console.warn('Web Share failed, falling back to download:', e)
-    }
-  }
-
-  // Fallback: download
+// Czysty download — zapisuje plik lokalnie przez `<a download>`. Na iOS plik
+// trafia do Files apki (skąd user może przesunąć do dowolnego File Providera
+// w tym OneDrive). Wywoływane bezpośrednio gdy user wybiera "Zapisz plik".
+export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -345,6 +326,31 @@ export async function shareOrDownload(blob, filename, title) {
     URL.revokeObjectURL(url)
     a.remove()
   }, 200)
+}
+
+// Próbuje udostępnić paczkę przez systemowe menu Share (AirDrop / Mail / etc).
+// Wraca true gdy się udało, false gdy przeglądarka nie wspiera lub user
+// anulował — wtedy caller robi fallback do downloadu.
+//
+// UWAGA dla iOS: przekazujemy TYLKO `files` (bez `title`/`text`). Na iPhone
+// dorzucenie `text` powoduje że niektóre apki (OneDrive, Drive, Dropbox)
+// filtrują się ze share sheet, bo traktują share jako "tekst + plik" i nie
+// wspierają takiego mieszanego payload. Czysty file-only share daje pełną
+// listę kompatybilnych apek.
+export async function shareOrDownload(blob, filename /* , title — usunięte */) {
+  const file = new File([blob], filename, { type: 'application/zip' })
+
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] })
+      return true
+    } catch (e) {
+      if (e.name === 'AbortError') return false
+      console.warn('Web Share failed, falling back to download:', e)
+    }
+  }
+
+  downloadBlob(blob, filename)
   return false
 }
 
