@@ -348,13 +348,19 @@ export async function shareOrDownload(blob, filename, title) {
   return false
 }
 
+// Nazwa pliku eksportu: `sync_` prefix + numer + data + `.zip`.
+// Używamy `.zip` (nie `.suresync`) bo iOS Share Sheet pokazuje tylko apki
+// które wspierają zarejestrowany UTI typu pliku. `.suresync` jest nieznane
+// systemowi → OneDrive/Drive/Dropbox iOS go ignorują w share sheet.
+// `.zip` ma znany UTI `public.zip-archive` → każda apka akceptuje.
+// Weryfikacja "czy to nasza paczka" idzie przez manifest.json wewnątrz ZIP.
 export function makePackageFilename(report) {
   const num = slugForFilename(report.header?.reportNumber || 'raport')
   const date = report.header?.date || new Date().toISOString().slice(0, 10)
-  return `${num}_${date}.suresync`
+  return `sync_${num}_${date}.zip`
 }
 
 export function makeBackupFilename() {
   const stamp = new Date().toISOString().slice(0, 10)
-  return `raporty-sure-backup_${stamp}.suresync`
+  return `backup_raporty-sure_${stamp}.zip`
 }
