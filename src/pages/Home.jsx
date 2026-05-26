@@ -74,6 +74,11 @@ function getSearchableText(r) {
 export default function Home({ navigate }) {
   const [reports, setReports] = useState([])
   const [busyId, setBusyId] = useState(null)
+  // `queryInput` = co user właśnie pisze (controlled input bez opóźnienia)
+  // `query` = wartość użyta do filtrowania (debounced 150ms)
+  // Dzięki temu typing w search nie triggeruje re-filter przy każdej literze
+  // — przy dużej liście raportów (100+) to redukuje typing lag.
+  const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState(new Set())
   const [statusFilter, setStatusFilter] = useState(new Set())
@@ -87,6 +92,12 @@ export default function Home({ navigate }) {
   useEffect(() => {
     setReports(loadAll())
   }, [])
+
+  // Debounce search input → query (150ms idle).
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(queryInput), 150)
+    return () => clearTimeout(t)
+  }, [queryInput])
 
   const refresh = () => setReports(loadAll())
 
@@ -257,14 +268,14 @@ export default function Home({ navigate }) {
                 type="search"
                 inputMode="search"
                 placeholder="🔍 Szukaj (numer, projekt, klient, treść…)"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={queryInput}
+                onChange={(e) => setQueryInput(e.target.value)}
                 className="field-input pr-10"
               />
-              {query && (
+              {queryInput && (
                 <button
                   type="button"
-                  onClick={() => setQuery('')}
+                  onClick={() => { setQueryInput(''); setQuery('') }}
                   className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 text-xs"
                   aria-label="Wyczyść"
                 >✕</button>
@@ -310,7 +321,7 @@ export default function Home({ navigate }) {
               })}
               {hasFiltersActive && (
                 <button
-                  onClick={() => { setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+                  onClick={() => { setQueryInput(''); setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
                   className="ml-auto text-xs text-sure-blue px-2 py-1.5 hover:underline"
                 >
                   Wyczyść filtry
@@ -332,7 +343,7 @@ export default function Home({ navigate }) {
         ) : filtered.length === 0 ? (
           <div className="card text-center text-gray-500 dark:text-gray-400">
             Nic nie pasuje do bieżących filtrów. Zmień zapytanie lub
-            <button onClick={() => { setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+            <button onClick={() => { setQueryInput(''); setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
               className="ml-1 text-sure-blue underline">wyczyść filtry</button>.
           </div>
         ) : (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { compressImageBlob } from '../../utils/imageCompressor.js'
 import { newId } from '../../utils/storage.js'
 import {
@@ -6,7 +6,12 @@ import {
   putVideo, deleteVideo,
   putOriginal, getOriginal, deleteOriginal, replaceOriginal,
 } from '../../utils/imageStore.js'
-import PhotoAnnotator from './PhotoAnnotator.jsx'
+
+// Lazy-load PhotoAnnotator — używane TYLKO po tapnięciu w miniaturę, a kod
+// (~12 KB + zależności canvas) niepotrzebnie obciążał initial bundle.
+// Po lazy: PhotoAnnotator jest w osobnym chunku, ładowany on-demand przy
+// pierwszym otwarciu edytora.
+const PhotoAnnotator = lazy(() => import('./PhotoAnnotator.jsx'))
 
 function fmtSize(bytes) {
   if (!bytes && bytes !== 0) return ''
@@ -293,11 +298,17 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
       )}
 
       {annotatorSrc && (
-        <PhotoAnnotator
-          source={annotatorSrc}
-          onCancel={closeAnnotator}
-          onSave={onAnnotationSave}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center">
+            <div className="w-12 h-12 border-4 border-sure-blue/30 border-t-sure-blue rounded-full animate-spin" />
+          </div>
+        }>
+          <PhotoAnnotator
+            source={annotatorSrc}
+            onCancel={closeAnnotator}
+            onSave={onAnnotationSave}
+          />
+        </Suspense>
       )}
 
       {videoItems.length > 0 && (
