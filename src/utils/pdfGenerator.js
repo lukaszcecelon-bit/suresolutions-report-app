@@ -541,7 +541,11 @@ async function renderHtmlToBlob(html) {
     // `.text-block` chroni cały kawałek przed cięciem — jeśli mieści się w jednej stronie.
     // Jeśli text-block jest za wysoki (filter `b - t <= fullPageHeightPx - 40` go wyklucza),
     // dolny poziom granularności daje `.text-line` — każda linia osobno.
-    const NO_BREAK_SELECTORS = '.photo, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
+    //
+    // Tabele: `table` chroni całą tabelę jako jeden blok (gdy się mieści), `thead`
+    // chroni sam nagłówek przed cięciem horyzontalnym, `tbody tr` per-wiersz.
+    // Dla dużych tabel filter wyklucza `table`, ale thead + per-row nadal działa.
+    const NO_BREAK_SELECTORS = '.photo, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
@@ -563,6 +567,21 @@ async function renderHtmlToBlob(html) {
           }
           if (next) {
             const nextTopRel = next.getBoundingClientRect().top - nodeRect.top
+            bottom = Math.max(bottom, nextTopRel + 1)
+          }
+        }
+
+        // Analogicznie dla <thead>: rozszerz dolną granicę do top pierwszego
+        // <tbody tr> w tej samej tabeli. Bez tego thead mógłby zostać sam na
+        // końcu strony 1, a pierwszy wiersz danych szedłby na stronę 2 —
+        // wygląda jak zerwany nagłówek tabeli. Z tym fixem thead idzie razem
+        // z pierwszym wierszem (i wszelkie kolejne wiersze już mają własną
+        // ochronę przez `tbody tr` w NO_BREAK_SELECTORS).
+        if (el.tagName === 'THEAD') {
+          const table = el.closest('table')
+          const firstBodyTr = table?.querySelector('tbody tr')
+          if (firstBodyTr) {
+            const nextTopRel = firstBodyTr.getBoundingClientRect().top - nodeRect.top
             bottom = Math.max(bottom, nextTopRel + 1)
           }
         }
