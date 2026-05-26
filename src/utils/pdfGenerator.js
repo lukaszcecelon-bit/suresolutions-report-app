@@ -71,22 +71,110 @@ function downloadBlob(blob, filename) {
   }, 200)
 }
 
-function deepCloneWithPhotos(value, resolved) {
-  if (value === null || typeof value !== 'object') return value
-  if (Array.isArray(value)) return value.map((v) => deepCloneWithPhotos(v, resolved))
-  const out = {}
-  for (const k of Object.keys(value)) out[k] = deepCloneWithPhotos(value[k], resolved)
-  if (out.kind === 'image' && !out.dataUrl && out.photoId && resolved.has(out.photoId)) {
-    out.dataUrl = resolved.get(out.photoId)
-  }
-  return out
+// Downsample Blob (oryginał z IDB) do dataURL o limitowanych wymiarach.
+// Używane dla PDF embed — pełne oryginały (3000×4000+ z telefonu) są za duże,
+// a thumbnaile (400×300) za małe przy scale 3 (pikselacja). Medium-res
+// (1200×900 jpeg 0.88) to optymalny kompromis: ostre na A4 print, plik PDF
+// rośnie umiarkowanie. Każde zdjęcie ~150-250 KB embedded vs ~2-5 MB original.
+async function downsampleBlobToDataUrl(blob, maxW = 1200, maxH = 900, quality = 0.88) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob)
+    const img = new Image()
+    img.onload = () => {
+      try {
+        let w = img.naturalWidth
+        let h = img.naturalHeight
+        const ratio = Math.min(maxW / w, maxH / h, 1)
+        w = Math.round(w * ratio)
+        h = Math.round(h * ratio)
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        // imageSmoothingQuality 'high' daje znacznie lepszy downsampling
+        // (Lanczos-like) vs domyślny bilinear — istotne przy zmianie 3000→1200.
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      } catch (e) {
+        reject(e)
+      } finally {
+        URL.revokeObjectURL(url)
+      }
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('downsample: image load failed'))
+    }
+    img.src = url
+  })
 }
 
+// In-place collector — zbiera wszystkie itemy {kind: 'image'} z drzewa raportu.
+// Każdy item zostaje referencyjnie ten sam, więc można na nim potem mutować
+// `dataUrl` i zmiana propaguje się do całej struktury.
+function collectImageItemsInPlace(value, out) {
+  if (value === null || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const v of value) collectImageItemsInPlace(v, out)
+    return
+  }
+  if (value.kind === 'image') out.push(value)
+  for (const k of Object.keys(value)) collectImageItemsInPlace(value[k], out)
+}
+
+// Resolver zdjęć dla PDF embed. Strategia:
+//  1. Najpierw spróbuj użyć ORYGINAŁU (z IDB STORE_ORIGINALS) downsamplowanego
+//     do medium-res 1200×900 — daje ostry render na A4 z scale 3.
+//  2. Fallback do THUMBNAIL (400×300 z STORE_IMAGES) dla starszych raportów
+//     które nie mają zapisanego oryginału (legacy przed v0.6).
+//
+// Klonuje raport (deep clone via JSON), żeby nie mutować oryginalnego stanu
+// w localStorage. Mutacja `dataUrl` per-item w sklonowanym drzewie.
 async function resolveReportPhotos(report) {
-  const ids = Array.from(collectPhotoIds(report))
-  if (ids.length === 0) return report
-  const map = await getImages(ids)
-  return deepCloneWithPhotos(report, map)
+  // Deep clone — nie chcemy mutować oryginalnego report w localStorage
+  const clone = JSON.parse(JSON.stringify(report))
+
+  const imageItems = []
+  collectImageItemsInPlace(clone, imageItems)
+  if (imageItems.length === 0) return clone
+
+  // Pobierz oryginały w jednym batchu
+  const originalIds = imageItems
+    .map((m) => m.originalId)
+    .filter(Boolean)
+  const originalsMap = originalIds.length > 0
+    ? await getOriginals(originalIds)
+    : new Map()
+
+  // Lista photoIds dla których trzeba użyć fallback (thumbnail)
+  const fallbackThumbIds = imageItems
+    .filter((m) => !m.originalId || !originalsMap.has(m.originalId))
+    .map((m) => m.photoId)
+    .filter(Boolean)
+  const thumbsMap = fallbackThumbIds.length > 0
+    ? await getImages(fallbackThumbIds)
+    : new Map()
+
+  // Set dataUrl per item — medium-res z oryginału (preferred) albo thumbnail
+  for (const m of imageItems) {
+    if (m.dataUrl) continue // jakimś cudem już ustawione, nie ruszamy
+    if (m.originalId && originalsMap.has(m.originalId)) {
+      try {
+        m.dataUrl = await downsampleBlobToDataUrl(originalsMap.get(m.originalId))
+      } catch (e) {
+        console.warn('downsample failed, falling back to thumbnail', e)
+        if (m.photoId && thumbsMap.has(m.photoId)) {
+          m.dataUrl = thumbsMap.get(m.photoId)
+        }
+      }
+    } else if (m.photoId && thumbsMap.has(m.photoId)) {
+      m.dataUrl = thumbsMap.get(m.photoId)
+    }
+  }
+
+  return clone
 }
 
 const TYPE_TITLES = {
@@ -589,8 +677,13 @@ async function renderHtmlToBlob(html) {
         return [r.top - nodeRect.top, bottom]
       })
 
+    // scale: 3 → dla source HTML 794px daje canvas 2382px → 288 DPI na A4.
+    // To poziom "print quality" (vs 192 DPI z scale 2). Tekst i tabele ostre,
+    // brak pikselacji nawet przy zoomie 200% w czytniku PDF. Trade-off:
+    // plik PDF urośnie ~2× (np. 1.3 MB → 2.6 MB dla typowego raportu),
+    // ale akceptowalne dla raportów typowo 1-5 MB do wysłania mailem.
     const canvas = await html2canvas(node, {
-      scale: 2,
+      scale: 3,
       backgroundColor: '#ffffff',
       useCORS: true,
       logging: false,
@@ -603,7 +696,9 @@ async function renderHtmlToBlob(html) {
     const imgH = (canvas.height * imgW) / canvas.width
 
     if (imgH <= pageH) {
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, imgW, imgH)
+      // JPEG quality 0.95 (vs 0.92 wcześniej) — minimalizuje artefakty kompresji
+      // na krawędziach tekstu i ramek tabel. Pliki ok. 10% większe niż 0.92.
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, imgW, imgH)
     } else {
       // Continuation pages (page 2, 3, ...) get a top margin so content doesn't
       // sit flush against the paper edge. The first page already has its CSS
@@ -657,7 +752,7 @@ async function renderHtmlToBlob(html) {
         const sliceImgH = (sliceH * imgW) / canvas.width
         if (!isFirst) pdf.addPage()
         const yOffsetMm = isFirst ? 0 : CONTINUATION_TOP_MM
-        pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', 0, yOffsetMm, imgW, sliceImgH)
+        pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', 0, yOffsetMm, imgW, sliceImgH)
         isFirst = false
         y = pageEnd
       }
