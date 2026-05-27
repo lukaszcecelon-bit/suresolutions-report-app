@@ -326,6 +326,55 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
+// Mapy photoId/videoId → względna ścieżka pliku w paczce ZIP.
+// Używane przez `renderMediaLinks()` żeby budować klikalne linki w PDF.
+// Każde zdjęcie/wideo w `photos`/`videos` ma już `_zipFilename` ustawione
+// przez `collectAllMedia()` (np. `01_Zatrzymanie-1_Zaciecie.jpg`).
+function buildLinkMaps(photos, videos) {
+  const photoMap = new Map()
+  for (const p of photos || []) {
+    if (p.photoId && p._zipFilename) photoMap.set(p.photoId, p._zipFilename)
+  }
+  const videoMap = new Map()
+  for (const v of videos || []) {
+    if (v.videoId && v._zipFilename) videoMap.set(v.videoId, v._zipFilename)
+  }
+  return { photoMap, videoMap }
+}
+
+// Renderuje komórkę tabeli z linkami do każdej fotki/wideo w grupie.
+// Wynik: `📷 1 · 📷 2 · 🎬 1` gdzie każdy element jest klikalny po dodaniu
+// `pdf.link()` w `renderHtmlToBlob` (data-link-target identyfikuje element).
+// Linki są ścieżkami WZGLĘDNYMI w paczce ZIP — działają gdy user rozpakuje
+// archiwum (Adobe Reader, Foxit, Chrome PDF, Firefox PDF.js, macOS Preview
+// — wszystko na desktopie). Bez wpływu na mobile (iOS Books ignoruje
+// względne ścieżki, ale ten feature jest celowo desktop-only).
+function renderMediaLinks(media, photoMap, videoMap) {
+  if (!media || media.length === 0) return '—'
+  const photos = media.filter((m) => m.kind === 'image')
+  const videos = media.filter((m) => m.kind === 'video')
+  if (photos.length === 0 && videos.length === 0) return '—'
+
+  const parts = []
+  photos.forEach((m, i) => {
+    const fname = m.photoId ? photoMap.get(m.photoId) : null
+    if (fname) {
+      parts.push(`<span class="media-link" data-link-target="zdjecia/${esc(fname)}">📷 ${i + 1}</span>`)
+    } else {
+      parts.push(`📷 ${i + 1}`)
+    }
+  })
+  videos.forEach((m, i) => {
+    const fname = m.videoId ? videoMap.get(m.videoId) : null
+    if (fname) {
+      parts.push(`<span class="media-link" data-link-target="wideo/${esc(fname)}">🎬 ${i + 1}</span>`)
+    } else {
+      parts.push(`🎬 ${i + 1}`)
+    }
+  })
+  return parts.join(' · ')
+}
+
 // Każdy logiczny wiersz (rozdzielony \n) trafia do osobnego <div class="text-line">.
 // Dzięki temu algorytm łamania stron mierzy bounding rect KAŻDEJ linii osobno
 // i jeśli granica strony wypada w środku text-bloku, cofa się DO POCZĄTKU linii,
@@ -343,6 +392,7 @@ function textLines(s) {
 
 function buildCommissioningHtml(report, photos, videos) {
   const h = report.header || {}
+  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
     ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt)
     : 0
@@ -350,11 +400,6 @@ function buildCommissioningHtml(report, photos, videos) {
   const longest = (report.stops || []).reduce((m, st) => Math.max(m, st.durationMs || 0), 0)
 
   const stopsRows = (report.stops || []).map((s, i) => {
-    const ph = (s.media || []).filter((m) => m.kind === 'image').length
-    const vd = (s.media || []).filter((m) => m.kind === 'video').length
-    const mediaCell = ph === 0 && vd === 0
-      ? '—'
-      : `${ph > 0 ? `Zdj. ${ph}` : ''}${ph > 0 && vd > 0 ? ' · ' : ''}${vd > 0 ? `Wid. ${vd}` : ''}`
     return `
     <tr>
       <td>${i + 1}</td>
@@ -362,7 +407,7 @@ function buildCommissioningHtml(report, photos, videos) {
       <td>${esc(formatDurationShort(s.durationMs))}</td>
       <td>${esc(s.reason === 'Inne' && s.customReason ? s.customReason : s.reason)}</td>
       <td>${esc(s.comment || '—')}</td>
-      <td>${esc(mediaCell)}</td>
+      <td>${renderMediaLinks(s.media, photoMap, videoMap)}</td>
     </tr>
   `}).join('')
 
@@ -574,6 +619,20 @@ const CSS = `
 
   .note { font-size: 10.5px; color: #6B7280; font-style: italic; margin: 4px 0 8px; }
 
+  /* Klikalne linki w PDF do plików w paczce ZIP (zdjęcia/wideo).
+     Wygląd "tradycyjnego" linka: sure-blue underline. Działa po
+     rozpakowaniu paczki na desktopie. Pozycja linka jest dodawana
+     programowo w renderHtmlToBlob przez pdf.link() bo html2canvas
+     rasteryzuje wszystko do pikseli i traci hyperlinki. */
+  .media-link {
+    color: #3D70B2; text-decoration: underline; white-space: nowrap;
+  }
+  /* Foto-karty w sekcji "Dokumentacja fotograficzna" — cała karta klikalna.
+     Subtelnie wskazujemy klikalność przez kursor (ignorowany przez html2canvas
+     ale wstawiany dla porządku), bez wizualnej zmiany — karta sama jest dość
+     wyraźnym celem. */
+  .photo[data-link-target] { cursor: pointer; }
+
   .section-block { margin-bottom: 4px; }
   .pair-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px;
@@ -638,6 +697,26 @@ async function renderHtmlToBlob(html) {
     const NO_BREAK_SELECTORS = '.photo, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
+    const sourceWidthPx = node.offsetWidth
+
+    // Zbierz pozycje wszystkich klikalnych elementów (`[data-link-target]`)
+    // PRZED html2canvas. Po rasteryzacji do canvas linki HTML giną — dodajemy
+    // je programowo do PDF przez `pdf.link()` po wyrenderowaniu obrazu.
+    // Każdy link to klikalna kotwica wskazująca na plik względny w paczce ZIP
+    // (np. `zdjecia/01_xxx.jpg` lub `wideo/02_yyy.mp4`).
+    const linkBoundsCss = Array.from(node.querySelectorAll('[data-link-target]'))
+      .map((el) => {
+        const r = el.getBoundingClientRect()
+        return {
+          target: el.dataset.linkTarget,
+          top: r.top - nodeRect.top,
+          left: r.left - nodeRect.left,
+          width: r.width,
+          height: r.height,
+        }
+      })
+      .filter((l) => l.target && l.width > 0 && l.height > 0)
+
     const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
       .map((el) => {
         const r = el.getBoundingClientRect()
@@ -697,10 +776,19 @@ async function renderHtmlToBlob(html) {
     const imgW = pageW
     const imgH = (canvas.height * imgW) / canvas.width
 
+    // Track info per rendered page — używane potem do mapowania pozycji
+    // klikalnych linków (data-link-target) na konkretną stronę PDF.
+    // Każda strona: pageIndex (0-based), startCssY/endCssY w CSS pikselach
+    // źródłowego HTML, yOffsetMm — margines górny strony w mm (0 dla pierwszej,
+    // CONTINUATION_TOP_MM dla kolejnych).
+    const pagesInfo = []
+    const cssPerCanvasPx = sourceHeightPx / canvas.height // scale^-1
+
     if (imgH <= pageH) {
       // JPEG quality 0.95 (vs 0.92 wcześniej) — minimalizuje artefakty kompresji
       // na krawędziach tekstu i ramek tabel. Pliki ok. 10% większe niż 0.92.
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, imgW, imgH)
+      pagesInfo.push({ pageIndex: 0, startCssY: 0, endCssY: sourceHeightPx, yOffsetMm: 0 })
     } else {
       // Continuation pages (page 2, 3, ...) get a top margin so content doesn't
       // sit flush against the paper edge. The first page already has its CSS
@@ -755,10 +843,48 @@ async function renderHtmlToBlob(html) {
         if (!isFirst) pdf.addPage()
         const yOffsetMm = isFirst ? 0 : CONTINUATION_TOP_MM
         pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', 0, yOffsetMm, imgW, sliceImgH)
+        pagesInfo.push({
+          pageIndex: pagesInfo.length,
+          startCssY: y * cssPerCanvasPx,
+          endCssY: pageEnd * cssPerCanvasPx,
+          yOffsetMm,
+        })
         isFirst = false
         y = pageEnd
       }
     }
+
+    // === KLIKALNE LINKI W PDF ===
+    // Po wszystkich addImage'ach, dodajemy linki przez pdf.link() w pozycjach
+    // odpowiadających HTML-owym [data-link-target]. Każdy link otwiera plik
+    // względny w paczce ZIP (np. zdjecia/01_xxx.jpg). Działa po rozpakowaniu
+    // paczki na komputerze w czytnikach PDF: Adobe, Foxit, Chrome PDF, etc.
+    if (linkBoundsCss.length > 0 && pagesInfo.length > 0) {
+      const mmPerCssPx = pageW / sourceWidthPx
+      for (const link of linkBoundsCss) {
+        // Wybierz stronę zawierającą środek linku (rzadko zdarza się że link
+        // przecina granicę stron — w takim wypadku trafi tam gdzie ma więcej).
+        const centerCss = link.top + link.height / 2
+        const page = pagesInfo.find(
+          (p) => centerCss >= p.startCssY && centerCss < p.endCssY
+        )
+        if (!page) continue
+
+        const yOnPageCss = link.top - page.startCssY
+        const xMm = link.left * mmPerCssPx
+        const yMm = yOnPageCss * mmPerCssPx + page.yOffsetMm
+        const wMm = link.width * mmPerCssPx
+        const hMm = link.height * mmPerCssPx
+
+        try {
+          pdf.setPage(page.pageIndex + 1) // jsPDF używa 1-indexed pages
+          pdf.link(xMm, yMm, wMm, hMm, { url: link.target })
+        } catch (e) {
+          console.warn('pdf.link failed for', link.target, e)
+        }
+      }
+    }
+
     return pdf.output('blob')
   } finally {
     document.body.removeChild(container)
@@ -839,10 +965,15 @@ async function assemblePackage(pdfBlob, photos, videos, baseName) {
 function renderPhotosVideosHtml(allPhotos, allVideos) {
   const photosHtml = allPhotos.length > 0 ? `
     <h2>Dokumentacja fotograficzna</h2>
-    <p class="note">Pełne pliki znajdziesz w paczce ZIP w folderze <strong>zdjecia/</strong>.</p>
+    <p class="note">Pełne pliki znajdziesz w paczce ZIP w folderze <strong>zdjecia/</strong>. Kliknij miniaturę aby otworzyć w pełnej rozdzielczości (po rozpakowaniu paczki na komputerze).</p>
     <div class="photos">
-      ${allPhotos.map((p, i) => `
-        <div class="photo">
+      ${allPhotos.map((p, i) => {
+        // Cała karta klikalna gdy znamy nazwę pliku — pdf.link() obejmuje
+        // bounding-box .photo (img + meta). Klik gdziekolwiek = pełne zdjęcie.
+        const target = p._zipFilename ? `zdjecia/${p._zipFilename}` : null
+        const attrs = target ? ` data-link-target="${esc(target)}"` : ''
+        return `
+        <div class="photo"${attrs}>
           ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#9CA3AF;font-size:11px;background:#F3F4F6;border-bottom:1px solid #D1D5DB">(brak miniatury)</div>'}
           <div class="photo-meta">
             <div class="photo-num">Zdj. ${String(i + 1).padStart(2, '0')}</div>
@@ -851,26 +982,32 @@ function renderPhotosVideosHtml(allPhotos, allVideos) {
             <div class="photo-file">📁 ${esc(p._zipFilename || p.filename || '—')}</div>
           </div>
         </div>
-      `).join('')}
+      `}).join('')}
     </div>
   ` : ''
 
   const videosHtml = allVideos.length > 0 ? `
     <h2>Dokumentacja wideo</h2>
-    <p class="note">Pełne pliki wideo znajdziesz w paczce ZIP w folderze <strong>wideo/</strong>.</p>
+    <p class="note">Pełne pliki wideo znajdziesz w paczce ZIP w folderze <strong>wideo/</strong>. Kliknij nazwę pliku aby otworzyć wideo (po rozpakowaniu paczki na komputerze).</p>
     <table class="stops">
       <thead>
         <tr><th style="width:36px">Nr</th><th>Kontekst</th><th>Opis</th><th>Plik w paczce</th></tr>
       </thead>
       <tbody>
-        ${allVideos.map((v, i) => `
+        ${allVideos.map((v, i) => {
+          const target = v._zipFilename ? `wideo/${v._zipFilename}` : null
+          const fnameStr = esc(v._zipFilename || v.filename || '—')
+          const fileCell = target
+            ? `📁 <span class="media-link" data-link-target="${esc(target)}">${fnameStr}</span>`
+            : `📁 ${fnameStr}`
+          return `
           <tr>
             <td>${String(i + 1).padStart(2, '0')}</td>
             <td>${esc(v._ctxLabel || '—')}</td>
             <td>${esc(v.description || '—')}</td>
-            <td>📁 ${esc(v._zipFilename || v.filename || '—')}</td>
+            <td>${fileCell}</td>
           </tr>
-        `).join('')}
+        `}).join('')}
       </tbody>
     </table>
   ` : ''
@@ -901,6 +1038,7 @@ const VISIT_STATUS_LABELS = {
 function buildServiceHtml(report, photos, videos) {
   const h = report.header || {}
   const v = report.visit || {}
+  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
   const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   const actionsHtml = (report.actions || []).length > 0 ? `
@@ -910,18 +1048,17 @@ function buildServiceHtml(report, photos, videos) {
           <th style="width:36px">Nr</th>
           <th style="width:110px">Kategoria</th>
           <th>Opis czynności</th>
-          <th style="width:60px">Zdj.</th>
+          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
         ${(report.actions || []).map((a, i) => {
-          const photoCount = (a.media || []).filter((m) => m.kind === 'image').length
           return `
           <tr>
             <td>${i + 1}</td>
             <td>${esc(a.category || '—')}</td>
             <td>${esc(a.description || '—').replace(/\n/g, '<br/>')}</td>
-            <td>${photoCount > 0 ? `📷 ${photoCount}` : '—'}</td>
+            <td>${renderMediaLinks(a.media, photoMap, videoMap)}</td>
           </tr>
         `}).join('')}
       </tbody>
@@ -1042,6 +1179,7 @@ function buildPrototypeHtml(report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const cond = report.conditions || {}
+  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
   const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   const sampleMethod = info.sampleMethod === 'other'
@@ -1073,19 +1211,18 @@ function buildPrototypeHtml(report, photos, videos) {
           <th>Punkt kontrolny</th>
           <th style="width:90px">Wynik</th>
           <th>Komentarz</th>
-          <th style="width:60px">Zdj.</th>
+          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
         ${(report.points || []).map((p, i) => {
-          const photoCount = (p.media || []).filter((m) => m.kind === 'image').length
           return `
           <tr>
             <td>${i + 1}</td>
             <td>${esc(p.description || '—')}</td>
             <td>${esc(POINT_RESULT_LABELS[p.result] || '—')}</td>
             <td>${esc(p.comment || '—')}</td>
-            <td>${photoCount > 0 ? `📷 ${photoCount}` : '—'}</td>
+            <td>${renderMediaLinks(p.media, photoMap, videoMap)}</td>
           </tr>
         `}).join('')}
       </tbody>
@@ -1180,6 +1317,7 @@ function buildSatFatHtml(report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const sigs = report.signatures || {}
+  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
   const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
 
   const titleKey = report.testType === 'sat' ? 'satfat_sat' : 'satfat_fat'
@@ -1221,12 +1359,11 @@ function buildSatFatHtml(report, photos, videos) {
           <th>Kryterium akceptacji</th>
           <th style="width:110px">Wynik</th>
           <th>Uwagi</th>
-          <th style="width:60px">Zdj.</th>
+          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
         ${(report.tests || []).map((t, i) => {
-          const photoCount = (t.media || []).filter((m) => m.kind === 'image').length
           return `
           <tr>
             <td>${i + 1}</td>
@@ -1234,7 +1371,7 @@ function buildSatFatHtml(report, photos, videos) {
             <td>${esc(t.criterion || '—')}</td>
             <td>${esc(TEST_STATUS_LABELS[t.status] || '—')}</td>
             <td>${esc(t.notes || '—').replace(/\n/g, '<br/>')}</td>
-            <td>${photoCount > 0 ? `📷 ${photoCount}` : '—'}</td>
+            <td>${renderMediaLinks(t.media, photoMap, videoMap)}</td>
           </tr>
         `}).join('')}
       </tbody>
