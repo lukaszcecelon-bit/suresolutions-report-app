@@ -134,11 +134,13 @@
   .toast-error   { @apply bg-red-600 text-white; }
   .toast-info    { @apply bg-sure-dark text-white; }
 
-  /* Sticky bottom action bar — przyklejony do dolnego paska viewportu */
+  /* Pasek akcji na końcu raportu — STATYCZNY (nie pływający).
+     Wcześniej był `sticky bottom-0` i przyklejał się do dołu ekranu, co na
+     telefonie zasłaniało treść gdy wyskakiwała klawiatura. Teraz to zwykły
+     blok na końcu strony, przewijany razem z treścią — kreska u góry oddziela
+     go wizualnie od ostatniej sekcji. */
   .action-bar {
-    @apply sticky bottom-0 left-0 right-0 z-20 -mx-4 px-4 py-3
-           bg-white/95 backdrop-blur border-t border-gray-200
-           dark:bg-gray-900/95 dark:border-gray-700;
+    @apply mt-4 -mx-4 px-4 pt-4 border-t border-gray-200 dark:border-gray-700;
   }
 }
 
