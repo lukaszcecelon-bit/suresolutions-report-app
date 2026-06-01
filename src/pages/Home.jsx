@@ -49,9 +49,15 @@ function getSearchableText(r) {
   push(h.reportNumber); push(h.projectName); push(h.machineName); push(h.author)
   if (r.type === 'service') {
     push(r.visit?.client); push(r.visit?.location)
-    push(r.observations); push(r.recommendations)
-    for (const a of (r.actions || [])) { push(a.description); push(a.category) }
+    push(r.recommendations); push(r.receivedBy); push(r.role)
+    for (const a of (r.actions || [])) { push(a.description) }
     for (const p of (r.parts || [])) { push(p.name); push(p.catalogNo); push(p.comment) }
+    // Obserwacje: nowy model (lista rekordów) + wsteczna zgodność (string)
+    if (Array.isArray(r.observations)) {
+      for (const o of r.observations) push(o?.text)
+    } else {
+      push(r.observations)
+    }
   } else if (r.type === 'prototype') {
     push(r.info?.component); push(r.info?.goal)
     push(r.observations); push(r.decisionNotes); push(r.conditions?.setup)

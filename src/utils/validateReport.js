@@ -14,9 +14,9 @@ function isEmpty(v) {
   return false
 }
 
-// Pola nagłówka są wymagane we wszystkich typach raportu.
+// Pola nagłówka wspólne dla wszystkich typów (bez identyfikatora — ten jest
+// per-typ: serwis używa numeru projektu, reszta numeru raportu).
 const COMMON_HEADER = [
-  { field: 'header.reportNumber', label: 'Numer raportu',        sectionId: 'sec-header' },
   { field: 'header.projectName',  label: 'Nazwa projektu',       sectionId: 'sec-header' },
   { field: 'header.machineName',  label: 'Nazwa / numer maszyny', sectionId: 'sec-header' },
   { field: 'header.date',         label: 'Data',                 sectionId: 'sec-header' },
@@ -25,6 +25,17 @@ const COMMON_HEADER = [
 
 export function validateReport(report) {
   const missing = []
+
+  // Identyfikator raportu — serwis: numer projektu, pozostałe: numer raportu.
+  if (report.type === 'service') {
+    if (isEmpty(report.header?.projectNumber)) {
+      missing.push({ label: 'Numer projektu', sectionId: 'sec-header' })
+    }
+  } else {
+    if (isEmpty(report.header?.reportNumber)) {
+      missing.push({ label: 'Numer raportu', sectionId: 'sec-header' })
+    }
+  }
 
   for (const r of COMMON_HEADER) {
     if (isEmpty(get(report, r.field))) missing.push(r)

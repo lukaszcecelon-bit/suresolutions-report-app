@@ -29,6 +29,12 @@ export default function Header({
   const labelCls = (k) => 'field-label ' + (requiredFields.includes(k) ? 'field-required' : '')
   const inputCls = (k) => 'field-input ' + (invalid(k) ? 'is-invalid' : '')
 
+  // Raport serwisowy: zamiast numeru raportu wpisuje się numer projektu,
+  // a numer raportu generuje się automatycznie (RPT-{nr projektu}-{data}).
+  // Wartość auto jest liczona w ServiceReport.updateHeader i trzymana w
+  // header.reportNumber — tu tylko ją pokazujemy jako podgląd.
+  const isService = reportType === 'service'
+
   return (
     <div className="space-y-3">
       {/* Context bar — type + readonly badge above the form */}
@@ -45,16 +51,32 @@ export default function Header({
             past the container — important for iOS Safari where some input types
             (most notably type="date") have a wider intrinsic min-width. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="min-w-0">
-            <label className={labelCls('reportNumber')}>Numer raportu</label>
-            <input
-              type="text"
-              className={inputCls('reportNumber')}
-              placeholder="np. RPT-2025-001"
-              value={header.reportNumber || ''}
-              onChange={(e) => set('reportNumber', e.target.value)}
-            />
-          </div>
+          {isService ? (
+            <div className="min-w-0">
+              <label className="field-label field-required">Numer projektu</label>
+              <input
+                type="text"
+                className="field-input"
+                placeholder="np. 2025-104"
+                value={header.projectNumber || ''}
+                onChange={(e) => set('projectNumber', e.target.value)}
+              />
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Nazwa raportu: <span className="font-mono text-sure-dark dark:text-gray-200">{header.reportNumber || '—'}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="min-w-0">
+              <label className={labelCls('reportNumber')}>Numer raportu</label>
+              <input
+                type="text"
+                className={inputCls('reportNumber')}
+                placeholder="np. RPT-2025-001"
+                value={header.reportNumber || ''}
+                onChange={(e) => set('reportNumber', e.target.value)}
+              />
+            </div>
+          )}
           <div className="min-w-0">
             <label className={labelCls('projectName')}>Nazwa projektu</label>
             <SuggestInput

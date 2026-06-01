@@ -109,20 +109,30 @@ export function cloneReport(source) {
   }
 
   if (source.type === 'service') {
+    // Zachowujemy numer projektu (zwykle ten sam projekt), data → dziś,
+    // numer raportu przeliczamy: RPT-{nr projektu}-{data}.
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
     return {
       ...base,
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `RPT-${projectNumber}-${date}` : '',
+      },
       visit: {
         client: source.visit?.client || '',     // keep — recurring client
         location: source.visit?.location || '', // keep — same site
         arrival: '',                            // reset — this visit
         departure: '',
       },
+      role: source.role || '',                   // keep — zwykle ten sam serwisant
       actions: [],
       parts: [],
-      observations: '',
+      observations: [],                          // lista rekordów
       recommendations: '',
+      receivedBy: '',                            // reset — nowa wizyta
       visitStatus: 'completed',
-      media: [],
     }
   }
 

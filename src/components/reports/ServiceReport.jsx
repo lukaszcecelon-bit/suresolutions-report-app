@@ -20,7 +20,8 @@ import { generateServicePackage } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
-const CATEGORIES = ['Mechanika', 'Elektryka', 'Pneumatyka', 'Hydraulika', 'Software', 'Inne']
+// Rola serwisanta — typ pracownika wykonującego serwis.
+const ROLE_OPTIONS = ['Technik serwisu', 'Konstruktor', 'Automatyk']
 
 const PRIORITY_ITEMS = [
   { key: 'urgent',  label: 'Pilne',      icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold' },
@@ -28,10 +29,11 @@ const PRIORITY_ITEMS = [
   { key: 'watch',   label: 'Obserwacja', icon: '🟢', activeClass: 'bg-emerald-100 text-emerald-700 border-emerald-400 font-semibold' },
 ]
 
+// Statusy wizyty (klucze zachowane dla kompatybilności danych, etykiety nowe).
 const STATUS_ITEMS = [
-  { key: 'completed', label: 'Zakończona',         icon: '✓', activeClass: 'bg-emerald-600 text-white border-transparent' },
-  { key: 'followup',  label: 'Wymaga follow-up',   icon: '⏳', activeClass: 'bg-amber-500 text-white border-transparent' },
-  { key: 'parts',     label: 'Oczekuje na części', icon: '🔧', activeClass: 'bg-sure-blue text-white border-transparent' },
+  { key: 'completed', label: 'Zakończono (maszyna działa)',        icon: '✓',  activeClass: 'bg-emerald-600 text-white border-transparent' },
+  { key: 'followup',  label: 'Wymaga spotkania / dalszych działań', icon: '⏳', activeClass: 'bg-amber-500 text-white border-transparent' },
+  { key: 'parts',     label: 'Maszyna zatrzymana',                  icon: '🔴', activeClass: 'bg-red-600 text-white border-transparent' },
 ]
 
 const SECTIONS = [
@@ -42,11 +44,25 @@ const SECTIONS = [
   { id: 'sec-d',       label: 'D. Obserwacje' },
   { id: 'sec-e',       label: 'E. Rekomendacje' },
   { id: 'sec-f',       label: 'F. Status' },
-  { id: 'sec-g',       label: 'G. Foto' },
 ]
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
+
+// Łączny czas wizyty z godzin przyjazdu/odjazdu (HH:MM). Obsługuje przejście
+// przez północ (odjazd następnego dnia). Zwraca czytelną etykietę lub null.
+function visitDurationLabel(arrival, departure) {
+  if (!arrival || !departure) return null
+  const [ah, am] = arrival.split(':').map(Number)
+  const [dh, dm] = departure.split(':').map(Number)
+  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return null
+  let mins = (dh * 60 + dm) - (ah * 60 + am)
+  if (mins < 0) mins += 24 * 60
+  if (mins === 0) return null
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return h > 0 ? `${h} h ${m} min` : `${m} min`
+}
 
 function defaultReport() {
   return {
@@ -56,27 +72,46 @@ function defaultReport() {
     createdAt: nowISO(),
     updatedAt: nowISO(),
     header: {
-      reportNumber: '',
+      projectNumber: '',   // numer projektu (wpisywany)
+      reportNumber: '',    // auto: RPT-{projectNumber}-{date}
       projectName: '',
       machineName: '',
       date: todayISO(),
       author: '',
     },
     visit: { client: '', location: '', arrival: '', departure: '' },
+    role: '',               // rola serwisanta (typ pracownika)
     actions: [],
     parts: [],
-    observations: '',
+    observations: [],       // lista rekordów {id, text, media}
     recommendations: '',
+    receivedBy: '',         // kto odebrał prace serwisowe
     visitStatus: 'completed',
-    media: [],
   }
+}
+
+// Auto-generacja numeru raportu z numeru projektu i daty.
+// Pusty numer projektu → pusty numer raportu (żeby walidacja działała).
+function computeReportNumber(projectNumber, date) {
+  const pn = (projectNumber || '').trim()
+  if (!pn) return ''
+  return `RPT-${pn}-${date || ''}`
 }
 
 export default function ServiceReport({ navigate, reportId }) {
   const [report, setReport] = useState(() => {
     if (reportId) {
       const existing = getById(reportId)
-      if (existing) return existing
+      if (existing) {
+        // Migracja starych raportów: obserwacje jako string → lista rekordów
+        if (typeof existing.observations === 'string') {
+          existing.observations = existing.observations.trim()
+            ? [{ id: newId(), text: existing.observations, media: [] }]
+            : []
+        }
+        if (!Array.isArray(existing.observations)) existing.observations = []
+        return existing
+      }
     }
     return defaultReport()
   })
@@ -89,13 +124,20 @@ export default function ServiceReport({ navigate, reportId }) {
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
 
-  const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
+  // Nagłówek: po każdej zmianie przelicz numer raportu z numeru projektu + daty.
+  const updateHeader = (h) => {
+    setReport((r) => ({
+      ...r,
+      header: { ...h, reportNumber: computeReportNumber(h.projectNumber, h.date) },
+    }))
+  }
   const updateVisit = (k, v) => setReport((r) => ({ ...r, visit: { ...r.visit, [k]: v } }))
 
+  // ---- Czynności ----
   const addAction = () => {
     setReport((r) => ({
       ...r,
-      actions: [...r.actions, { id: newId(), description: '', category: CATEGORIES[0], media: [] }],
+      actions: [...r.actions, { id: newId(), description: '', media: [] }],
     }))
   }
   const updateAction = (id, patch) => {
@@ -106,10 +148,11 @@ export default function ServiceReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, actions: r.actions.filter((a) => a.id !== id) }))
   }
 
+  // ---- Elementy do wymiany ----
   const addPart = () => {
     setReport((r) => ({
       ...r,
-      parts: [...r.parts, { id: newId(), name: '', catalogNo: '', priority: 'planned', comment: '' }],
+      parts: [...r.parts, { id: newId(), name: '', catalogNo: '', priority: 'planned', comment: '', media: [] }],
     }))
   }
   const updatePart = (id, patch) => {
@@ -118,6 +161,21 @@ export default function ServiceReport({ navigate, reportId }) {
   const removePart = async (id) => {
     if (!(await confirm('Usunąć ten element?', { variant: 'danger', confirmLabel: 'Usuń' }))) return
     setReport((r) => ({ ...r, parts: r.parts.filter((p) => p.id !== id) }))
+  }
+
+  // ---- Obserwacje (rekordy, jak czynności) ----
+  const addObservation = () => {
+    setReport((r) => ({
+      ...r,
+      observations: [...r.observations, { id: newId(), text: '', media: [] }],
+    }))
+  }
+  const updateObservation = (id, patch) => {
+    setReport((r) => ({ ...r, observations: r.observations.map((o) => (o.id === id ? { ...o, ...patch } : o)) }))
+  }
+  const removeObservation = async (id) => {
+    if (!(await confirm('Usunąć tę obserwację?', { variant: 'danger', confirmLabel: 'Usuń' }))) return
+    setReport((r) => ({ ...r, observations: r.observations.filter((o) => o.id !== id) }))
   }
 
   const finishReport = async () => {
@@ -129,11 +187,7 @@ export default function ServiceReport({ navigate, reportId }) {
   }
 
   // Synchronizacja — paczka sync z całym raportem + mediami do przesłania
-  // na inne urządzenie. `forceDownload=false` → Web Share API (AirDrop/Mail/
-  // OneDrive systemowo). `forceDownload=true` → zawsze zapisz lokalnie (Files
-  // apka na iOS, "Pobrane" na Windows). Drugi tryb użyteczny gdy share sheet
-  // nie pokazuje wszystkich oczekiwanych apek (np. OneDrive iOS w niektórych
-  // konfiguracjach).
+  // na inne urządzenie. forceDownload=false → Web Share API; true → download lokalny.
   const sendToDevice = async (forceDownload = false) => {
     setSending(true)
     try {
@@ -166,6 +220,8 @@ export default function ServiceReport({ navigate, reportId }) {
     }
   }
 
+  const totalTime = visitDurationLabel(report.visit.arrival, report.visit.departure)
+
   return (
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between gap-2">
@@ -197,6 +253,18 @@ export default function ServiceReport({ navigate, reportId }) {
               onChange={(e) => updateVisit('location', e.target.value)} />
           </div>
           <div className="min-w-0">
+            <label className="field-label">Rola</label>
+            <select
+              className="field-input"
+              value={report.role || ''}
+              onChange={(e) => setReport((r) => ({ ...r, role: e.target.value }))}
+            >
+              <option value="">— wybierz —</option>
+              {ROLE_OPTIONS.map((ro) => <option key={ro} value={ro}>{ro}</option>)}
+            </select>
+          </div>
+          <div className="min-w-0 hidden sm:block" aria-hidden="true" />
+          <div className="min-w-0">
             <label className="field-label">Godzina przyjazdu</label>
             <input type="time" className="field-input"
               value={report.visit.arrival}
@@ -209,6 +277,11 @@ export default function ServiceReport({ navigate, reportId }) {
               onChange={(e) => updateVisit('departure', e.target.value)} />
           </div>
         </div>
+        {totalTime && (
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+            Łączny czas wizyty: <strong className="text-sure-dark dark:text-gray-100">{totalTime}</strong>
+          </div>
+        )}
       </div>
 
       <div id="sec-b" className="card">
@@ -234,13 +307,9 @@ export default function ServiceReport({ navigate, reportId }) {
               <div className="flex items-center gap-2">
                 {dragHandle}
                 <span className="index-badge">{i + 1}</span>
-                <select
-                  className="field-input flex-1"
-                  value={a.category}
-                  onChange={(e) => updateAction(a.id, { category: e.target.value })}
-                >
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex-1 truncate">
+                  {a.description ? a.description.slice(0, 60) : 'Nowa czynność'}
+                </span>
                 <button
                   onClick={() => removeAction(a.id)}
                   className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40"
@@ -319,6 +388,14 @@ export default function ServiceReport({ navigate, reportId }) {
                 placeholder="Komentarz (opcjonalny)"
                 value={p.comment}
                 onChange={(e) => updatePart(p.id, { comment: e.target.value })} />
+              <div>
+                <label className="field-label">Zdjęcia (opcjonalne)</label>
+                <MediaUploader
+                  photoOnly
+                  media={p.media || []}
+                  onChange={(m) => updatePart(p.id, { media: m })}
+                />
+              </div>
             </div>
             )}
           </SortableList>
@@ -330,12 +407,58 @@ export default function ServiceReport({ navigate, reportId }) {
       </div>
 
       <div id="sec-d" className="card">
-        <h3 className="section-title">D. Obserwacje własne</h3>
-        <MicTextarea
-          value={report.observations}
-          onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
-          placeholder="Co zauważyłeś podczas wizyty?"
-        />
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">D. Obserwacje własne</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{report.observations.length}</span>
+        </div>
+        <div className="space-y-3">
+          {report.observations.length === 0 ? (
+            <EmptyState
+              icon="👁️"
+              title="Brak obserwacji"
+              hint={'Kliknij „+ Dodaj obserwację" poniżej. Każda obserwacja to osobny wpis — możesz dodać zdjęcie i zmieniać kolejność (≡).'}
+            />
+          ) : (
+          <SortableList
+            items={report.observations}
+            onReorder={(newList) => setReport((r) => ({ ...r, observations: newList }))}
+            getId={(o) => o.id}
+          >
+            {(o, dragHandle, i) => (
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
+              <div className="flex items-center gap-2">
+                {dragHandle}
+                <span className="index-badge">{i + 1}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex-1 truncate">
+                  {o.text ? o.text.slice(0, 60) : 'Nowa obserwacja'}
+                </span>
+                <button
+                  onClick={() => removeObservation(o.id)}
+                  className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40"
+                  aria-label="Usuń obserwację"
+                >✕</button>
+              </div>
+              <MicTextarea
+                placeholder="Co zauważyłeś podczas wizyty?"
+                value={o.text}
+                onChange={(e) => updateObservation(o.id, { text: e.target.value })}
+              />
+              <div>
+                <label className="field-label">Zdjęcia (opcjonalne)</label>
+                <MediaUploader
+                  photoOnly
+                  media={o.media || []}
+                  onChange={(m) => updateObservation(o.id, { media: m })}
+                />
+              </div>
+            </div>
+            )}
+          </SortableList>
+          )}
+        </div>
+        <button onClick={addObservation} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
+          + Dodaj obserwację
+        </button>
       </div>
 
       <div id="sec-e" className="card">
@@ -354,14 +477,16 @@ export default function ServiceReport({ navigate, reportId }) {
           value={report.visitStatus}
           onChange={(k) => setReport((r) => ({ ...r, visitStatus: k }))}
         />
-      </div>
-
-      <div id="sec-g" className="card">
-        <h3 className="section-title">G. Dokumentacja fotograficzna</h3>
-        <MediaUploader
-          media={report.media}
-          onChange={(m) => setReport((r) => ({ ...r, media: m }))}
-        />
+        <div className="mt-4 min-w-0">
+          <label className="field-label">Odbiór prac — osoba (kto odebrał)</label>
+          <input
+            type="text"
+            className="field-input"
+            placeholder="Imię i nazwisko / stanowisko osoby odbierającej"
+            value={report.receivedBy || ''}
+            onChange={(e) => setReport((r) => ({ ...r, receivedBy: e.target.value }))}
+          />
+        </div>
       </div>
 
       <LoadingOverlay visible={downloading} />
