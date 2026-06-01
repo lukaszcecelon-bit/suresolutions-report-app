@@ -9,7 +9,7 @@ import { useToast, useConfirm } from '../common/Toast.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useAutoSave } from '../../utils/useAutoSave.js'
-import { generateComplaintPackage, generateComplaintPdfBlob } from '../../utils/pdfGenerator.js'
+import { generateComplaintPackage, generateComplaintZip } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
@@ -59,9 +59,12 @@ function defaultReport() {
   }
 }
 
-function buildEmailBody(report) {
+// `desktop=true` dorzuca przypomnienie o ręcznym załączeniu pobranej paczki
+// (mailto nie potrafi załączać plików). Opis przycięty do 500 znaków, by
+// nie przekroczyć limitu długości URL-a mailto (pełny opis i tak jest w PDF).
+function buildEmailBody(report, desktop, filename) {
   const h = report.header || {}
-  return [
+  const lines = [
     `Zgłoszenie wady / reklamacja: ${h.reportNumber || ''}`,
     `Nr projektu: ${h.projectNumber || '—'}`,
     `Część: ${report.partNo || '—'}`,
@@ -69,10 +72,25 @@ function buildEmailBody(report) {
     `Blokuje montaż: ${report.blocksAssembly ? 'TAK' : 'nie'}`,
     `Zgłaszający: ${h.author || '—'}`,
     '',
-    `Opis: ${report.description || '—'}`,
+    `Opis: ${(report.description || '—').slice(0, 500)}`,
     '',
-    'PDF ze zdjęciem/zdjęciami w załączniku.',
-  ].join('\n')
+  ]
+  if (desktop) {
+    lines.push(`>>> Załącz pobraną paczkę: ${filename || 'reklamacja.zip'} (folder Pobrane) <<<`)
+  } else {
+    lines.push('Paczka ZIP (PDF + zdjęcia w pełnym rozmiarze) w załączniku.')
+  }
+  return lines.join('\n')
+}
+
+// Telefon vs komputer — decyduje o sposobie wysyłki.
+// Telefon (Android/iOS, też iPadOS podszywający się pod Maca): Web Share → Outlook.
+// Komputer: mailto (otwiera Outlook z adresatem+tematem) + pobranie ZIP do załączenia.
+function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false
+  if (/Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) return true
+  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true // iPadOS 13+
+  return false
 }
 
 export default function ComplaintReport({ navigate, reportId }) {
@@ -107,21 +125,41 @@ export default function ComplaintReport({ navigate, reportId }) {
     try { localStorage.setItem(BUYER_EMAIL_KEY, v) } catch {}
   }
 
-  // Wyślij do zakupowca: generuj PDF → Web Share (Outlook/Mail z załącznikiem).
-  // E-mail zakupowca kopiowany do schowka dla wygody (Web Share nie prefilluje
-  // adresata niezawodnie).
+  // Wyślij do zakupowca — platformowo:
+  //  • Komputer: pobiera paczkę ZIP (PDF + zdjęcia full-res) i otwiera Outlook
+  //    przez mailto (adresat + temat + treść). Załącznik przeciąga się ręcznie
+  //    z folderu Pobrane (mailto nie umie załączać plików).
+  //  • Telefon: Web Share paczki ZIP → wybierasz Outlook, ZIP już załączony.
+  //    Adres zakupowca kopiowany do schowka (Web Share nie prefilluje adresata).
   const sendToBuyer = async () => {
     if (!(await ensureValidOrConfirm(report, confirm))) return
     setSending(true)
     try {
-      const blob = await generateComplaintPdfBlob(report)
-      const filename = `${(report.header.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')}.pdf`
+      const pack = await generateComplaintZip(report) // { blob, filename }
+      const subject = `REKLAMACJA ${report.header.reportNumber || ''}${report.partNo ? ` / ${report.partNo}` : ''}`.trim()
       if (report.buyerEmail) {
         try { await navigator.clipboard.writeText(report.buyerEmail) } catch {}
       }
-      const subject = `REKLAMACJA ${report.header.reportNumber || ''}${report.partNo ? ` / ${report.partNo}` : ''}`.trim()
-      await shareFileOrDownload(blob, filename, 'application/pdf', { title: subject, text: buildEmailBody(report) })
-      toast.success(report.buyerEmail ? 'Gotowe — adres zakupowca skopiowany' : 'Gotowe do wysłania')
+
+      if (isMobileDevice()) {
+        // Telefon → Outlook z załączoną paczką
+        await shareFileOrDownload(pack.blob, pack.filename, 'application/zip', {
+          title: subject,
+          text: buildEmailBody(report, false),
+        })
+        toast.success(report.buyerEmail ? 'Gotowe — adres zakupowca w schowku' : 'Gotowe do wysłania')
+      } else {
+        // Komputer → pobierz ZIP + otwórz Outlook (mailto)
+        downloadBlob(pack.blob, pack.filename)
+        const body = buildEmailBody(report, true, pack.filename)
+        const mailto = `mailto:${encodeURIComponent(report.buyerEmail || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+        const a = document.createElement('a')
+        a.href = mailto
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        toast.success('Outlook otwarty — załącz pobraną paczkę ZIP z folderu Pobrane')
+      }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
@@ -284,8 +322,11 @@ export default function ComplaintReport({ navigate, reportId }) {
           >📋 Kopiuj</button>
         </div>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          „Wyślij" otwiera systemowe menu z gotowym PDF i tematem. Adres zakupowca
-          kopiuje się do schowka — wklej go w polu „Do" (Outlook zapamięta na przyszłość).
+          <strong>Na komputerze:</strong> „Wyślij" pobiera paczkę ZIP i otwiera Outlook
+          z wpisanym adresem i tematem — przeciągnij pobrany plik z folderu Pobrane do maila.
+          <br />
+          <strong>Na telefonie:</strong> „Wyślij" otwiera Outlooka z już załączoną paczką;
+          adres zakupowca kopiuje się do schowka (wklej w polu „Do").
         </p>
       </div>
 

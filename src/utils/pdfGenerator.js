@@ -1681,22 +1681,22 @@ function buildComplaintHtml(report, photos /*, videos */) {
   `
 }
 
-// Sam PDF (blob) — do wysłania mailem przez Web Share. Bez pakowania ZIP.
-export async function generateComplaintPdfBlob(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos } = collectAllMedia(r)
-  const html = buildComplaintHtml(r, photos)
-  return await renderHtmlToBlob(html)
-}
-
-// Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości) — dla archiwum / sync.
-export async function generateComplaintPackage(report) {
+// Buduje paczkę ZIP reklamacji (PDF + zdjęcia w PEŁNEJ rozdzielczości) i zwraca
+// { blob, filename } BEZ pobierania — żeby caller mógł ją albo pobrać (komputer,
+// do załączenia w Outlooku), albo udostępnić przez Web Share (telefon → Outlook
+// z gotowym załącznikiem).
+export async function generateComplaintZip(report) {
   const r = await resolveReportPhotos(report)
   const { photos, videos } = collectAllMedia(r)
   const html = buildComplaintHtml(r, photos)
   const pdfBlob = await renderHtmlToBlob(html)
   const baseNum = (r.header?.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')
   const baseName = `${baseNum}_${r.header?.date || 'data'}`
-  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  return await assemblePackage(pdfBlob, photos, videos, baseName) // { blob, filename }
+}
+
+// Pełna paczka ZIP z pobieraniem — dla listy raportów (Home) i przycisku „Paczka ZIP".
+export async function generateComplaintPackage(report) {
+  const pack = await generateComplaintZip(report)
   downloadBlob(pack.blob, pack.filename)
 }
