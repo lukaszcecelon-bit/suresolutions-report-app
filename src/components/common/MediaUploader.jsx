@@ -20,7 +20,7 @@ function fmtSize(bytes) {
   return (bytes / 1024 / 1024).toFixed(1) + ' MB'
 }
 
-export default function MediaUploader({ media = [], onChange, compact = false, photoOnly = false }) {
+export default function MediaUploader({ media = [], onChange, photoOnly = false }) {
   const photoCamInput = useRef(null)
   const videoCamInput = useRef(null)
   const galleryInput = useRef(null)
@@ -33,6 +33,17 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
   // src for the open annotator (object URL for full original blob, or dataURL fallback)
   const [annotatorSrc, setAnnotatorSrc] = useState(null)
   const [annotatorIsBlob, setAnnotatorIsBlob] = useState(false)
+  // Tracks the active object URL so we can revoke it if the component unmounts
+  // while the annotator is still open (closeAnnotator handles the normal path).
+  const annotatorUrlRef = useRef(null)
+
+  // Final cleanup: revoke a still-open annotator blob URL on unmount (prevents
+  // a leaked object URL when user navigates away with the editor open).
+  useEffect(() => () => {
+    if (annotatorUrlRef.current) {
+      try { URL.revokeObjectURL(annotatorUrlRef.current) } catch {}
+    }
+  }, [])
 
   const openAnnotator = async (item) => {
     // Prefer the full-resolution original from IDB; fall back to the thumbnail dataURL
@@ -42,6 +53,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
         const blob = await getOriginal(item.originalId)
         if (blob) {
           const url = URL.createObjectURL(blob)
+          annotatorUrlRef.current = url
           setAnnotatorSrc(url)
           setAnnotatorIsBlob(true)
           setEditingItem(item)
@@ -62,6 +74,7 @@ export default function MediaUploader({ media = [], onChange, compact = false, p
     if (annotatorIsBlob && annotatorSrc) {
       try { URL.revokeObjectURL(annotatorSrc) } catch {}
     }
+    annotatorUrlRef.current = null
     setAnnotatorSrc(null)
     setAnnotatorIsBlob(false)
     setEditingItem(null)

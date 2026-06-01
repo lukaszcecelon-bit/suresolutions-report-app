@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
@@ -110,6 +110,12 @@ export default function ComplaintReport({ navigate, reportId }) {
   const [sending, setSending] = useState(false)
 
   const savedAt = useAutoSave(report)
+
+  // Źródła autouzupełniania — memoizowane (jednorazowo na mount), zamiast
+  // przeliczać cały localStorage przy każdym renderze/klawiszu.
+  const projectNumberSug = useMemo(() => suggestProjectNumbers(), [])
+  const partCatalogSug = useMemo(() => suggestPartCatalogNos(), [])
+  const authorSug = useMemo(() => suggestAuthors(), [])
 
   // Pola nagłówka (lean) — projectNumber/date przeliczają numer raportu REK-...
   const setHeaderField = (k, v) => {
@@ -242,7 +248,7 @@ export default function ComplaintReport({ navigate, reportId }) {
             <label className="field-label field-required">Numer projektu</label>
             <SuggestInput type="text" className="field-input"
               placeholder="np. 2025-104"
-              suggestions={suggestProjectNumbers()}
+              suggestions={projectNumberSug}
               value={report.header.projectNumber}
               onChange={(e) => setHeaderField('projectNumber', e.target.value)} />
             <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -253,14 +259,14 @@ export default function ComplaintReport({ navigate, reportId }) {
             <label className="field-label field-required">Numer / nazwa części</label>
             <SuggestInput type="text" className="field-input"
               placeholder="np. nr katalogowy lub nazwa"
-              suggestions={suggestPartCatalogNos()}
+              suggestions={partCatalogSug}
               value={report.partNo}
               onChange={(e) => setReport((r) => ({ ...r, partNo: e.target.value }))} />
           </div>
           <div className="min-w-0">
             <label className="field-label field-required">Zgłaszający</label>
             <SuggestInput type="text" className="field-input"
-              suggestions={suggestAuthors()}
+              suggestions={authorSug}
               value={report.header.author}
               onChange={(e) => setHeaderField('author', e.target.value)} />
           </div>

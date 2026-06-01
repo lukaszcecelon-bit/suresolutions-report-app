@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
@@ -124,6 +124,13 @@ export default function ServiceReport({ navigate, reportId }) {
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
 
+  // Źródła autouzupełniania — memoizowane, żeby nie przeliczać całego localStorage
+  // przy każdym renderze (a part-suggestions były liczone PER część PER render).
+  const clientSug = useMemo(() => suggestClients(), [])
+  const locationSug = useMemo(() => suggestLocations(report.visit.client), [report.visit.client])
+  const partNameSug = useMemo(() => suggestPartNames(), [])
+  const partCatalogSug = useMemo(() => suggestPartCatalogNos(), [])
+
   // Nagłówek: po każdej zmianie przelicz numer raportu z numeru projektu + daty.
   const updateHeader = (h) => {
     setReport((r) => ({
@@ -241,14 +248,14 @@ export default function ServiceReport({ navigate, reportId }) {
           <div className="min-w-0">
             <label className="field-label">Nazwa klienta</label>
             <SuggestInput type="text" className="field-input"
-              suggestions={suggestClients()}
+              suggestions={clientSug}
               value={report.visit.client}
               onChange={(e) => updateVisit('client', e.target.value)} />
           </div>
           <div className="min-w-0">
             <label className="field-label">Lokalizacja / adres obiektu</label>
             <SuggestInput type="text" className="field-input"
-              suggestions={suggestLocations(report.visit.client)}
+              suggestions={locationSug}
               value={report.visit.location}
               onChange={(e) => updateVisit('location', e.target.value)} />
           </div>
@@ -364,7 +371,7 @@ export default function ServiceReport({ navigate, reportId }) {
                 <span className="index-badge">{i + 1}</span>
                 <SuggestInput type="text" className="field-input flex-1 min-w-0"
                   placeholder="Nazwa elementu"
-                  suggestions={suggestPartNames()}
+                  suggestions={partNameSug}
                   value={p.name}
                   onChange={(e) => updatePart(p.id, { name: e.target.value })} />
                 <button
@@ -375,7 +382,7 @@ export default function ServiceReport({ navigate, reportId }) {
               </div>
               <SuggestInput type="text" className="field-input"
                 placeholder="Numer katalogowy (opcjonalny)"
-                suggestions={suggestPartCatalogNos()}
+                suggestions={partCatalogSug}
                 value={p.catalogNo}
                 onChange={(e) => updatePart(p.id, { catalogNo: e.target.value })} />
               <ToggleGroup

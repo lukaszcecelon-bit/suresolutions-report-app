@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
@@ -115,6 +115,10 @@ export default function SatFatReport({ navigate, reportId }) {
 
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
+
+  // Memoizowane źródła autouzupełniania (zamiast pełnego parse localStorage co render).
+  const clientSug = useMemo(() => suggestClients(), [])
+  const locationSug = useMemo(() => suggestLocations(report.info.client), [report.info.client])
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
   const updateInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
@@ -272,7 +276,7 @@ export default function SatFatReport({ navigate, reportId }) {
             <SuggestInput
               type="text"
               className="field-input"
-              suggestions={suggestClients()}
+              suggestions={clientSug}
               value={report.info.client}
               onChange={(e) => updateInfo('client', e.target.value)}
             />
@@ -284,7 +288,7 @@ export default function SatFatReport({ navigate, reportId }) {
             <SuggestInput
               type="text"
               className="field-input"
-              suggestions={suggestLocations(report.info.client)}
+              suggestions={locationSug}
               value={report.info.location}
               onChange={(e) => updateInfo('location', e.target.value)}
             />

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import SuggestInput from './SuggestInput.jsx'
 import { suggestAuthors, suggestProjectNames, suggestMachineNames } from '../../utils/suggestions.js'
 
@@ -28,6 +29,13 @@ export default function Header({
   const invalid = (k) => showErrors && requiredFields.includes(k) && !(header[k] || '').toString().trim()
   const labelCls = (k) => 'field-label ' + (requiredFields.includes(k) ? 'field-required' : '')
   const inputCls = (k) => 'field-input ' + (invalid(k) ? 'is-invalid' : '')
+
+  // Źródła autouzupełniania liczą się z całego localStorage (loadAll + dedup).
+  // Memoizujemy, żeby NIE przeliczać ich przy każdym renderze (czyli przy każdym
+  // wciśnięciu klawisza w formularzu) — tylko raz na mount / przy zmianie projektu.
+  const projectNameSug = useMemo(() => suggestProjectNames(), [])
+  const machineNameSug = useMemo(() => suggestMachineNames(header.projectName), [header.projectName])
+  const authorSug = useMemo(() => suggestAuthors(), [])
 
   // Raport serwisowy: zamiast numeru raportu wpisuje się numer projektu,
   // a numer raportu generuje się automatycznie (RPT-{nr projektu}-{data}).
@@ -82,7 +90,7 @@ export default function Header({
             <SuggestInput
               type="text"
               className={inputCls('projectName')}
-              suggestions={suggestProjectNames()}
+              suggestions={projectNameSug}
               value={header.projectName || ''}
               onChange={(e) => set('projectName', e.target.value)}
             />
@@ -92,7 +100,7 @@ export default function Header({
             <SuggestInput
               type="text"
               className={inputCls('machineName')}
-              suggestions={suggestMachineNames(header.projectName)}
+              suggestions={machineNameSug}
               value={header.machineName || ''}
               onChange={(e) => set('machineName', e.target.value)}
             />
@@ -116,7 +124,7 @@ export default function Header({
             <SuggestInput
               type="text"
               className={inputCls('author')}
-              suggestions={suggestAuthors()}
+              suggestions={authorSug}
               value={header.author || ''}
               onChange={(e) => set('author', e.target.value)}
             />

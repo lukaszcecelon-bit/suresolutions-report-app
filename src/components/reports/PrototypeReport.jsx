@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
@@ -98,6 +98,9 @@ export default function PrototypeReport({ navigate, reportId }) {
 
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
+
+  // Memoizowane źródło autouzupełniania (raz na mount, nie co render).
+  const componentSug = useMemo(() => suggestComponents(), [])
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
   const setInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
@@ -213,7 +216,7 @@ export default function PrototypeReport({ navigate, reportId }) {
           <div className="min-w-0">
             <label className="field-label">Testowany podzespół</label>
             <SuggestInput type="text" className="field-input"
-              suggestions={suggestComponents()}
+              suggestions={componentSug}
               value={report.info.component}
               onChange={(e) => setInfo('component', e.target.value)} />
           </div>
