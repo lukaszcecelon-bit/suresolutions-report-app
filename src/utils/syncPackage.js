@@ -328,6 +328,30 @@ export function downloadBlob(blob, filename) {
   }, 200)
 }
 
+// Generyczne udostępnienie DOWOLNEGO pliku przez Web Share API z opcjonalnym
+// tematem (title) i treścią (text) — używane przez reklamację do wysłania PDF
+// mailem do zakupowca. W odróżnieniu od shareOrDownload (paczki .zip) tu
+// PODAJEMY title+text, bo celem jest e-mail: Outlook/Mail tworzy wiadomość
+// z załączonym PDF, tematem i treścią. Adresata user wybiera/wkleja.
+// Fallback: pobranie pliku.
+export async function shareFileOrDownload(blob, filename, mime, { title, text } = {}) {
+  const file = new File([blob], filename, { type: mime || 'application/octet-stream' })
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      const payload = { files: [file] }
+      if (title) payload.title = title
+      if (text) payload.text = text
+      await navigator.share(payload)
+      return true
+    } catch (e) {
+      if (e.name === 'AbortError') return false
+      console.warn('Web Share (file) failed, falling back to download:', e)
+    }
+  }
+  downloadBlob(blob, filename)
+  return false
+}
+
 // Próbuje udostępnić paczkę przez systemowe menu Share (AirDrop / Mail / etc).
 // Wraca true gdy się udało, false gdy przeglądarka nie wspiera lub user
 // anulował — wtedy caller robi fallback do downloadu.

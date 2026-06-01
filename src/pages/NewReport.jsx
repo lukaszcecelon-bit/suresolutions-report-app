@@ -29,6 +29,13 @@ const TYPES = [
     desc: 'Lista testów odbiorowych z punchlistą — live na placu / w fabryce.',
     path: 'satfat',
   },
+  {
+    key: 'complaint',
+    icon: '🚩',
+    title: 'Reklamacja / zgłoszenie wady',
+    desc: 'Szybkie zgłoszenie wadliwej części — zdjęcie + dane, PDF do zakupowca.',
+    path: 'complaint',
+  },
 ]
 
 export default function NewReport({ navigate }) {

@@ -280,6 +280,9 @@ function collectAllMedia(report) {
         `Test-${idx + 1}_${TEST_STATUS_SLUGS[t.status] || 'X'}${descSlug}`)
     })
     push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
+  } else if (report.type === 'complaint') {
+    const partSlug = slugify(report.partNo) || 'czesc'
+    push(report.media, 'Dowód wady', `Wada_${partSlug}`)
   }
 
   const photos = items.filter((m) => m.kind === 'image')
@@ -673,6 +676,28 @@ const CSS = `
   .cell-text { white-space: pre-wrap; }
   .cell-text--empty { color: #9CA3AF; }
 
+  /* Reklamacja — czerwony baner "blokuje montaż" */
+  .blocker-banner {
+    background: #FEE2E2; border: 2px solid #DC2626; color: #991B1B;
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
+    font-size: 14px; font-weight: 700; text-align: center; letter-spacing: 0.3px;
+  }
+  /* Reklamacja — zdjęcia-dowody: duże, proporcje zachowane (contain, bez kadrowania) */
+  .evidence {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 6px;
+  }
+  .evidence.single { grid-template-columns: 1fr; }
+  .evidence-item {
+    border: 1px solid #D1D5DB; border-radius: 6px; overflow: hidden; background: #F9FAFB;
+  }
+  .evidence-item img {
+    width: 100%; max-height: 460px; object-fit: contain; display: block; background: #fff;
+  }
+  .evidence-cap {
+    font-size: 9.5px; color: #6B7280; padding: 6px 10px;
+    border-top: 1px solid #E5E7EB; font-family: ui-monospace, monospace; word-break: break-all;
+  }
+
   .section-block { margin-bottom: 4px; }
   .pair-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px;
@@ -734,7 +759,7 @@ async function renderHtmlToBlob(html) {
     // Tabele: `table` chroni całą tabelę jako jeden blok (gdy się mieści), `thead`
     // chroni sam nagłówek przed cięciem horyzontalnym, `tbody tr` per-wiersz.
     // Dla dużych tabel filter wyklucza `table`, ale thead + per-row nadal działa.
-    const NO_BREAK_SELECTORS = '.photo, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
+    const NO_BREAK_SELECTORS = '.photo, .evidence-item, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const sourceWidthPx = node.offsetWidth
@@ -1589,6 +1614,89 @@ export async function generateSatFatPackage(report) {
   const typeTag = (r.testType || 'fat').toUpperCase()
   const baseNum = (r.header?.reportNumber || 'odbior').replace(/[^\w\-]+/g, '_')
   const baseName = `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  downloadBlob(pack.blob, pack.filename)
+}
+
+// ============================== REKLAMACJA / ZGŁOSZENIE WADY ==============================
+
+function buildComplaintHtml(report, photos /*, videos */) {
+  const h = report.header || {}
+  const { photoMap } = buildLinkMaps(photos, [])
+  const blocks = !!report.blocksAssembly
+
+  const evidenceHtml = photos.length > 0 ? `
+    <h2>Dokumentacja zdjęciowa</h2>
+    <p class="note">Kliknij zdjęcie aby otworzyć w pełnej rozdzielczości (po rozpakowaniu paczki).</p>
+    <div class="evidence ${photos.length === 1 ? 'single' : ''}">
+      ${photos.map((p) => {
+        const target = p._zipFilename ? `zdjecia/${p._zipFilename}` : null
+        const attrs = target ? ` data-link-target="${esc(target)}"` : ''
+        return `
+        <div class="evidence-item"${attrs}>
+          ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="padding:48px;text-align:center;color:#9CA3AF;font-size:11px">(brak miniatury)</div>'}
+          ${p.description ? `<div class="evidence-cap">${esc(p.description)}</div>` : ''}
+        </div>`
+      }).join('')}
+    </div>
+  ` : '<p class="empty">Brak zdjęć — dołącz zdjęcie wady.</p>'
+
+  return `
+  <div class="page">
+    <div class="hdr">
+      <div class="hdr-left">
+        <img src="${logoUrl}" class="logo" />
+      </div>
+      <div class="hdr-right">
+        <div class="title">ZGŁOSZENIE WADY / REKLAMACJA</div>
+        <div class="num">Nr: <strong>${esc(h.reportNumber || '—')}</strong></div>
+      </div>
+    </div>
+
+    ${blocks ? '<div class="blocker-banner">⛔ BLOKUJE MONTAŻ — wymaga pilnej reakcji</div>' : ''}
+
+    <table class="meta">
+      <tr>
+        <td><span class="lbl">Nr projektu:</span> ${esc(h.projectNumber || '—')}</td>
+        <td><span class="lbl">Część (nr / nazwa):</span> ${esc(report.partNo || '—')}</td>
+        <td><span class="lbl">Data:</span> ${esc(h.date || '—')}</td>
+      </tr>
+      <tr>
+        <td><span class="lbl">Kategoria wady:</span> <strong>${esc(report.defectCategory || '—')}</strong></td>
+        <td><span class="lbl">Zgłaszający:</span> ${esc(h.author || '—')}</td>
+        <td><span class="lbl">Blokuje montaż:</span> <strong>${blocks ? 'TAK' : 'nie'}</strong></td>
+      </tr>
+      ${report.buyerEmail ? `<tr><td colspan="3"><span class="lbl">Adresat (zakupowiec):</span> ${esc(report.buyerEmail)}</td></tr>` : ''}
+    </table>
+
+    <h2>Opis wady</h2>
+    <div class="text-block">${textLines(report.description)}</div>
+
+    ${evidenceHtml}
+
+    <div class="footer">
+      <span>Wygenerowano: ${nowStamp()}</span>
+    </div>
+  </div>
+  `
+}
+
+// Sam PDF (blob) — do wysłania mailem przez Web Share. Bez pakowania ZIP.
+export async function generateComplaintPdfBlob(report) {
+  const r = await resolveReportPhotos(report)
+  const { photos } = collectAllMedia(r)
+  const html = buildComplaintHtml(r, photos)
+  return await renderHtmlToBlob(html)
+}
+
+// Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości) — dla archiwum / sync.
+export async function generateComplaintPackage(report) {
+  const r = await resolveReportPhotos(report)
+  const { photos, videos } = collectAllMedia(r)
+  const html = buildComplaintHtml(r, photos)
+  const pdfBlob = await renderHtmlToBlob(html)
+  const baseNum = (r.header?.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')
+  const baseName = `${baseNum}_${r.header?.date || 'data'}`
   const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
   downloadBlob(pack.blob, pack.filename)
 }

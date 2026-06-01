@@ -26,6 +26,16 @@ const COMMON_HEADER = [
 export function validateReport(report) {
   const missing = []
 
+  // Reklamacja — własna, minimalna walidacja (lean form, bez wspólnego nagłówka).
+  if (report.type === 'complaint') {
+    if (isEmpty(report.header?.projectNumber)) missing.push({ label: 'Numer projektu', sectionId: 'sec-ident' })
+    if (isEmpty(report.partNo)) missing.push({ label: 'Numer / nazwa części', sectionId: 'sec-ident' })
+    if (isEmpty(report.header?.author)) missing.push({ label: 'Zgłaszający', sectionId: 'sec-ident' })
+    const hasPhoto = Array.isArray(report.media) && report.media.some((m) => m.kind === 'image')
+    if (!hasPhoto) missing.push({ label: 'Co najmniej 1 zdjęcie wady', sectionId: 'sec-photos' })
+    return { ok: missing.length === 0, missing }
+  }
+
   // Identyfikator raportu — serwis: numer projektu, pozostałe: numer raportu.
   if (report.type === 'service') {
     if (isEmpty(report.header?.projectNumber)) {

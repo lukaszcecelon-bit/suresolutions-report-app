@@ -5,6 +5,7 @@ import CommissioningReport from './components/reports/CommissioningReport.jsx'
 import ServiceReport from './components/reports/ServiceReport.jsx'
 import PrototypeReport from './components/reports/PrototypeReport.jsx'
 import SatFatReport from './components/reports/SatFatReport.jsx'
+import ComplaintReport from './components/reports/ComplaintReport.jsx'
 import InstallPrompt from './components/common/InstallPrompt.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import OnboardingTour from './components/common/OnboardingTour.jsx'
@@ -51,7 +52,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.20</span>
+      <span>v0.21</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -95,6 +96,7 @@ function AppShell() {
   else if (route.name === 'service') page = <ServiceReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'prototype') page = <PrototypeReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'satfat') page = <SatFatReport navigate={navigate} reportId={route.id} />
+  else if (route.name === 'complaint') page = <ComplaintReport navigate={navigate} reportId={route.id} />
   else page = <Home navigate={navigate} />
 
   return (

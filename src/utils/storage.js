@@ -163,6 +163,27 @@ export function cloneReport(source) {
     }
   }
 
+  if (source.type === 'complaint') {
+    // Duplikat reklamacji: zachowujemy nr projektu, część, e-mail zakupowca
+    // (zwykle ta sama partia/dostawca); czyścimy zdjęcia, opis, kategorię, flagę.
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
+    return {
+      ...base,
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `REK-${projectNumber}-${date}` : '',
+      },
+      partNo: source.partNo || '',
+      defectCategory: '',
+      blocksAssembly: false,
+      description: '',
+      media: [],
+      buyerEmail: source.buyerEmail || '',
+    }
+  }
+
   if (source.type === 'prototype') {
     return {
       ...base,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
-import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage, generateSatFatPackage } from '../utils/pdfGenerator.js'
+import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage, generateSatFatPackage, generateComplaintPackage } from '../utils/pdfGenerator.js'
 import { exportAllReportsPackage, shareOrDownload, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -10,6 +10,7 @@ const TYPE_LABELS = {
   service: 'Serwis na obiekcie',
   prototype: 'Testy prototypu / podzespołu',
   satfat: 'SAT / FAT — odbiór maszyny',
+  complaint: 'Reklamacja / zgłoszenie wady',
 }
 
 const TYPE_ICONS = {
@@ -17,6 +18,7 @@ const TYPE_ICONS = {
   service: '🔧',
   prototype: '🧪',
   satfat: '📋',
+  complaint: '🚩',
 }
 
 const TYPE_FILTER_ITEMS = [
@@ -24,6 +26,7 @@ const TYPE_FILTER_ITEMS = [
   { key: 'service',       label: '🔧 Serwis' },
   { key: 'prototype',     label: '🧪 Prototyp' },
   { key: 'satfat',        label: '📋 SAT/FAT' },
+  { key: 'complaint',     label: '🚩 Reklamacja' },
 ]
 
 const STATUS_FILTER_ITEMS = [
@@ -58,6 +61,8 @@ function getSearchableText(r) {
     } else {
       push(r.observations)
     }
+  } else if (r.type === 'complaint') {
+    push(r.partNo); push(r.defectCategory); push(r.description)
   } else if (r.type === 'prototype') {
     push(r.info?.component); push(r.info?.goal)
     push(r.observations); push(r.decisionNotes); push(r.conditions?.setup)
@@ -158,6 +163,7 @@ export default function Home({ navigate }) {
       else if (r.type === 'service') await generateServicePackage(r)
       else if (r.type === 'prototype') await generatePrototypePackage(r)
       else if (r.type === 'satfat') await generateSatFatPackage(r)
+      else if (r.type === 'complaint') await generateComplaintPackage(r)
       else toast.info('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.')
       toast.success('Paczka pobrana')
     } catch (e) {
@@ -172,6 +178,7 @@ export default function Home({ navigate }) {
     else if (r.type === 'service') navigate(`service/${r.id}`)
     else if (r.type === 'prototype') navigate(`prototype/${r.id}`)
     else if (r.type === 'satfat') navigate(`satfat/${r.id}`)
+    else if (r.type === 'complaint') navigate(`complaint/${r.id}`)
     else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
   }
 
@@ -184,6 +191,7 @@ export default function Home({ navigate }) {
     else if (fresh.type === 'service') navigate(`service/${fresh.id}`)
     else if (fresh.type === 'prototype') navigate(`prototype/${fresh.id}`)
     else if (fresh.type === 'satfat') navigate(`satfat/${fresh.id}`)
+    else if (fresh.type === 'complaint') navigate(`complaint/${fresh.id}`)
   }
 
   // Sort by updatedAt desc (most recent first)

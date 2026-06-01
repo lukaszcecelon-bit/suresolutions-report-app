@@ -27,6 +27,7 @@ function distinctRecent(pickFn, filterFn) {
 // ---- Header (cross-type) ----
 export const suggestAuthors        = () => distinctRecent((r) => r.header?.author)
 export const suggestProjectNames   = () => distinctRecent((r) => r.header?.projectName)
+export const suggestProjectNumbers = () => distinctRecent((r) => r.header?.projectNumber)
 
 // Machine names — narrowed by project if user has already picked one
 export function suggestMachineNames(currentProject) {
