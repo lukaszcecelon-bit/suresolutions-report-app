@@ -207,6 +207,12 @@ const PUNCHLIST_PRIORITY_LABELS = {
   minor:    '🟢 Drobne',
 }
 
+const PUNCHLIST_PRIORITY_SLUGS = {
+  critical: 'KRYT',
+  major:    'IST',
+  minor:    'DROB',
+}
+
 const FINAL_STATUS_LABELS = {
   accepted:    '✓ Zaakceptowano',
   conditional: '~ Zaakceptowano warunkowo',
@@ -278,6 +284,14 @@ function collectAllMedia(report) {
       push(t.media,
         ctxLabel,
         `Test-${idx + 1}_${TEST_STATUS_SLUGS[t.status] || 'X'}${descSlug}`)
+    })
+    ;(report.punchlist || []).forEach((p, idx) => {
+      const desc = p.description ? ' — ' + p.description.slice(0, 50) : ''
+      const ctxLabel = `Usterka #${idx + 1}${desc} (${PUNCHLIST_PRIORITY_LABELS[p.priority] || ''})`
+      const descSlug = p.description ? '_' + slugify(p.description) : ''
+      push(p.media,
+        ctxLabel,
+        `Usterka-${idx + 1}_${PUNCHLIST_PRIORITY_SLUGS[p.priority] || 'X'}${descSlug}`)
     })
     push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
   } else if (report.type === 'complaint') {
@@ -1493,6 +1507,7 @@ function buildSatFatHtml(report, photos, videos) {
           <th style="width:110px">Priorytet</th>
           <th>Opis usterki</th>
           <th>Uwagi</th>
+          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
@@ -1502,6 +1517,7 @@ function buildSatFatHtml(report, photos, videos) {
             <td>${esc(PUNCHLIST_PRIORITY_LABELS[p.priority] || p.priority || '—')}</td>
             <td>${esc(p.description || '—')}</td>
             <td>${esc(p.notes || '—')}</td>
+            <td>${renderMediaLinks(p.media, photoMap, videoMap)}</td>
           </tr>
         `).join('')}
       </tbody>

@@ -185,6 +185,7 @@ export default function SatFatReport({ navigate, reportId }) {
         description: '',
         priority: 'major',
         notes: '',
+        media: [],
       }],
     }))
   }
@@ -473,6 +474,13 @@ export default function SatFatReport({ navigate, reportId }) {
                 value={p.notes}
                 onChange={(e) => updatePunchItem(p.id, { notes: e.target.value })}
               />
+              <div>
+                <label className="field-label">Media (zdjęcie usterki, wideo)</label>
+                <MediaUploader
+                  media={p.media || []}
+                  onChange={(m) => updatePunchItem(p.id, { media: m })}
+                />
+              </div>
             </div>
             )}
           </SortableList>
