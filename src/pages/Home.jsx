@@ -368,7 +368,8 @@ export default function Home({ navigate }) {
 
         {sorted.length === 0 ? (
           <div className="card text-center text-gray-500 dark:text-gray-400">
-            Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy raport"</span> aby zacząć.
+            Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy raport"</span> aby zacząć,
+            albo <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz jak to działa</button>.
           </div>
         ) : filtered.length === 0 ? (
           <div className="card text-center text-gray-500 dark:text-gray-400">

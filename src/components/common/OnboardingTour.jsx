@@ -5,6 +5,12 @@ import { useEffect, useRef, useState } from 'react'
 // użytkownicy dostali świeży tour zamiast nic.
 const STORAGE_KEY = 'suresolutions.onboarding.v2.dismissed'
 
+// Kasuje flagę „pominięto" — przewodnik pokaże się ponownie przy następnym
+// starcie App. Wołane ze strony Pomocy („Pokaż przewodnik ponownie”).
+export function resetOnboarding() {
+  try { localStorage.removeItem(STORAGE_KEY) } catch {}
+}
+
 const STEPS = [
   {
     icon: '👋',
@@ -13,8 +19,8 @@ const STEPS = [
   },
   {
     icon: '📋',
-    title: 'Cztery typy raportów',
-    body: 'Kliknij „+ Nowy raport" i wybierz typ — od live-loggera zatrzymań maszyny po listę testów odbiorowych. Każdy ma własny scenariusz dopasowany do branży.',
+    title: 'Pięć typów raportów',
+    body: 'Kliknij „+ Nowy raport" i wybierz typ — uruchomienie, serwis, testy prototypu, odbiór SAT/FAT lub reklamacja. Każdy ma własny scenariusz dopasowany do branży.',
   },
   {
     icon: '📷',

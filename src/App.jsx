@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Home from './pages/Home.jsx'
 import NewReport from './pages/NewReport.jsx'
+import Help from './pages/Help.jsx'
 import CommissioningReport from './components/reports/CommissioningReport.jsx'
 import ServiceReport from './components/reports/ServiceReport.jsx'
 import PrototypeReport from './components/reports/PrototypeReport.jsx'
@@ -52,7 +53,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.27</span>
+      <span>v0.28</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -97,6 +98,7 @@ function AppShell() {
   else if (route.name === 'prototype') page = <PrototypeReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'satfat') page = <SatFatReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'complaint') page = <ComplaintReport navigate={navigate} reportId={route.id} />
+  else if (route.name === 'help') page = <Help navigate={navigate} />
   else page = <Home navigate={navigate} />
 
   return (
@@ -112,6 +114,14 @@ function AppShell() {
             <span className="hidden sm:inline text-sm font-semibold text-sure-dark dark:text-gray-100">Raporty SURE</span>
           </button>
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => navigate('help')}
+              className="text-gray-500 dark:text-gray-300 hover:text-sure-blue hover:bg-gray-100 dark:hover:bg-gray-700 w-8 h-8 rounded-full transition flex items-center justify-center text-sm font-bold border border-gray-300 dark:border-gray-600"
+              title="Pomoc — jak działa aplikacja"
+              aria-label="Pomoc"
+            >
+              ?
+            </button>
             <ThemeToggle />
             <VersionBadge />
           </div>
