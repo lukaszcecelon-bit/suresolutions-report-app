@@ -352,53 +352,18 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
-// Mapy photoId/videoId → względna ścieżka pliku w paczce ZIP.
-// Używane przez `renderMediaLinks()` żeby budować klikalne linki w PDF.
-// Każde zdjęcie/wideo w `photos`/`videos` ma już `_zipFilename` ustawione
-// przez `collectAllMedia()` (np. `01_Zatrzymanie-1_Zaciecie.jpg`).
-function buildLinkMaps(photos, videos) {
+// Mapa photoId → względna ścieżka pliku w paczce ZIP (np. `zdjecia/01_xxx.jpg`).
+// Używane przez `renderThumbs()` żeby miniaturki inline były klikalne (otwierają
+// pełne zdjęcie po rozpakowaniu paczki na komputerze). Każde zdjęcie w `photos`
+// ma już `_zipFilename` ustawione przez `collectAllMedia()`.
+// (Wideo nie potrzebuje mapy — `renderVideosHtml` buduje link z `_zipFilename`
+// bezpośrednio.)
+function buildLinkMaps(photos) {
   const photoMap = new Map()
   for (const p of photos || []) {
     if (p.photoId && p._zipFilename) photoMap.set(p.photoId, p._zipFilename)
   }
-  const videoMap = new Map()
-  for (const v of videos || []) {
-    if (v.videoId && v._zipFilename) videoMap.set(v.videoId, v._zipFilename)
-  }
-  return { photoMap, videoMap }
-}
-
-// Renderuje komórkę tabeli z linkami do każdej fotki/wideo w grupie.
-// Wynik: `📷 1 · 📷 2 · 🎬 1` gdzie każdy element jest klikalny po dodaniu
-// `pdf.link()` w `renderHtmlToBlob` (data-link-target identyfikuje element).
-// Linki są ścieżkami WZGLĘDNYMI w paczce ZIP — działają gdy user rozpakuje
-// archiwum (Adobe Reader, Foxit, Chrome PDF, Firefox PDF.js, macOS Preview
-// — wszystko na desktopie). Bez wpływu na mobile (iOS Books ignoruje
-// względne ścieżki, ale ten feature jest celowo desktop-only).
-function renderMediaLinks(media, photoMap, videoMap) {
-  if (!media || media.length === 0) return '—'
-  const photos = media.filter((m) => m.kind === 'image')
-  const videos = media.filter((m) => m.kind === 'video')
-  if (photos.length === 0 && videos.length === 0) return '—'
-
-  const parts = []
-  photos.forEach((m, i) => {
-    const fname = m.photoId ? photoMap.get(m.photoId) : null
-    if (fname) {
-      parts.push(`<span class="media-link" data-link-target="zdjecia/${esc(fname)}">📷 ${i + 1}</span>`)
-    } else {
-      parts.push(`📷 ${i + 1}`)
-    }
-  })
-  videos.forEach((m, i) => {
-    const fname = m.videoId ? videoMap.get(m.videoId) : null
-    if (fname) {
-      parts.push(`<span class="media-link" data-link-target="wideo/${esc(fname)}">🎬 ${i + 1}</span>`)
-    } else {
-      parts.push(`🎬 ${i + 1}`)
-    }
-  })
-  return parts.join(' · ')
+  return { photoMap }
 }
 
 // Renderuje rząd MAŁYCH klikalnych miniaturek pod tekstem (raport serwisowy).
@@ -414,6 +379,16 @@ function renderThumbs(media, photoMap) {
     return `<img class="pdf-thumb" src="${m.dataUrl}"${attrs} />`
   }).join('')
   return `<div class="thumb-row">${imgs}</div>`
+}
+
+// Nagłówek sekcji + rząd miniaturek. Zwraca '' gdy brak zdjęć (np. media
+// sekcyjne/ogólne których nie ma) — żeby nie renderować pustego nagłówka.
+// Używane dla dokumentacji ogólnej i media sekcyjnych (wzór: raport serwisowy —
+// miniaturki inline zamiast wielkiej galerii na końcu).
+function thumbsSection(heading, media, photoMap) {
+  const html = renderThumbs(media, photoMap)
+  if (!html) return ''
+  return `<h2>${esc(heading)}</h2>${html}`
 }
 
 // Każdy logiczny wiersz (rozdzielony \n) trafia do osobnego <div class="text-line">.
@@ -433,7 +408,7 @@ function textLines(s) {
 
 function buildCommissioningHtml(report, photos, videos) {
   const h = report.header || {}
-  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
+  const { photoMap } = buildLinkMaps(photos)
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
     ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt)
     : 0
@@ -447,12 +422,11 @@ function buildCommissioningHtml(report, photos, videos) {
       <td>${esc(timeHHMM(s.startAt))}</td>
       <td>${esc(formatDurationShort(s.durationMs))}</td>
       <td>${esc(s.reason === 'Inne' && s.customReason ? s.customReason : s.reason)}</td>
-      <td>${esc(s.comment || '—')}</td>
-      <td>${renderMediaLinks(s.media, photoMap, videoMap)}</td>
+      <td>${textWithThumbs(s.comment, s.media, photoMap)}</td>
     </tr>
   `}).join('')
 
-  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
+  const videosHtml = renderVideosHtml(videos)
 
   return `
   <div class="page">
@@ -490,7 +464,7 @@ function buildCommissioningHtml(report, photos, videos) {
     ${stopsRows ? `
       <table class="stops">
         <thead>
-          <tr><th>Nr</th><th>Godzina</th><th>Czas trwania</th><th>Powód</th><th>Komentarz</th><th>Media</th></tr>
+          <tr><th>Nr</th><th>Godzina</th><th>Czas trwania</th><th>Powód</th><th>Komentarz</th></tr>
         </thead>
         <tbody>${stopsRows}</tbody>
       </table>
@@ -502,7 +476,7 @@ function buildCommissioningHtml(report, photos, videos) {
     <h2>Wnioski i rekomendacje</h2>
     <div class="text-block">${textLines(report.conclusions)}</div>
 
-    ${photosHtml}
+    ${thumbsSection('Dokumentacja ogólna', report.generalMedia, photoMap)}
     ${videosHtml}
 
     <div class="footer">
@@ -773,7 +747,7 @@ async function renderHtmlToBlob(html) {
     // Tabele: `table` chroni całą tabelę jako jeden blok (gdy się mieści), `thead`
     // chroni sam nagłówek przed cięciem horyzontalnym, `tbody tr` per-wiersz.
     // Dla dużych tabel filter wyklucza `table`, ale thead + per-row nadal działa.
-    const NO_BREAK_SELECTORS = '.photo, .evidence-item, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, h2'
+    const NO_BREAK_SELECTORS = '.photo, .evidence-item, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, .pdf-thumb, h2'
     const nodeRect = node.getBoundingClientRect()
     const sourceHeightPx = node.offsetHeight
     const sourceWidthPx = node.offsetWidth
@@ -1041,31 +1015,14 @@ async function assemblePackage(pdfBlob, photos, videos, baseName) {
   return { blob, filename: `${baseName}.zip` }
 }
 
-function renderPhotosVideosHtml(allPhotos, allVideos) {
-  const photosHtml = allPhotos.length > 0 ? `
-    <h2>Dokumentacja fotograficzna</h2>
-    <p class="note">Pełne pliki znajdziesz w paczce ZIP w folderze <strong>zdjecia/</strong>. Kliknij miniaturę aby otworzyć w pełnej rozdzielczości (po rozpakowaniu paczki na komputerze).</p>
-    <div class="photos">
-      ${allPhotos.map((p, i) => {
-        // Cała karta klikalna gdy znamy nazwę pliku — pdf.link() obejmuje
-        // bounding-box .photo (img + meta). Klik gdziekolwiek = pełne zdjęcie.
-        const target = p._zipFilename ? `zdjecia/${p._zipFilename}` : null
-        const attrs = target ? ` data-link-target="${esc(target)}"` : ''
-        return `
-        <div class="photo"${attrs}>
-          ${p.dataUrl ? `<img src="${p.dataUrl}" />` : '<div style="height:220px;display:flex;align-items:center;justify-content:center;color:#9CA3AF;font-size:11px;background:#F3F4F6;border-bottom:1px solid #D1D5DB">(brak miniatury)</div>'}
-          <div class="photo-meta">
-            <div class="photo-num">Zdj. ${String(i + 1).padStart(2, '0')}</div>
-            ${p._ctxLabel ? `<div class="photo-ctx">${esc(p._ctxLabel)}</div>` : ''}
-            ${p.description ? `<div class="photo-desc">${esc(p.description)}</div>` : ''}
-            <div class="photo-file">📁 ${esc(p._zipFilename || p.filename || '—')}</div>
-          </div>
-        </div>
-      `}).join('')}
-    </div>
-  ` : ''
-
-  const videosHtml = allVideos.length > 0 ? `
+// Tabela wideo na końcu raportu. Wideo nie da się osadzić w PDF (to nie obraz),
+// więc listujemy je jako klikalne nazwy plików w paczce ZIP (folder wideo/),
+// z kontekstem (do którego punktu/zatrzymania/testu należą). Zdjęcia NIE są tu
+// renderowane — idą jako miniaturki inline pod właściwą treścią (wzór: serwis).
+// Zwraca '' gdy brak wideo.
+function renderVideosHtml(allVideos) {
+  if (!allVideos || allVideos.length === 0) return ''
+  return `
     <h2>Dokumentacja wideo</h2>
     <p class="note">Pełne pliki wideo znajdziesz w paczce ZIP w folderze <strong>wideo/</strong>. Kliknij nazwę pliku aby otworzyć wideo (po rozpakowaniu paczki na komputerze).</p>
     <table class="stops">
@@ -1089,8 +1046,7 @@ function renderPhotosVideosHtml(allPhotos, allVideos) {
         `}).join('')}
       </tbody>
     </table>
-  ` : ''
-  return { photosHtml, videosHtml }
+  `
 }
 
 export async function generateCommissioningPackage(report) {
@@ -1139,7 +1095,7 @@ function textWithThumbs(text, media, photoMap) {
 function buildServiceHtml(report, photos, videos) {
   const h = report.header || {}
   const v = report.visit || {}
-  const { photoMap } = buildLinkMaps(photos, videos)
+  const { photoMap } = buildLinkMaps(photos)
   const observations = Array.isArray(report.observations) ? report.observations : []
   const totalTime = serviceVisitDuration(v.arrival, v.departure)
 
@@ -1300,8 +1256,8 @@ function buildPrototypeHtml(report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const cond = report.conditions || {}
-  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
-  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
+  const { photoMap } = buildLinkMaps(photos)
+  const videosHtml = renderVideosHtml(videos)
 
   const sampleMethod = info.sampleMethod === 'other'
     ? (info.sampleMethodOther || 'Inne')
@@ -1332,7 +1288,6 @@ function buildPrototypeHtml(report, photos, videos) {
           <th>Punkt kontrolny</th>
           <th style="width:90px">Wynik</th>
           <th>Komentarz</th>
-          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
@@ -1342,8 +1297,7 @@ function buildPrototypeHtml(report, photos, videos) {
             <td>${i + 1}</td>
             <td>${esc(p.description || '—')}</td>
             <td>${esc(POINT_RESULT_LABELS[p.result] || '—')}</td>
-            <td>${esc(p.comment || '—')}</td>
-            <td>${renderMediaLinks(p.media, photoMap, videoMap)}</td>
+            <td>${textWithThumbs(p.comment, p.media, photoMap)}</td>
           </tr>
         `}).join('')}
       </tbody>
@@ -1387,6 +1341,7 @@ function buildPrototypeHtml(report, photos, videos) {
       </tr>
     </table>
     <div class="text-block" style="margin-top:8px"><span class="lbl">Cel testu:</span>${textLines(info.goal)}</div>
+    ${renderThumbs(info.media, photoMap)}
 
     <h2>B. Warunki testu</h2>
     <div class="text-block"><span class="lbl">Setup:</span>${textLines(cond.setup)}</div>
@@ -1402,15 +1357,17 @@ function buildPrototypeHtml(report, photos, videos) {
     </div>
     <div style="margin-top:10px"></div>
     ${pointsHtml}
+    ${renderThumbs(report.resultsMedia, photoMap)}
 
     <h2>D. Obserwacje i wnioski</h2>
     <div class="text-block">${textLines(report.observations)}</div>
+    ${renderThumbs(report.observationsMedia, photoMap)}
 
     <h2>E. Decyzja</h2>
     <div style="margin-bottom:6px"><strong>${esc(DECISION_LABELS[report.decision] || '—')}</strong></div>
     <div class="text-block">${textLines(report.decisionNotes)}</div>
 
-    ${photosHtml}
+    ${thumbsSection('Dokumentacja ogólna', report.media, photoMap)}
     ${videosHtml}
 
     <div class="footer">
@@ -1438,8 +1395,8 @@ function buildSatFatHtml(report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const sigs = report.signatures || {}
-  const { photoMap, videoMap } = buildLinkMaps(photos, videos)
-  const { photosHtml, videosHtml } = renderPhotosVideosHtml(photos, videos)
+  const { photoMap } = buildLinkMaps(photos)
+  const videosHtml = renderVideosHtml(videos)
 
   const titleKey = report.testType === 'sat' ? 'satfat_sat' : 'satfat_fat'
   const title = TYPE_TITLES[titleKey]
@@ -1480,7 +1437,6 @@ function buildSatFatHtml(report, photos, videos) {
           <th>Kryterium akceptacji</th>
           <th style="width:110px">Wynik</th>
           <th>Uwagi</th>
-          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
@@ -1491,8 +1447,7 @@ function buildSatFatHtml(report, photos, videos) {
             <td>${esc(t.description || '—').replace(/\n/g, '<br/>')}</td>
             <td>${esc(t.criterion || '—')}</td>
             <td>${esc(TEST_STATUS_LABELS[t.status] || '—')}</td>
-            <td>${esc(t.notes || '—').replace(/\n/g, '<br/>')}</td>
-            <td>${renderMediaLinks(t.media, photoMap, videoMap)}</td>
+            <td>${textWithThumbs(t.notes, t.media, photoMap)}</td>
           </tr>
         `}).join('')}
       </tbody>
@@ -1507,7 +1462,6 @@ function buildSatFatHtml(report, photos, videos) {
           <th style="width:110px">Priorytet</th>
           <th>Opis usterki</th>
           <th>Uwagi</th>
-          <th style="width:90px">Media</th>
         </tr>
       </thead>
       <tbody>
@@ -1516,8 +1470,7 @@ function buildSatFatHtml(report, photos, videos) {
             <td>${i + 1}</td>
             <td>${esc(PUNCHLIST_PRIORITY_LABELS[p.priority] || p.priority || '—')}</td>
             <td>${esc(p.description || '—')}</td>
-            <td>${esc(p.notes || '—')}</td>
-            <td>${renderMediaLinks(p.media, photoMap, videoMap)}</td>
+            <td>${textWithThumbs(p.notes, p.media, photoMap)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -1612,7 +1565,7 @@ function buildSatFatHtml(report, photos, videos) {
       </div>
     </div>
 
-    ${photosHtml}
+    ${thumbsSection('H. Dokumentacja fotograficzna (ogólna)', report.media, photoMap)}
     ${videosHtml}
 
     <div class="footer">
@@ -1638,7 +1591,7 @@ export async function generateSatFatPackage(report) {
 
 function buildComplaintHtml(report, photos /*, videos */) {
   const h = report.header || {}
-  const { photoMap } = buildLinkMaps(photos, [])
+  const { photoMap } = buildLinkMaps(photos)
   const blocks = !!report.blocksAssembly
 
   const evidenceHtml = photos.length > 0 ? `
