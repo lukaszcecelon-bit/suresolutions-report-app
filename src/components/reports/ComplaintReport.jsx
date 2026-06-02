@@ -12,10 +12,11 @@ import { useAutoSave } from '../../utils/useAutoSave.js'
 import { generateComplaintPackage, generateComplaintZip } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
+import { BUYER_EMAIL_KEY } from '../../utils/settings.js'
 
-// Zapisany e-mail zakupowca — jeden, globalny (ustawienia). Pamiętany między
-// zgłoszeniami w localStorage, edytowalny w formularzu.
-const BUYER_EMAIL_KEY = 'suresolutions.buyerEmail'
+// Zapisany e-mail zakupowca — jeden, globalny (ustawienia globalne #/settings).
+// Pamiętany między zgłoszeniami w localStorage, edytowalny też w formularzu.
+// Klucz `BUYER_EMAIL_KEY` współdzielony z utils/settings.js.
 
 const DEFECT_CATEGORIES = [
   'Wymiary / otwory', 'Materiał', 'Obróbka / powierzchnia',
