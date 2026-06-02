@@ -194,14 +194,30 @@ export default function Home({ navigate }) {
     else if (fresh.type === 'complaint') navigate(`complaint/${fresh.id}`)
   }
 
-  // Sort by updatedAt desc (most recent first)
+  // STAŁA kolejność: wg daty UTWORZENIA (najnowsze na górze), NIE wg updatedAt.
+  // Wcześniej sortowanie po updatedAt powodowało, że otwarcie/edycja raportu
+  // wybijały go na górę listy — dezorientujące przy żonglowaniu kilkoma roboczymi
+  // raportami. Teraz pozycja każdego raportu jest stała przez całe jego życie.
   const sorted = useMemo(() => [...reports].sort((a, b) => {
-    const ta = new Date(a.updatedAt || a.createdAt || 0).getTime()
-    const tb = new Date(b.updatedAt || b.createdAt || 0).getTime()
-    return tb - ta
+    const ta = new Date(a.createdAt || 0).getTime()
+    const tb = new Date(b.createdAt || 0).getTime()
+    if (tb !== ta) return tb - ta
+    // Deterministyczny tiebreak gdy createdAt identyczne (np. import paczki)
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
   }), [reports])
 
-  const mostRecentId = sorted[0]?.id
+  // „Ostatnio" = ostatnio EDYTOWANY (max updatedAt), podświetlany niezależnie od
+  // pozycji na liście. Dzięki temu kolejność zostaje stała, ale user wciąż widzi
+  // „tu skończyłem" — bez przesuwania karty.
+  const mostRecentId = useMemo(() => {
+    let id = null
+    let best = -Infinity
+    for (const r of reports) {
+      const t = new Date(r.updatedAt || r.createdAt || 0).getTime()
+      if (t > best) { best = t; id = r.id }
+    }
+    return id
+  }, [reports])
 
   // Apply search + filters
   const filtered = useMemo(() => {
