@@ -5,13 +5,12 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import LoadingOverlay from '../common/LoadingOverlay.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
-import { useToast, useConfirm } from '../common/Toast.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
-import { useAutoSave } from '../../utils/useAutoSave.js'
+import { useReportPage } from '../../utils/useReportPage.js'
 import { generateComplaintPackage, generateComplaintZip } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
+import { shareFileOrDownload, downloadBlob } from '../../utils/syncPackage.js'
 import { BUYER_EMAIL_KEY } from '../../utils/settings.js'
 
 // Zapisany e-mail zakupowca — jeden, globalny (ustawienia globalne #/settings).
@@ -105,12 +104,12 @@ export default function ComplaintReport({ navigate, reportId }) {
     return def
   })
 
-  const toast = useToast()
-  const confirm = useConfirm()
-  const [downloading, setDownloading] = useState(false)
-  const [sending, setSending] = useState(false)
-
-  const savedAt = useAutoSave(report)
+  // Wspólny szkielet (auto-save, paczka ZIP, sync). Wysyłka do zakupowca jest
+  // specyficzna dla reklamacji — zostaje lokalnie, z własnym stanem spinnera.
+  const page = useReportPage({ report, setReport, generatePackage: generateComplaintPackage })
+  const { toast, confirm } = page
+  const [sendingBuyer, setSendingBuyer] = useState(false)
+  const busy = page.downloading || page.sending || sendingBuyer
 
   // Źródła autouzupełniania — memoizowane (jednorazowo na mount), zamiast
   // przeliczać cały localStorage przy każdym renderze/klawiszu.
@@ -140,7 +139,7 @@ export default function ComplaintReport({ navigate, reportId }) {
   //    Adres zakupowca kopiowany do schowka (Web Share nie prefilluje adresata).
   const sendToBuyer = async () => {
     if (!(await ensureValidOrConfirm(report, confirm))) return
-    setSending(true)
+    setSendingBuyer(true)
     try {
       const pack = await generateComplaintZip(report) // { blob, filename }
       const subject = `REKLAMACJA ${report.header.reportNumber || ''}${report.partNo ? ` / ${report.partNo}` : ''}`.trim()
@@ -170,39 +169,7 @@ export default function ComplaintReport({ navigate, reportId }) {
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
-      setSending(false)
-    }
-  }
-
-  const downloadPackage = async () => {
-    if (!(await ensureValidOrConfirm(report, confirm))) return
-    setDownloading(true)
-    try {
-      await generateComplaintPackage(report)
-      toast.success('Paczka pobrana')
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setDownloading(false)
-    }
-  }
-
-  const sendToDevice = async (forceDownload = false) => {
-    setSending(true)
-    try {
-      const blob = await exportReportPackage(report)
-      const filename = makePackageFilename(report)
-      if (forceDownload) {
-        downloadBlob(blob, filename)
-        toast.success('Plik zapisany lokalnie')
-      } else {
-        await shareOrDownload(blob, filename)
-        toast.success('Paczka gotowa do przesłania')
-      }
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setSending(false)
+      setSendingBuyer(false)
     }
   }
 
@@ -220,7 +187,7 @@ export default function ComplaintReport({ navigate, reportId }) {
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between gap-2">
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <AutoSaveIndicator savedAt={savedAt} />
+        <AutoSaveIndicator savedAt={page.savedAt} />
       </div>
 
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -337,33 +304,33 @@ export default function ComplaintReport({ navigate, reportId }) {
         </p>
       </div>
 
-      <LoadingOverlay visible={downloading || sending} />
+      <LoadingOverlay visible={busy} />
 
       {/* Sticky action bar */}
       <div className="action-bar">
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={sendToBuyer}
-            disabled={sending || downloading}
+            disabled={busy}
             className="btn-primary flex-[2] text-base"
           >
-            {sending ? '⏳ Przygotowanie…' : '📤 Wyślij do zakupowca'}
+            {sendingBuyer ? '⏳ Przygotowanie…' : '📤 Wyślij do zakupowca'}
           </button>
           <button
-            onClick={downloadPackage}
-            disabled={downloading || sending}
+            onClick={page.downloadPdf}
+            disabled={busy}
             className="btn-secondary flex-1"
             title="Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości)"
           >
-            {downloading ? '⏳' : '📦 Paczka ZIP'}
+            {page.downloading ? '⏳' : '📦 Paczka ZIP'}
           </button>
           <button
-            onClick={() => sendToDevice(true)}
-            disabled={sending || downloading}
+            onClick={() => page.sendToDevice(true)}
+            disabled={busy}
             className="btn-secondary flex-1"
             title="Zapisz paczkę na inne urządzenie"
           >
-            💾 Zapisz plik
+            {page.sending ? '⏳' : '💾 Zapisz plik'}
           </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź

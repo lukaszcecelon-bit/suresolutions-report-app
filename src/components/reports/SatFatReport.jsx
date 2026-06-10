@@ -5,17 +5,14 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
-import LoadingOverlay from '../common/LoadingOverlay.jsx'
 import SortableList from '../common/SortableList.jsx'
+import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
-import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
-import { useAutoSave } from '../../utils/useAutoSave.js'
+import { useReportPage } from '../../utils/useReportPage.js'
 import { generateSatFatPackage } from '../../utils/pdfGenerator.js'
-import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
 // FAT (Factory Acceptance Test) vs SAT (Site Acceptance Test): identyczna
 // struktura raportu, tylko inna etykieta i miejsce. Jeden komponent obsługuje oba,
@@ -108,13 +105,9 @@ export default function SatFatReport({ navigate, reportId }) {
     return defaultReport()
   })
 
-  const toast = useToast()
-  const confirm = useConfirm()
-  const [downloading, setDownloading] = useState(false)
-  const [sending, setSending] = useState(false)
-
-  // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
-  const savedAt = useAutoSave(report)
+  // Wspólny szkielet strony raportu: auto-save, paczki, lock ukończonych.
+  const page = useReportPage({ report, setReport, generatePackage: generateSatFatPackage })
+  const { confirm, locked } = page
 
   // Memoizowane źródła autouzupełniania (zamiast pełnego parse localStorage co render).
   const clientSug = useMemo(() => suggestClients(), [])
@@ -197,48 +190,6 @@ export default function SatFatReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, punchlist: r.punchlist.filter((p) => p.id !== id) }))
   }
 
-  // ---------- Akcje ----------
-  const finishReport = async () => {
-    if (!(await confirm('Oznaczyć raport jako ukończony? Możesz go potem nadal edytować i pobrać paczkę.', {
-      confirmLabel: 'Oznacz', title: 'Zakończenie raportu',
-    }))) return
-    setReport((r) => ({ ...r, status: 'completed' }))
-    toast.success('Raport oznaczony jako ukończony')
-  }
-
-  // Sync paczka. forceDownload=true → zawsze lokalnie. Patrz ServiceReport.
-  const sendToDevice = async (forceDownload = false) => {
-    setSending(true)
-    try {
-      const blob = await exportReportPackage(report)
-      const filename = makePackageFilename(report)
-      if (forceDownload) {
-        downloadBlob(blob, filename)
-        toast.success('Plik zapisany lokalnie')
-      } else {
-        await shareOrDownload(blob, filename)
-        toast.success('Paczka gotowa do przesłania')
-      }
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const downloadPdf = async () => {
-    if (!(await ensureValidOrConfirm(report, confirm))) return
-    setDownloading(true)
-    try {
-      await generateSatFatPackage(report)
-      toast.success('Paczka pobrana')
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   // Quick stats for the C section header
   const passCount = report.tests.filter((t) => t.status === 'pass').length
   const failCount = report.tests.filter((t) => t.status === 'fail').length
@@ -254,11 +205,17 @@ export default function SatFatReport({ navigate, reportId }) {
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
         <div className="flex items-center gap-3">
           {typeBadge}
-          <AutoSaveIndicator savedAt={savedAt} />
+          <AutoSaveIndicator savedAt={page.savedAt} />
         </div>
       </div>
 
       <SectionNav sections={SECTIONS} />
+
+      <LockBanner locked={locked} onUnlock={page.unlock} />
+
+      {/* fieldset disabled = natywna blokada WSZYSTKICH pól/przycisków w środku
+          gdy raport jest ukończony. Pasek akcji jest poza — pobieranie działa. */}
+      <fieldset disabled={locked} className="space-y-4 min-w-0">
 
       <div id="sec-header">
         <Header header={report.header} onChange={updateHeader} reportType="satfat" />
@@ -569,44 +526,9 @@ export default function SatFatReport({ navigate, reportId }) {
         />
       </div>
 
-      <LoadingOverlay visible={downloading} />
+      </fieldset>
 
-      {/* Sticky action bar */}
-      <div className="action-bar">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={downloadPdf}
-            disabled={downloading}
-            className="btn-primary flex-[2] text-base"
-          >
-            {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
-          </button>
-          {report.status !== 'completed' && (
-            <button onClick={finishReport} className="btn-success flex-1">
-              ✓ Oznacz ukończony
-            </button>
-          )}
-          <button
-            onClick={() => sendToDevice(false)}
-            disabled={sending}
-            className="btn-secondary flex-1"
-            title="Udostępnij paczkę przez systemowe menu (AirDrop/Mail/OneDrive)"
-          >
-            {sending ? '⏳' : '📤 Wyślij'}
-          </button>
-          <button
-            onClick={() => sendToDevice(true)}
-            disabled={sending}
-            className="btn-secondary flex-1"
-            title="Pobierz paczkę jako plik (do Pobranych/Files)"
-          >
-            {sending ? '⏳' : '💾 Pobierz plik'}
-          </button>
-          <button onClick={() => navigate('')} className="btn-secondary flex-1">
-            Zapisz i wyjdź
-          </button>
-        </div>
-      </div>
+      <ReportActionBar page={page} status={report.status} navigate={navigate} />
     </div>
   )
 }

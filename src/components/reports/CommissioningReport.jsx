@@ -2,14 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
-import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
-import { useAutoSave } from '../../utils/useAutoSave.js'
+import { useReportPage } from '../../utils/useReportPage.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
-import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import LoadingOverlay from '../common/LoadingOverlay.jsx'
-import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -87,14 +84,13 @@ export default function CommissioningReport({ navigate, reportId }) {
     return () => clearInterval(t)
   }, [report.phase])
 
-  const toast = useToast()
-  const confirm = useConfirm()
-  const [downloading, setDownloading] = useState(false)
-  const [sending, setSending] = useState(false)
   const [attemptedStart, setAttemptedStart] = useState(false)
 
-  // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
-  const savedAt = useAutoSave(report)
+  // Wspólny szkielet strony raportu (auto-save, paczki). Uruchomienie NIE
+  // używa locka ukończonych — faza 3 (po sesji) to właśnie miejsce
+  // uzupełniania obserwacji/wniosków, blokada odcięłaby te pola.
+  const page = useReportPage({ report, setReport, generatePackage: generateCommissioningPackage })
+  const { toast, confirm } = page
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
 
@@ -196,46 +192,13 @@ export default function CommissioningReport({ navigate, reportId }) {
     ? (Date.now() - new Date(report.activeStop.startAt))
     : 0
 
-  // Sync paczka. forceDownload=true → zawsze lokalnie. Patrz ServiceReport.
-  const sendToDevice = async (forceDownload = false) => {
-    setSending(true)
-    try {
-      const blob = await exportReportPackage(report)
-      const filename = makePackageFilename(report)
-      if (forceDownload) {
-        downloadBlob(blob, filename)
-        toast.success('Plik zapisany lokalnie')
-      } else {
-        await shareOrDownload(blob, filename)
-        toast.success('Paczka gotowa do przesłania')
-      }
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const downloadPdf = async () => {
-    if (!(await ensureValidOrConfirm(report, confirm))) return
-    setDownloading(true)
-    try {
-      await generateCommissioningPackage(report)
-      toast.success('Paczka pobrana')
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   // ============ RENDER ============
   return (
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between gap-2">
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
         <div className="flex items-center gap-3">
-          <AutoSaveIndicator savedAt={savedAt} />
+          <AutoSaveIndicator savedAt={page.savedAt} />
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {report.phase === 'setup' && 'Faza 1: Start sesji'}
             {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
@@ -519,38 +482,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             />
           </div>
 
-          <LoadingOverlay visible={downloading} />
-
-          <div className="action-bar">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <button
-                onClick={downloadPdf}
-                disabled={downloading}
-                className="btn-primary flex-[2] text-base"
-              >
-                {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
-              </button>
-              <button
-                onClick={() => sendToDevice(false)}
-                disabled={sending}
-                className="btn-secondary flex-1"
-                title="Udostępnij paczkę przez systemowe menu (AirDrop/Mail/OneDrive)"
-              >
-                {sending ? '⏳' : '📤 Wyślij'}
-              </button>
-              <button
-                onClick={() => sendToDevice(true)}
-                disabled={sending}
-                className="btn-secondary flex-1"
-                title="Pobierz paczkę jako plik (do Pobranych/Files)"
-              >
-                {sending ? '⏳' : '💾 Pobierz plik'}
-              </button>
-              <button onClick={() => navigate('')} className="btn-secondary flex-1">
-                Zapisz i wyjdź
-              </button>
-            </div>
-          </div>
+          <ReportActionBar page={page} status={report.status} navigate={navigate} showFinish={false} />
         </>
       )}
     </div>

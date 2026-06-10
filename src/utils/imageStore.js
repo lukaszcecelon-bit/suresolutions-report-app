@@ -2,7 +2,8 @@ const DB_NAME = 'suresolutions.images.v1'
 const STORE_IMAGES = 'images'       // skompresowane miniatury (400×300, dataURL string) — UI + PDF
 const STORE_VIDEOS = 'videos'       // wideo (Blob) — ZIP wideo/
 const STORE_ORIGINALS = 'originals' // pełne, oryginalne zdjęcia (Blob) — ZIP zdjecia/
-const VERSION = 3
+const STORE_MEDIUM = 'medium'       // cache 1200×900 (dataURL, klucz = originalId) — PDF embed
+const VERSION = 4
 
 let dbPromise = null
 
@@ -19,6 +20,7 @@ function openDb() {
       if (!db.objectStoreNames.contains(STORE_IMAGES)) db.createObjectStore(STORE_IMAGES)
       if (!db.objectStoreNames.contains(STORE_VIDEOS)) db.createObjectStore(STORE_VIDEOS)
       if (!db.objectStoreNames.contains(STORE_ORIGINALS)) db.createObjectStore(STORE_ORIGINALS)
+      if (!db.objectStoreNames.contains(STORE_MEDIUM)) db.createObjectStore(STORE_MEDIUM)
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error || new Error('IndexedDB open failed'))
@@ -127,14 +129,40 @@ export async function replaceVideo(id, blob) {
 export const putOriginal = (blob) => putGeneric(STORE_ORIGINALS, blob, 'o')
 export const getOriginal = (id) => getGeneric(STORE_ORIGINALS, id)
 export const getOriginals = (ids) => getManyGeneric(STORE_ORIGINALS, ids)
-export const deleteOriginal = (id) => deleteManyGeneric(STORE_ORIGINALS, [id])
-export const deleteOriginals = (ids) => deleteManyGeneric(STORE_ORIGINALS, ids)
+// Usunięcie oryginału kasuje też jego cache medium-res (ten sam klucz).
+export const deleteOriginal = (id) => deleteOriginals([id])
+export const deleteOriginals = (ids) =>
+  Promise.all([
+    deleteManyGeneric(STORE_ORIGINALS, ids),
+    deleteManyGeneric(STORE_MEDIUM, ids),
+  ])
 
 export async function replaceOriginal(id, blob) {
   const db = await openDb()
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_ORIGINALS, 'readwrite')
+    // Oryginał się zmienia (np. zapis adnotacji) → skasuj cache medium-res
+    // dla tego id w tej samej transakcji, żeby PDF nie wziął starej wersji.
+    const tx = db.transaction([STORE_ORIGINALS, STORE_MEDIUM], 'readwrite')
     tx.objectStore(STORE_ORIGINALS).put(blob, id)
+    tx.objectStore(STORE_MEDIUM).delete(id)
+    tx.oncomplete = () => resolve(id)
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+}
+
+// ---- Medium-res cache (dataURL 1200×900, klucz = originalId) ----
+// Generowanie PDF zmniejsza oryginały do 1200×900 — to najdroższy etap
+// przygotowania zdjęć (200-400 ms/szt.). Wynik trafia tutaj, więc KOLEJNE
+// generowanie tej samej paczki pomija downsampling. Wpisy kasowane razem
+// z oryginałem (deleteOriginals) i przy jego podmianie (replaceOriginal).
+export const getMediums = (ids) => getManyGeneric(STORE_MEDIUM, ids)
+
+export async function putMedium(id, dataUrl) {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MEDIUM, 'readwrite')
+    tx.objectStore(STORE_MEDIUM).put(dataUrl, id)
     tx.oncomplete = () => resolve(id)
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error)
@@ -144,4 +172,18 @@ export async function replaceOriginal(id, blob) {
 export async function getStorageEstimate() {
   if (!navigator.storage || !navigator.storage.estimate) return null
   return navigator.storage.estimate()
+}
+
+// Czy przeglądarka obiecała NIE czyścić pamięci tej aplikacji przy presji
+// na dysk. null = API niedostępne (stare przeglądarki).
+export async function isStoragePersisted() {
+  if (!navigator.storage || !navigator.storage.persisted) return null
+  try { return await navigator.storage.persisted() } catch { return null }
+}
+
+// Prośba o trwałość pamięci. Zwraca true/false (decyzja przeglądarki);
+// zainstalowana PWA zwykle dostaje zgodę bez pytania użytkownika.
+export async function persistStorage() {
+  if (!navigator.storage || !navigator.storage.persist) return null
+  try { return await navigator.storage.persist() } catch { return null }
 }

@@ -5,16 +5,13 @@ import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
-import LoadingOverlay from '../common/LoadingOverlay.jsx'
 import SortableList from '../common/SortableList.jsx'
+import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
-import { useToast, useConfirm } from '../common/Toast.jsx'
 import { getById, newId } from '../../utils/storage.js'
-import { useAutoSave } from '../../utils/useAutoSave.js'
+import { useReportPage } from '../../utils/useReportPage.js'
 import { generatePrototypePackage } from '../../utils/pdfGenerator.js'
-import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from '../../utils/syncPackage.js'
 
 const SAMPLE_METHOD_ITEMS = [
   { key: 'print3d', label: 'Druk 3D' },
@@ -91,13 +88,9 @@ export default function PrototypeReport({ navigate, reportId }) {
     return defaultReport()
   })
 
-  const toast = useToast()
-  const confirm = useConfirm()
-  const [downloading, setDownloading] = useState(false)
-  const [sending, setSending] = useState(false)
-
-  // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
-  const savedAt = useAutoSave(report)
+  // Wspólny szkielet strony raportu: auto-save, paczki, lock ukończonych.
+  const page = useReportPage({ report, setReport, generatePackage: generatePrototypePackage })
+  const { confirm, locked } = page
 
   // Memoizowane źródło autouzupełniania (raz na mount, nie co render).
   const componentSug = useMemo(() => suggestComponents(), [])
@@ -148,47 +141,6 @@ export default function PrototypeReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, points: r.points.filter((p) => p.id !== id) }))
   }
 
-  const finishReport = async () => {
-    if (!(await confirm('Oznaczyć raport jako ukończony? Możesz go potem nadal edytować i pobrać paczkę.', {
-      confirmLabel: 'Oznacz', title: 'Zakończenie raportu'
-    }))) return
-    setReport((r) => ({ ...r, status: 'completed' }))
-    toast.success('Raport oznaczony jako ukończony')
-  }
-
-  // Sync paczka. forceDownload=true → zawsze lokalnie. Patrz ServiceReport.
-  const sendToDevice = async (forceDownload = false) => {
-    setSending(true)
-    try {
-      const blob = await exportReportPackage(report)
-      const filename = makePackageFilename(report)
-      if (forceDownload) {
-        downloadBlob(blob, filename)
-        toast.success('Plik zapisany lokalnie')
-      } else {
-        await shareOrDownload(blob, filename)
-        toast.success('Paczka gotowa do przesłania')
-      }
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const downloadPdf = async () => {
-    if (!(await ensureValidOrConfirm(report, confirm))) return
-    setDownloading(true)
-    try {
-      await generatePrototypePackage(report)
-      toast.success('Paczka pobrana')
-    } catch (e) {
-      toast.error('Błąd: ' + (e.message || e))
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   const okCount = report.points.filter((p) => p.result === 'ok').length
   const nokCount = report.points.filter((p) => p.result === 'nok').length
   const condCount = report.points.filter((p) => p.result === 'cond').length
@@ -197,7 +149,7 @@ export default function PrototypeReport({ navigate, reportId }) {
     <div className="space-y-4 pb-4">
       <div className="flex items-center justify-between gap-2">
         <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <AutoSaveIndicator savedAt={savedAt} />
+        <AutoSaveIndicator savedAt={page.savedAt} />
       </div>
 
       <div className="text-xs text-gray-500 dark:text-gray-400 text-right">
@@ -205,6 +157,12 @@ export default function PrototypeReport({ navigate, reportId }) {
       </div>
 
       <SectionNav sections={SECTIONS} />
+
+      <LockBanner locked={locked} onUnlock={page.unlock} />
+
+      {/* fieldset disabled = natywna blokada WSZYSTKICH pól/przycisków w środku
+          gdy raport jest ukończony. Pasek akcji jest poza — pobieranie działa. */}
+      <fieldset disabled={locked} className="space-y-4 min-w-0">
 
       <div id="sec-header">
         <Header header={report.header} onChange={updateHeader} reportType="prototype" />
@@ -425,43 +383,9 @@ export default function PrototypeReport({ navigate, reportId }) {
           onChange={(m) => setReport((r) => ({ ...r, media: m }))} />
       </div>
 
-      <LoadingOverlay visible={downloading} />
+      </fieldset>
 
-      <div className="action-bar">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={downloadPdf}
-            disabled={downloading}
-            className="btn-primary flex-[2] text-base"
-          >
-            {downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
-          </button>
-          {report.status !== 'completed' && (
-            <button onClick={finishReport} className="btn-success flex-1">
-              ✓ Oznacz ukończony
-            </button>
-          )}
-          <button
-            onClick={() => sendToDevice(false)}
-            disabled={sending}
-            className="btn-secondary flex-1"
-            title="Udostępnij paczkę przez systemowe menu (AirDrop/Mail/OneDrive)"
-          >
-            {sending ? '⏳' : '📤 Wyślij'}
-          </button>
-          <button
-            onClick={() => sendToDevice(true)}
-            disabled={sending}
-            className="btn-secondary flex-1"
-            title="Pobierz paczkę jako plik (do Pobranych/Files)"
-          >
-            {sending ? '⏳' : '💾 Pobierz plik'}
-          </button>
-          <button onClick={() => navigate('')} className="btn-secondary flex-1">
-            Zapisz i wyjdź
-          </button>
-        </div>
-      </div>
+      <ReportActionBar page={page} status={report.status} navigate={navigate} />
     </div>
   )
 }

@@ -134,8 +134,11 @@ export async function exportReportPackage(report) {
 
 // ---------- Export all reports (backup) ----------
 
-export async function exportAllReportsPackage() {
-  const reports = loadAll()
+// Bez argumentu = pełny backup (wszystkie raporty). Z argumentem = paczka
+// z wybranymi raportami (multi-select na Home) — ten sam format 'all-reports',
+// więc import po drugiej stronie działa identycznie.
+export async function exportAllReportsPackage(reportsArg) {
+  const reports = reportsArg || loadAll()
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
 

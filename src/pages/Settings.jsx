@@ -1,5 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { loadSettings, saveSettings, getBuyerEmail, setBuyerEmailGlobal } from '../utils/settings.js'
+import { getStorageEstimate, isStoragePersisted, persistStorage } from '../utils/imageStore.js'
+
+function formatBytes(n) {
+  if (n === null || n === undefined) return '—'
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
 
 // Globalne ustawienia aplikacji (route #/settings, wejście przez ⚙️ w nagłówku).
 // Wszystko zapisuje się automatycznie do localStorage przy każdej zmianie —
@@ -7,6 +15,18 @@ import { loadSettings, saveSettings, getBuyerEmail, setBuyerEmailGlobal } from '
 export default function Settings({ navigate }) {
   const [settings, setSettings] = useState(() => loadSettings())
   const [buyerEmail, setBuyerEmailState] = useState(() => getBuyerEmail())
+  const [estimate, setEstimate] = useState(null)       // { usage, quota } | null
+  const [persisted, setPersisted] = useState(null)     // true/false/null (API brak)
+
+  useEffect(() => {
+    getStorageEstimate().then(setEstimate).catch(() => {})
+    isStoragePersisted().then(setPersisted).catch(() => {})
+  }, [])
+
+  const requestPersist = async () => {
+    const granted = await persistStorage()
+    if (granted !== null) setPersisted(granted)
+  }
 
   const updateSubfolder = (v) => {
     setSettings(saveSettings({ sharepointSubfolder: v }))
@@ -15,6 +35,8 @@ export default function Settings({ navigate }) {
     setBuyerEmailState(v)
     setBuyerEmailGlobal(v)
   }
+
+  const usagePct = estimate?.quota ? Math.min(100, Math.round((estimate.usage / estimate.quota) * 100)) : null
 
   return (
     <div className="space-y-4 pb-4">
@@ -83,6 +105,55 @@ export default function Settings({ navigate }) {
           onChange={(e) => updateBuyerEmail(e.target.value)}
           placeholder="zakupowiec@firma.pl"
         />
+      </section>
+
+      {/* === Pamięć urządzenia === */}
+      <section className="card">
+        <h2 className="section-title">💾 Pamięć urządzenia</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
+          Raporty i zdjęcia są przechowywane lokalnie. Tu widzisz, ile miejsca zajmują
+          i czy przeglądarka chroni te dane przed automatycznym czyszczeniem.
+        </p>
+
+        {estimate ? (
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-700 dark:text-gray-200">
+                Zajęte: <strong>{formatBytes(estimate.usage)}</strong>
+              </span>
+              <span className="text-gray-500 dark:text-gray-400">
+                z {formatBytes(estimate.quota)}{usagePct !== null ? ` (${usagePct}%)` : ''}
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+              <div
+                className={'h-full rounded-full transition-all ' + (usagePct > 80 ? 'bg-red-500' : usagePct > 50 ? 'bg-amber-500' : 'bg-sure-blue')}
+                style={{ width: `${usagePct ?? 0}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">Informacja o pamięci niedostępna w tej przeglądarce.</p>
+        )}
+
+        <div className="mt-3">
+          {persisted === true && (
+            <div className="text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-500/40 rounded-lg px-3 py-2">
+              ✓ Dane chronione — przeglądarka nie wyczyści ich automatycznie przy braku miejsca.
+            </div>
+          )}
+          {persisted === false && (
+            <div className="space-y-2">
+              <div className="text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-500/40 rounded-lg px-3 py-2">
+                ⚠️ Przeglądarka może wyczyścić dane przy braku miejsca na dysku.
+                Włącz ochronę i regularnie rób „💾 Backup wszystko" ze strony głównej.
+              </div>
+              <button onClick={requestPersist} className="btn-secondary">
+                🔒 Włącz ochronę danych
+              </button>
+            </div>
+          )}
+        </div>
       </section>
 
       <p className="text-xs text-gray-400 dark:text-gray-500 text-center pt-2">

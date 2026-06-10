@@ -53,6 +53,11 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,ico,webmanifest}'],
+        // index.es (canvg, ~147KB) i purify.es (dompurify, ~22KB) to OPCJONALNE
+        // dynamiczne zależności jspdf (SVG-w-PDF i metoda .html()) — nasz kod
+        // nigdy ich nie woła. Bez wykluczenia Workbox pobierałby ~170KB
+        // martwego kodu przy KAŻDEJ instalacji i aktualizacji PWA.
+        globIgnores: ['**/index.es-*.js', '**/purify.es-*.js'],
         // limit precache entry size so large jspdf/html2canvas chunks still get cached
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',

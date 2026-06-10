@@ -1,6 +1,93 @@
 import { deleteImages, deleteVideos, deleteOriginals } from './imageStore.js'
 
-const KEY = 'suresolutions.reports.v1'
+// === Format przechowywania ===
+// v2: KAŻDY raport pod własnym kluczem `suresolutions.report.v2:<id>`.
+// Wcześniej (v1) wszystkie raporty siedziały w jednej tablicy pod jednym
+// kluczem — każdy autosave (co 300 ms pauzy w pisaniu) robił JSON.parse +
+// JSON.stringify CAŁEJ bazy. Przy kilkudziesięciu raportach z długimi
+// tekstami to było odczuwalne na starszych telefonach. Teraz autosave
+// serializuje wyłącznie edytowany raport.
+//
+// Do tego cache w pamięci: localStorage czytamy raz na sesję (i po zdarzeniu
+// 'storage' z innej karty), potem wszystkie loadAll()/getById() są darmowe.
+// Mutacje tworzą NOWĄ tablicę cache — konsumenci (np. refresh() na Home)
+// dostają świeżą referencję, więc React poprawnie re-renderuje.
+const LEGACY_KEY = 'suresolutions.reports.v1'
+const PREFIX = 'suresolutions.report.v2:'
+
+// Wersja schematu pojedynczego raportu. Podbij przy zmianie kształtu danych
+// i dopisz krok w migrateReport() — zamiast rozsianych po komponentach
+// "if (Array.isArray(...))". Raporty migrują się przy odczycie, a trwale
+// przy najbliższym zapisie (upsert stempluje aktualną wersję).
+export const SCHEMA_VERSION = 1
+
+let cache = null
+
+const reportKey = (id) => PREFIX + id
+
+// Migracje v0 → v1 (zebrane dotychczasowe fixupy ad-hoc):
+//  - service.observations: string (stary model) → lista rekordów [{id,text,media}]
+//  - satfat.punchlist: wpisy sprzed v0.25 nie miały pola media
+function migrateReport(r) {
+  if (!r || typeof r !== 'object') return r
+  if ((r.schemaVersion || 0) >= SCHEMA_VERSION) return r
+  const m = { ...r }
+  if (m.type === 'service' && !Array.isArray(m.observations)) {
+    const txt = typeof m.observations === 'string' ? m.observations.trim() : ''
+    m.observations = txt ? [{ id: newId(), text: txt, media: [] }] : []
+  }
+  if (m.type === 'satfat' && Array.isArray(m.punchlist)) {
+    m.punchlist = m.punchlist.map((p) => ({ media: [], ...p }))
+  }
+  m.schemaVersion = SCHEMA_VERSION
+  return m
+}
+
+// Jednorazowe rozbicie starego klucza zbiorczego na klucze per raport.
+function migrateLegacyKey() {
+  try {
+    const raw = localStorage.getItem(LEGACY_KEY)
+    if (!raw) return
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr)) {
+      for (const r of arr) {
+        if (r && r.id && !localStorage.getItem(reportKey(r.id))) {
+          localStorage.setItem(reportKey(r.id), JSON.stringify(r))
+        }
+      }
+    }
+    localStorage.removeItem(LEGACY_KEY)
+  } catch (e) {
+    console.warn('Migracja starego formatu raportów nie powiodła się', e)
+  }
+}
+
+function readAllFromDisk() {
+  migrateLegacyKey()
+  const out = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (!k || !k.startsWith(PREFIX)) continue
+      try {
+        const r = JSON.parse(localStorage.getItem(k))
+        if (r && r.id) out.push(migrateReport(r))
+      } catch {} // pojedynczy uszkodzony wpis nie blokuje reszty bazy
+    }
+  } catch {}
+  return out
+}
+
+// Inna karta/zakładka zapisała raport → unieważnij cache (odczyt przy
+// następnym loadAll). Zdarzenie 'storage' NIE odpala się w karcie, która
+// sama zapisała — więc nie kasujemy własnego cache przy każdym autosave.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === null || e.key === LEGACY_KEY || (e.key && e.key.startsWith(PREFIX))) {
+      cache = null
+    }
+  })
+}
 
 export function collectMediaIds(value, out) {
   if (!out) out = { photos: new Set(), originals: new Set(), videos: new Set() }
@@ -21,26 +108,30 @@ export function collectPhotoIds(value) {
   return collectMediaIds(value).photos
 }
 
+// Zwracana tablica jest współdzielona (cache) — traktuj jako read-only;
+// przed sortowaniem zrób kopię ([...]). Wszyscy obecni konsumenci tak robią.
 export function loadAll() {
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-export function saveAll(reports) {
-  localStorage.setItem(KEY, JSON.stringify(reports))
+  if (!cache) cache = readAllFromDisk()
+  return cache
 }
 
 export function upsert(report) {
-  const all = loadAll()
-  const idx = all.findIndex((r) => r.id === report.id)
-  const next = { ...report, updatedAt: new Date().toISOString() }
-  if (idx >= 0) all[idx] = next
-  else all.unshift(next)
-  saveAll(all)
+  const next = { ...report, schemaVersion: SCHEMA_VERSION, updatedAt: new Date().toISOString() }
+  loadAll()
+  const idx = cache.findIndex((r) => r.id === next.id)
+  if (idx >= 0) {
+    cache = cache.slice()
+    cache[idx] = next
+  } else {
+    cache = [next, ...cache]
+  }
+  try {
+    localStorage.setItem(reportKey(next.id), JSON.stringify(next))
+  } catch (e) {
+    // Quota / tryb prywatny: dane zostają w cache (sesja działa dalej,
+    // eksport paczki wciąż możliwy) — nie wywracamy UI wyjątkiem z autosave.
+    console.error('Zapis raportu do localStorage nie powiódł się', e)
+  }
   return next
 }
 
@@ -62,7 +153,9 @@ export function remove(id) {
       deleteVideos(Array.from(m.videos)).catch((e) => console.warn('video cleanup failed', e))
     }
   }
-  saveAll(loadAll().filter((r) => r.id !== id))
+  loadAll()
+  cache = cache.filter((r) => r.id !== id)
+  try { localStorage.removeItem(reportKey(id)) } catch {}
 }
 
 export function newId() {

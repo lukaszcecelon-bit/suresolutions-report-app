@@ -14,6 +14,7 @@ import OnboardingTour from './components/common/OnboardingTour.jsx'
 import { ToastProvider, useToast } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
 import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
+import ErrorBoundary from './components/common/ErrorBoundary.jsx'
 import logo from './assets/logo.png'
 
 function parseHash() {
@@ -54,7 +55,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.29</span>
+      <span>v0.30</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -69,6 +70,14 @@ function AppShell() {
     const onHash = () => setRoute(parseHash())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  // Poproś przeglądarkę o TRWAŁOŚĆ pamięci (storage.persist). Bez tego
+  // localStorage/IndexedDB (raporty + zdjęcia!) mogą zostać wyczyszczone
+  // przy presji na dysk — szczególnie iOS. Zainstalowana PWA zwykle dostaje
+  // zgodę automatycznie; wywołanie jest idempotentne i darmowe.
+  useEffect(() => {
+    navigator.storage?.persist?.().catch(() => {})
   }, [])
 
   // After first paint, idly preload the heavy PDF/ZIP libs so the first
@@ -159,18 +168,21 @@ function AppShell() {
 
 export default function App() {
   // Provider order:
-  //   ThemeProvider (no deps)
+  //   ErrorBoundary (łapie wyjątki całego drzewa, w tym providerów)
+  //   → ThemeProvider (no deps)
   //   → SWProvider (no deps on theme/toast)
   //   → ToastProvider (consumers exist)
   //   → AppShell
   // VersionBadge uses both useSW and useToast; ThemeToggle uses useTheme.
   return (
-    <ThemeProvider>
-      <SWProvider>
-        <ToastProvider>
-          <AppShell />
-        </ToastProvider>
-      </SWProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <SWProvider>
+          <ToastProvider>
+            <AppShell />
+          </ToastProvider>
+        </SWProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }

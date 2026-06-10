@@ -36,6 +36,45 @@ const STATUS_FILTER_ITEMS = [
 
 // (v1 inline onboarding card zastąpiony przez OnboardingTour w App.jsx)
 
+// Czas wizyty serwisowej w minutach (HH:MM, z przejściem przez północ).
+function visitMinutes(arrival, departure) {
+  if (!arrival || !departure) return 0
+  const [ah, am] = String(arrival).split(':').map(Number)
+  const [dh, dm] = String(departure).split(':').map(Number)
+  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return 0
+  let mins = (dh * 60 + dm) - (ah * 60 + am)
+  if (mins < 0) mins += 24 * 60
+  return mins
+}
+
+// Statystyki bieżącego miesiąca: liczba raportów, czas u klientów
+// (wizyty serwisowe + sesje uruchomień), najczęstszy klient.
+function monthStats(reports) {
+  const now = new Date()
+  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const inMonth = reports.filter((r) =>
+    (r.header?.date || (r.createdAt || '').slice(0, 10)).startsWith(ym)
+  )
+  let minutes = 0
+  const clientCount = new Map()
+  for (const r of inMonth) {
+    if (r.type === 'service') {
+      minutes += visitMinutes(r.visit?.arrival, r.visit?.departure)
+    } else if (r.type === 'commissioning' && r.sessionStartAt && r.sessionEndAt) {
+      minutes += Math.max(0, (new Date(r.sessionEndAt) - new Date(r.sessionStartAt)) / 60000)
+    }
+    const client = (r.visit?.client || r.info?.client || '').trim()
+    if (client) clientCount.set(client, (clientCount.get(client) || 0) + 1)
+  }
+  let topClient = null
+  let top = 0
+  for (const [c, n] of clientCount) {
+    if (n > top) { top = n; topClient = c }
+  }
+  const hours = minutes / 60
+  return { count: inMonth.length, hours, topClient }
+}
+
 // Polish-aware case-insensitive substring match (strips diacritics on both sides)
 function normalize(s) {
   return (s || '')
@@ -95,6 +134,10 @@ export default function Home({ navigate }) {
   const [statusFilter, setStatusFilter] = useState(new Set())
   const [importFile, setImportFile] = useState(null)        // wybrany .suresync do importu (modal)
   const [backupBusy, setBackupBusy] = useState(false)
+  // Tryb zaznaczania (multi-select): checkboxy na kartach + pasek akcji
+  // zbiorczych (eksport zaznaczonych / usuń zaznaczone) na dole.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
   const importInput = useRef(null)
 
   const toast = useToast()
@@ -182,6 +225,54 @@ export default function Home({ navigate }) {
     else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
   }
 
+  // ---- Multi-select: akcje zbiorcze ----
+  const toggleSelectMode = () => {
+    setSelectMode((m) => !m)
+    setSelectedIds(new Set())
+  }
+  const toggleSelected = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+  const selectAllVisible = (list) => {
+    setSelectedIds((prev) => {
+      // Jeśli wszystkie widoczne już zaznaczone → odznacz; inaczej zaznacz wszystkie.
+      const allSelected = list.every((r) => prev.has(r.id))
+      return allSelected ? new Set() : new Set(list.map((r) => r.id))
+    })
+  }
+  const handleBulkExport = async (list) => {
+    const sel = list.filter((r) => selectedIds.has(r.id))
+    if (sel.length === 0) return
+    setBackupBusy(true)
+    try {
+      const blob = await exportAllReportsPackage(sel)
+      const date = new Date().toISOString().slice(0, 10)
+      await shareOrDownload(blob, `wybrane-${sel.length}_raporty-sure_${date}.zip`, `Raporty SURE (${sel.length})`)
+      toast.success(`Paczka z ${sel.length} raportami gotowa`)
+    } catch (e) {
+      toast.error('Błąd eksportu: ' + (e.message || e))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+  const handleBulkDelete = async () => {
+    const n = selectedIds.size
+    if (n === 0) return
+    const ok = await confirm(`Usunąć ${n} zaznaczonych raportów (wraz ze zdjęciami)? Tej operacji nie można cofnąć.`, {
+      title: 'Usuwanie zbiorcze', variant: 'danger', confirmLabel: `Usuń (${n})`,
+    })
+    if (!ok) return
+    for (const id of selectedIds) remove(id)
+    setSelectedIds(new Set())
+    setSelectMode(false)
+    refresh()
+    toast.success(`Usunięto ${n} raportów`)
+  }
+
   const handleClone = (r) => {
     const fresh = cloneReport(r)
     upsert(fresh)
@@ -231,6 +322,9 @@ export default function Home({ navigate }) {
       return true
     })
   }, [sorted, query, typeFilter, statusFilter])
+
+  // Statystyki bieżącego miesiąca (F3) — przeliczane tylko przy zmianie listy.
+  const stats = useMemo(() => monthStats(reports), [reports])
 
   const toggleFilter = (set, setter, key) => {
     const next = new Set(set)
@@ -287,8 +381,47 @@ export default function Home({ navigate }) {
         />
       </section>
 
+      {/* Statystyki bieżącego miesiąca — kompaktowy pasek nad listą */}
+      {sorted.length > 0 && stats.count > 0 && (
+        <section className="grid grid-cols-3 gap-2">
+          <div className="card !p-3 text-center">
+            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Ten miesiąc</div>
+            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">{stats.count}</div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">{stats.count === 1 ? 'raport' : stats.count < 5 ? 'raporty' : 'raportów'}</div>
+          </div>
+          <div className="card !p-3 text-center">
+            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">U klientów</div>
+            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">
+              {stats.hours >= 1 ? `${Math.round(stats.hours * 10) / 10} h` : stats.hours > 0 ? `${Math.round(stats.hours * 60)} min` : '—'}
+            </div>
+            <div className="text-[11px] text-gray-500 dark:text-gray-400">czas wizyt/sesji</div>
+          </div>
+          <div className="card !p-3 text-center min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Top klient</div>
+            <div className="text-sm font-bold text-sure-dark dark:text-gray-100 mt-1.5 truncate" title={stats.topClient || ''}>
+              {stats.topClient || '—'}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section>
-        <h2 className="section-title no-rule">Zapisane raporty</h2>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2 className="section-title no-rule mb-0">Zapisane raporty</h2>
+          {sorted.length > 0 && (
+            <button
+              onClick={toggleSelectMode}
+              className={
+                'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                (selectMode
+                  ? 'bg-sure-blue text-white border-transparent'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
+              }
+            >
+              {selectMode ? '✕ Anuluj zaznaczanie' : '☑ Zaznacz'}
+            </button>
+          )}
+        </div>
 
         {/* Search + filters — only show if there's anything to filter */}
         {sorted.length > 0 && (
@@ -383,14 +516,27 @@ export default function Home({ navigate }) {
               const isRecent = r.id === mostRecentId && !hasFiltersActive
               const completed = r.status === 'completed'
               const isBusy = busyId === r.id
+              const isSelected = selectedIds.has(r.id)
               return (
                 <div
                   key={r.id}
+                  onClick={selectMode ? () => toggleSelected(r.id) : undefined}
                   className={
                     'card flex flex-col sm:flex-row sm:items-center gap-3 transition ' +
-                    (isRecent ? 'ring-2 ring-sure-blue/30' : '')
+                    (selectMode ? 'cursor-pointer select-none ' : '') +
+                    (isSelected ? 'ring-2 ring-sure-blue ' : isRecent && !selectMode ? 'ring-2 ring-sure-blue/30 ' : '')
                   }
                 >
+                  {selectMode && (
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelected(r.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-5 h-5 shrink-0 accent-[#3D70B2] self-start sm:self-center"
+                      aria-label="Zaznacz raport"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                       <span className="text-lg leading-none">{TYPE_ICONS[r.type] || '📄'}</span>
@@ -406,7 +552,7 @@ export default function Home({ navigate }) {
                           ? 'border-emerald-400 text-emerald-700 bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-300 dark:bg-emerald-900/30'
                           : 'border-amber-400 text-amber-700 bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:bg-amber-900/30')
                       }>
-                        {completed ? 'Ukończony' : 'Roboczy'}
+                        {completed ? '🔒 Ukończony' : 'Roboczy'}
                       </span>
                     </div>
                     <div className="mt-1.5 font-semibold text-sure-dark dark:text-gray-100 truncate">
@@ -421,6 +567,7 @@ export default function Home({ navigate }) {
                       </div>
                     )}
                   </div>
+                  {!selectMode && (
                   <div className="flex gap-2 flex-wrap">
                     <button
                       className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
@@ -449,9 +596,44 @@ export default function Home({ navigate }) {
                       Usuń
                     </button>
                   </div>
+                  )}
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {/* Pasek akcji zbiorczych (multi-select) */}
+        {selectMode && filtered.length > 0 && (
+          <div className="sticky bottom-0 z-20 mt-4 -mx-4 px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-gray-700 dark:text-gray-200 tabular-nums">
+                <strong>{selectedIds.size}</strong> zazn.
+              </span>
+              <button
+                onClick={() => selectAllVisible(filtered)}
+                className="text-xs text-sure-blue px-2 py-1.5 hover:underline"
+              >
+                {filtered.every((r) => selectedIds.has(r.id)) ? 'Odznacz wszystkie' : 'Zaznacz wszystkie'}
+              </button>
+              <div className="flex gap-2 ml-auto">
+                <button
+                  onClick={() => handleBulkExport(filtered)}
+                  disabled={selectedIds.size === 0 || backupBusy}
+                  className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 disabled:opacity-40"
+                  title="Eksportuj zaznaczone raporty do jednej paczki"
+                >
+                  {backupBusy ? '⏳ Pakowanie…' : '📦 Eksportuj'}
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedIds.size === 0}
+                  className="btn-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-40"
+                >
+                  🗑 Usuń
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>

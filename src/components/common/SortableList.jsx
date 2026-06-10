@@ -1,3 +1,4 @@
+import { memo, useRef } from 'react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor, KeyboardSensor,
   useSensor, useSensors,
@@ -17,6 +18,16 @@ import { CSS } from '@dnd-kit/utilities'
 // przeciągnąć. Na mobile wymaga 200ms przytrzymania, żeby nie kolidować ze
 // scrollowaniem strony. Na desktopie wystarczy poruszyć kursorem 5px.
 //
+// WYDAJNOŚĆ: wiersze są memoizowane per (item, index). Pisanie w wierszu #2
+// zmienia tylko referencję itemu #2 (updatery robią items.map z nowym obiektem
+// dla edytowanego id) — wiersze #1/#3/#4 pomijają re-render razem ze swoimi
+// MediaUploaderami. Render-prop `children` zmienia tożsamość co render
+// rodzica, więc trzymamy go w ref (latest-ref) i NIE bierzemy do porównania.
+// Bezpieczeństwo "stale closure": pominięty wiersz trzyma starsze closure
+// handlerów — to OK, bo wszystkie updatery stron raportów używają
+// funkcyjnego setState (setReport((r) => ...)), a sam setter z useState jest
+// stabilny między renderami.
+//
 // SortableList nie owija dzieci w żaden wrapper — kolejność/spacing zostaje
 // w gestii caller'a (zazwyczaj `<div className="space-y-3">` na zewnątrz).
 export default function SortableList({ items, onReorder, getId, children }) {
@@ -25,6 +36,11 @@ export default function SortableList({ items, onReorder, getId, children }) {
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  // Latest-ref: zawsze najnowsze closure renderujące wiersz. Wiersz, który
+  // faktycznie się renderuje, woła childrenRef.current — czyli świeżą wersję.
+  const childrenRef = useRef(children)
+  childrenRef.current = children
 
   const onDragEnd = (e) => {
     const { active, over } = e
@@ -40,16 +56,20 @@ export default function SortableList({ items, onReorder, getId, children }) {
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <SortableContext items={items.map(getId)} strategy={verticalListSortingStrategy}>
         {items.map((item, i) => (
-          <SortableItem key={getId(item)} id={getId(item)}>
-            {(dragHandle) => children(item, dragHandle, i)}
-          </SortableItem>
+          <MemoSortableItem
+            key={getId(item)}
+            id={getId(item)}
+            item={item}
+            index={i}
+            childrenRef={childrenRef}
+          />
         ))}
       </SortableContext>
     </DndContext>
   )
 }
 
-function SortableItem({ id, children }) {
+function SortableItem({ id, item, index, childrenRef }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
 
   const style = {
@@ -86,7 +106,18 @@ function SortableItem({ id, children }) {
 
   return (
     <div ref={setNodeRef} style={style}>
-      {children(dragHandle)}
+      {childrenRef.current(item, dragHandle, index)}
     </div>
   )
 }
+
+// Bail-out gdy item (referencyjnie), index i id bez zmian. childrenRef to
+// stabilny obiekt ref — celowo porównywany tożsamościowo (zawsze ten sam).
+// Drag-animacje działają mimo memo: useSortable aktualizuje stan WEWNĄTRZ
+// komponentu, a memo blokuje tylko re-render sterowany propsami z góry.
+const MemoSortableItem = memo(SortableItem, (prev, next) =>
+  prev.id === next.id &&
+  prev.item === next.item &&
+  prev.index === next.index &&
+  prev.childrenRef === next.childrenRef
+)

@@ -25,6 +25,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Smoke test E2E przeciwko zbudowanej apce (vite preview) — łapie
+      # regresje storage/routingu/generowania PDF PRZED publikacją.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
