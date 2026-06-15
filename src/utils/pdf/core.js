@@ -1,11 +1,11 @@
-// Wspólny rdzeń generowania PDF/paczek — infrastruktura niezależna od typu
-// raportu. Buildery per typ (commissioning/service/prototype/satfat/complaint)
-// żyją w osobnych plikach obok i importują stąd. Publiczne API aplikacji
-// pozostaje w ../pdfGenerator.js (barrel re-export).
+// Wspólny rdzeń generowania PDF — NATYWNY tekst (jsPDF + jspdf-autotable +
+// osadzony font Roboto). Tekst w PDF jest PRAWDZIWYM tekstem: kopiowalny,
+// przeszukiwalny (Ctrl+F, też po polsku), wektorowo ostry przy każdym zoomie,
+// a pliki są wielokrotnie mniejsze. Wcześniej cały raport był jednym obrazem
+// (html2canvas → JPEG) — stąd brak możliwości zaznaczenia/kopiowania tekstu.
 //
-// jspdf, html2canvas i jszip są CIĘŻKIE (~700KB łącznie) — ładowane leniwie,
-// dopiero przy realnym "Pobierz paczkę". `warmupLibs()` z idle-handlera
-// pre-fetchuje je w tle, żeby pierwszy klik nie płacił kosztu sieci.
+// jspdf, jspdf-autotable i fonty (base64) są CIĘŻKIE — ładowane leniwie,
+// dopiero przy realnym "Pobierz paczkę". warmupLibs() pre-fetchuje w tle.
 import logoUrl from '../../assets/logo.png'
 import { getImages, getVideos, getOriginals, getMediums, putMedium } from '../imageStore.js'
 
@@ -14,11 +14,39 @@ export { logoUrl }
 export async function warmupLibs() {
   await Promise.all([
     import('jspdf').catch(() => {}),
-    import('html2canvas').catch(() => {}),
+    import('jspdf-autotable').catch(() => {}),
     import('jszip').catch(() => {}),
+    import('./fonts/roboto-regular.js').catch(() => {}),
+    import('./fonts/roboto-bold.js').catch(() => {}),
   ])
 }
 
+// ============================== PALETA (z dawnego CSS) ==============================
+const BLUE = [61, 112, 178]    // #3D70B2
+const WHITE = [255, 255, 255]
+const INK = [31, 41, 55]       // #1F2937
+const MUT = [107, 114, 128]    // #6B7280
+const ZEBRA = [249, 250, 251]  // #F9FAFB
+const BORDER = [229, 231, 235] // #E5E7EB
+const LINE_GRAY = [156, 163, 175]
+const THUMB_BORDER = [209, 213, 219]
+
+// Kolory badge'y (tło, tekst) — z dawnych klas .badge
+const BADGE = {
+  completed: [[209, 250, 229], [6, 95, 70]],
+  warning: [[254, 243, 199], [146, 64, 14]],
+  rejected: [[254, 226, 226], [153, 27, 27]],
+  info: [[219, 234, 254], [30, 64, 175]],
+  neutral: [[243, 244, 246], [55, 65, 81]],
+}
+
+// Miniaturki w komórkach tabel (≈120×90 px → mm)
+const THUMB_W = 26, THUMB_H = 19, THUMB_GAP = 1.5
+const CELL_PAD = 1.8
+const BODY_FS = 8.5
+const BODY_LH = 3.7 // przybliżona wysokość linii dla BODY_FS (autotable ~ fontSize*1.15)
+
+// ============================== WARSTWA DANYCH (bez zmian merytorycznych) ==============================
 export function slugify(s) {
   return (s || '')
     .replace(/[ąĄ]/g, 'a').replace(/[ćĆ]/g, 'c').replace(/[ęĘ]/g, 'e')
@@ -75,11 +103,9 @@ export function downloadBlob(blob, filename) {
   }, 200)
 }
 
-// Downsample Blob (oryginał z IDB) do dataURL o limitowanych wymiarach.
-// Używane dla PDF embed — pełne oryginały (3000×4000+ z telefonu) są za duże,
-// a thumbnaile (400×300) za małe przy scale 3 (pikselacja). Medium-res
-// (1200×900 jpeg 0.88) to optymalny kompromis: ostre na A4 print, plik PDF
-// rośnie umiarkowanie. Każde zdjęcie ~150-250 KB embedded vs ~2-5 MB original.
+// Downsample Blob (oryginał z IDB) do dataURL 1200×900 (medium-res do osadzenia
+// w PDF). Zwraca {dataUrl, w, h} — wymiary potrzebne do zachowania proporcji
+// przy rysowaniu miniaturek i dużych zdjęć-dowodów.
 async function downsampleBlobToDataUrl(blob, maxW = 1200, maxH = 900, quality = 0.88) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob)
@@ -94,13 +120,11 @@ async function downsampleBlobToDataUrl(blob, maxW = 1200, maxH = 900, quality = 
         const canvas = document.createElement('canvas')
         canvas.width = w
         canvas.height = h
-        const ctx = canvas.getContext('2d')
-        // imageSmoothingQuality 'high' daje znacznie lepszy downsampling
-        // (Lanczos-like) vs domyślny bilinear — istotne przy zmianie 3000→1200.
-        ctx.imageSmoothingEnabled = true
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(img, 0, 0, w, h)
-        resolve(canvas.toDataURL('image/jpeg', quality))
+        const ctx2 = canvas.getContext('2d')
+        ctx2.imageSmoothingEnabled = true
+        ctx2.imageSmoothingQuality = 'high'
+        ctx2.drawImage(img, 0, 0, w, h)
+        resolve({ dataUrl: canvas.toDataURL('image/jpeg', quality), w, h })
       } catch (e) {
         reject(e)
       } finally {
@@ -115,9 +139,16 @@ async function downsampleBlobToDataUrl(blob, maxW = 1200, maxH = 900, quality = 
   })
 }
 
-// In-place collector — zbiera wszystkie itemy {kind: 'image'} z drzewa raportu.
-// Każdy item zostaje referencyjnie ten sam, więc można na nim potem mutować
-// `dataUrl` i zmiana propaguje się do całej struktury.
+// Wymiary obrazka z dataURL (fallback gdy nie znamy ich z downsamplu/cache).
+function decodeDims(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => reject(new Error('decodeDims failed'))
+    img.src = dataUrl
+  })
+}
+
 function collectImageItemsInPlace(value, out) {
   if (value === null || typeof value !== 'object') return
   if (Array.isArray(value)) {
@@ -128,18 +159,10 @@ function collectImageItemsInPlace(value, out) {
   for (const k of Object.keys(value)) collectImageItemsInPlace(value[k], out)
 }
 
-// Resolver zdjęć dla PDF embed. Strategia:
-//  1. Najpierw spróbuj użyć ORYGINAŁU (z IDB STORE_ORIGINALS) downsamplowanego
-//     do medium-res 1200×900 — daje ostry render na A4 z scale 3.
-//  2. Fallback do THUMBNAIL (400×300 z STORE_IMAGES) dla starszych raportów
-//     które nie mają zapisanego oryginału (legacy przed v0.6).
-//
-// Klonuje raport, żeby nie mutować oryginalnego stanu w localStorage.
-// Mutacja `dataUrl` per-item w sklonowanym drzewie.
+// Resolver zdjęć dla PDF: ustawia m.dataUrl (medium-res) + m._w/_h (proporcje).
+// Cache 'medium' w IDB (klucz=originalId) przechowuje {d,w,h}. Klonuje raport,
+// żeby nie mutować stanu w localStorage.
 export async function resolveReportPhotos(report) {
-  // structuredClone() jest natywne i 2-3× szybsze niż JSON.parse(JSON.stringify())
-  // dla typowych raportów. Dla mediów (Blob/File) nie używamy go bezpośrednio —
-  // tu klonujemy tylko strukturę raportu (zwykły JSON), więc OK.
   const clone = typeof structuredClone === 'function'
     ? structuredClone(report)
     : JSON.parse(JSON.stringify(report))
@@ -148,53 +171,46 @@ export async function resolveReportPhotos(report) {
   collectImageItemsInPlace(clone, imageItems)
   if (imageItems.length === 0) return clone
 
-  // 1. PARALLEL FETCH z IDB — cache medium-res, oryginały i thumbnaile naraz.
   const originalIds = imageItems.map((m) => m.originalId).filter(Boolean)
   const allPhotoIds = imageItems.map((m) => m.photoId).filter(Boolean)
   const [mediumsMap, originalsMap, thumbsMap] = await Promise.all([
-    // Cache 1200×900 z poprzednich generowań — hit pomija najdroższy etap
-    // (dekodowanie pełnego oryginału + downsample, 200-400 ms/zdjęcie).
     originalIds.length > 0 ? getMediums(originalIds) : Promise.resolve(new Map()),
     originalIds.length > 0 ? getOriginals(originalIds) : Promise.resolve(new Map()),
-    // Bierzemy WSZYSTKIE thumbnaile od razu — i tak będą fallback gdy brak oryginału
-    // lub downsample padnie.
     allPhotoIds.length > 0 ? getImages(allPhotoIds) : Promise.resolve(new Map()),
   ])
 
-  // 2. PARALLEL DOWNSAMPLE — dla 5-15 zdjęć daje 3-5× speedup vs sekwencyjnie.
   await Promise.all(imageItems.map(async (m) => {
     if (m.dataUrl) return
     if (m.originalId && mediumsMap.has(m.originalId)) {
-      m.dataUrl = mediumsMap.get(m.originalId)
-      return
+      const c = mediumsMap.get(m.originalId)
+      if (c && typeof c === 'object' && c.d) { m.dataUrl = c.d; m._w = c.w; m._h = c.h; return }
+      if (typeof c === 'string') { m.dataUrl = c; return } // legacy cache (sam string) — wymiary dobierzemy niżej
     }
     if (m.originalId && originalsMap.has(m.originalId)) {
       try {
-        m.dataUrl = await downsampleBlobToDataUrl(originalsMap.get(m.originalId))
-        // Zapis do cache w tle — nie blokuje generowania; przy kolejnej paczce
-        // tego raportu zdjęcie wejdzie z cache. Inwalidacja: replaceOriginal/
-        // deleteOriginals kasują wpis o tym samym kluczu.
-        putMedium(m.originalId, m.dataUrl).catch(() => {})
+        const r = await downsampleBlobToDataUrl(originalsMap.get(m.originalId))
+        m.dataUrl = r.dataUrl; m._w = r.w; m._h = r.h
+        putMedium(m.originalId, { d: r.dataUrl, w: r.w, h: r.h }).catch(() => {})
         return
       } catch (e) {
         console.warn('downsample failed, falling back to thumbnail', e)
       }
     }
-    // Fallback do thumbnaila
-    if (m.photoId && thumbsMap.has(m.photoId)) {
-      m.dataUrl = thumbsMap.get(m.photoId)
+    if (m.photoId && thumbsMap.has(m.photoId)) m.dataUrl = thumbsMap.get(m.photoId)
+  }))
+
+  // Uzupełnij brakujące wymiary (fallback thumbnail / legacy cache-string)
+  await Promise.all(imageItems.map(async (m) => {
+    if (m.dataUrl && (!m._w || !m._h)) {
+      try { const d = await decodeDims(m.dataUrl); m._w = d.w; m._h = d.h } catch { /* zostaną domyślne proporcje */ }
     }
   }))
 
   return clone
 }
 
-// Zbieracz mediów dla builderów per typ. Użycie:
-//   const { push, finalize } = mediaCollector()
-//   push(item.media, 'Czytelny kontekst', 'Slug-do-nazwy-pliku')
-//   const { photos, videos } = finalize()
-// finalize() dzieli itemy na zdjęcia/wideo i nadaje `_zipFilename`
-// (numerowane, ze slugiem kontekstu i opisu) używane w PDF i paczce ZIP.
+// Zbieracz mediów dla builderów. push(media, ctxLabel, ctxSlug); finalize()
+// dzieli na zdjęcia/wideo i nadaje _zipFilename (numerowane, ze slugiem).
 export function mediaCollector() {
   const items = []
   const push = (mediaArr, ctxLabel, ctxSlug) => {
@@ -205,9 +221,7 @@ export function mediaCollector() {
   const finalize = () => {
     const photos = items.filter((m) => m.kind === 'image')
     const videos = items.filter((m) => m.kind === 'video')
-    photos.forEach((p, i) => {
-      p._zipFilename = makeFilename(i, p._ctxSlug, p.description, 'jpg')
-    })
+    photos.forEach((p, i) => { p._zipFilename = makeFilename(i, p._ctxSlug, p.description, 'jpg') })
     videos.forEach((v, i) => {
       const ext = (extractExt(v.filename) || extFromMime(v.mimeType) || 'mp4').toLowerCase()
       v._zipFilename = makeFilename(i, v._ctxSlug, v.description, ext)
@@ -215,6 +229,31 @@ export function mediaCollector() {
     return { photos, videos }
   }
   return { push, finalize }
+}
+
+// Mapa photoId → ścieżka pliku w paczce ZIP (np. zdjecia/01_xxx.jpg).
+export function buildLinkMaps(photos) {
+  const photoMap = new Map()
+  for (const p of photos || []) {
+    if (p.photoId && p._zipFilename) photoMap.set(p.photoId, p._zipFilename)
+  }
+  return { photoMap }
+}
+
+// Deskryptory miniaturek (do drawTable thumbs / drawThumbsRow): tekst+proporcje+link.
+export function thumbDescriptors(media, photoMap) {
+  return (media || []).filter((m) => m.kind === 'image' && m.dataUrl).map((m) => ({
+    dataUrl: m.dataUrl, w: m._w, h: m._h,
+    target: m.photoId && photoMap.get(m.photoId) ? 'zdjecia/' + photoMap.get(m.photoId) : null,
+  }))
+}
+
+// Deskryptory dużych zdjęć-dowodów (reklamacja) — z podpisem.
+export function evidenceDescriptors(media, photoMap) {
+  return (media || []).filter((m) => m.kind === 'image' && m.dataUrl).map((m) => ({
+    dataUrl: m.dataUrl, w: m._w, h: m._h, description: m.description || '',
+    target: m.photoId && photoMap.get(m.photoId) ? 'zdjecia/' + photoMap.get(m.photoId) : null,
+  }))
 }
 
 export function formatDurationFull(ms) {
@@ -247,598 +286,537 @@ export function nowStamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-export function esc(s) {
-  if (s === null || s === undefined) return ''
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-// Mapa photoId → względna ścieżka pliku w paczce ZIP (np. `zdjecia/01_xxx.jpg`).
-// Używane przez `renderThumbs()` żeby miniaturki inline były klikalne (otwierają
-// pełne zdjęcie po rozpakowaniu paczki na komputerze). Każde zdjęcie w `photos`
-// ma już `_zipFilename` ustawione przez finalize() z mediaCollector().
-// (Wideo nie potrzebuje mapy — `renderVideosHtml` buduje link z `_zipFilename`
-// bezpośrednio.)
-export function buildLinkMaps(photos) {
-  const photoMap = new Map()
-  for (const p of photos || []) {
-    if (p.photoId && p._zipFilename) photoMap.set(p.photoId, p._zipFilename)
-  }
-  return { photoMap }
-}
-
-// Renderuje rząd MAŁYCH klikalnych miniaturek pod tekstem (wzór: raport
-// serwisowy). Każda miniatura: zachowane proporcje (CSS max-width/height),
-// klikalna do pełnego pliku w paczce ZIP. Zwraca '' gdy brak zdjęć.
-export function renderThumbs(media, photoMap) {
-  const photos = (media || []).filter((m) => m.kind === 'image' && m.dataUrl)
-  if (photos.length === 0) return ''
-  const imgs = photos.map((m) => {
-    const fname = m.photoId ? photoMap.get(m.photoId) : null
-    const attrs = fname ? ` data-link-target="zdjecia/${esc(fname)}"` : ''
-    return `<img class="pdf-thumb" src="${m.dataUrl}"${attrs} />`
-  }).join('')
-  return `<div class="thumb-row">${imgs}</div>`
-}
-
-// Nagłówek sekcji + rząd miniaturek. Zwraca '' gdy brak zdjęć (np. media
-// sekcyjne/ogólne których nie ma) — żeby nie renderować pustego nagłówka.
-export function thumbsSection(heading, media, photoMap) {
-  const html = renderThumbs(media, photoMap)
-  if (!html) return ''
-  return `<h2>${esc(heading)}</h2>${html}`
-}
-
-// Każdy logiczny wiersz (rozdzielony \n) trafia do osobnego <div class="text-line">.
-// Dzięki temu algorytm łamania stron mierzy bounding rect KAŻDEJ linii osobno
-// i jeśli granica strony wypada w środku text-bloku, cofa się DO POCZĄTKU linii,
-// która by została pocięta — zamiast tnąć ją poziomo na pół.
-export function textLines(s) {
-  if (s === null || s === undefined || !String(s).trim()) {
-    return '<div class="text-line">—</div>'
-  }
-  return String(s).split('\n').map((line) => {
-    return `<div class="text-line">${line ? esc(line) : '&nbsp;'}</div>`
-  }).join('')
-}
-
-// Komórka tekstowa + małe miniaturki pod spodem (wspólny wzorzec tabel).
-export function textWithThumbs(text, media, photoMap) {
-  const body = text
-    ? esc(text).replace(/\n/g, '<br/>')
-    : '<span class="cell-text--empty">—</span>'
-  return `<div class="cell-text">${body}</div>${renderThumbs(media, photoMap)}`
-}
-
-// Tabela wideo na końcu raportu. Wideo nie da się osadzić w PDF (to nie obraz),
-// więc listujemy je jako klikalne nazwy plików w paczce ZIP (folder wideo/),
-// z kontekstem (do którego punktu/zatrzymania/testu należą). Zwraca '' gdy brak.
-export function renderVideosHtml(allVideos) {
-  if (!allVideos || allVideos.length === 0) return ''
-  return `
-    <h2>Dokumentacja wideo</h2>
-    <p class="note">Pełne pliki wideo znajdziesz w paczce ZIP w folderze <strong>wideo/</strong>. Kliknij nazwę pliku aby otworzyć wideo (po rozpakowaniu paczki na komputerze).</p>
-    <table class="stops">
-      <thead>
-        <tr><th style="width:36px">Nr</th><th>Kontekst</th><th>Opis</th><th>Plik w paczce</th></tr>
-      </thead>
-      <tbody>
-        ${allVideos.map((v, i) => {
-          const target = v._zipFilename ? `wideo/${v._zipFilename}` : null
-          const fnameStr = esc(v._zipFilename || v.filename || '—')
-          const fileCell = target
-            ? `📁 <span class="media-link" data-link-target="${esc(target)}">${fnameStr}</span>`
-            : `📁 ${fnameStr}`
-          return `
-          <tr>
-            <td>${String(i + 1).padStart(2, '0')}</td>
-            <td>${esc(v._ctxLabel || '—')}</td>
-            <td>${esc(v.description || '—')}</td>
-            <td>${fileCell}</td>
-          </tr>
-        `}).join('')}
-      </tbody>
-    </table>
-  `
-}
-
-const CSS = `
-  * { box-sizing: border-box; }
-  .page {
-    width: 794px;
-    padding: 56px 56px 80px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #1F2937;
-    background: #fff;
-    font-size: 12.5px;
-    line-height: 1.55;
-  }
-  .hdr {
-    display: flex; justify-content: space-between; align-items: center;
-    border-bottom: 3px solid #3D70B2; padding-bottom: 18px; margin-bottom: 22px;
-  }
-  .hdr-left { display: flex; align-items: center; gap: 16px; }
-  .logo { height: 60px; width: auto; }
-  .company { font-size: 20px; font-weight: 700; color: #1F2937; letter-spacing: -0.3px; }
-  .hdr-right { text-align: right; }
-  .title {
-    font-size: 14px; font-weight: 700; color: #3D70B2; text-transform: uppercase;
-    letter-spacing: 0.5px; line-height: 1.3;
-  }
-  .num {
-    font-size: 16px; color: #1F2937; margin-top: 6px; font-weight: 600;
-  }
-  .num .lbl-inline { color: #6B7280; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; margin-right: 4px; }
-
-  table.meta {
-    width: 100%; border-collapse: collapse; margin-bottom: 18px;
-    background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px;
-    overflow: hidden;
-  }
-  table.meta td {
-    padding: 10px 14px; vertical-align: top; font-size: 12px;
-    border-top: 1px solid #E5E7EB;
-  }
-  table.meta tr:first-child td { border-top: none; }
-  .lbl {
-    color: #6B7280; font-size: 10px; text-transform: uppercase;
-    letter-spacing: 0.5px; font-weight: 600; margin-right: 4px;
-  }
-
-  h2 {
-    font-size: 14px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
-    color: #3D70B2; margin: 26px 0 12px 0; padding-bottom: 6px;
-    border-bottom: 2px solid #3D70B2;
-  }
-
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
-  .stat {
-    background: #F9FAFB; border-left: 4px solid #3D70B2; padding: 12px 14px; border-radius: 4px;
-  }
-  .stat-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #6B7280; font-weight: 600; }
-  .stat-val { font-size: 20px; font-weight: 700; color: #1F2937; margin-top: 4px; }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -0.5px; }
-
-  table.stops {
-    width: 100%; border-collapse: collapse; font-size: 11.5px;
-    margin-bottom: 6px;
-  }
-  table.stops th, table.stops td {
-    border: 1px solid #E5E7EB; padding: 8px 10px; text-align: left; vertical-align: top;
-  }
-  table.stops th {
-    background: #3D70B2; font-weight: 600; color: #fff; font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.4px;
-  }
-  table.stops tr:nth-child(even) td { background: #F9FAFB; }
-
-  .text-block {
-    background: #F9FAFB; border: 1px solid #E5E7EB;
-    padding: 12px 14px; border-radius: 4px; min-height: 44px;
-    font-size: 12.5px; line-height: 1.6;
-  }
-  /* Każda linia text-bloku jest osobnym blokiem — slicer canvas mierzy
-     ją indywidualnie i łamie strony POMIĘDZY liniami, nigdy w połowie. */
-  .text-line {
-    display: block;
-    line-height: 1.6;
-    min-height: 1em;
-  }
-  .empty { color: #9CA3AF; font-style: italic; padding: 8px 0; }
-
-  .badge {
-    display: inline-block; padding: 3px 10px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
-  }
-  .badge.completed { background: #D1FAE5; color: #065F46; }
-  .badge.warning   { background: #FEF3C7; color: #92400E; }
-  .badge.rejected  { background: #FEE2E2; color: #991B1B; }
-  .badge.info      { background: #DBEAFE; color: #1E40AF; }
-
-  .info-card {
-    background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px;
-    padding: 10px 14px;
-  }
-
-  /* SAT/FAT signature blocks — two side-by-side boxes with a line for hand-signing */
-  .signatures {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
-    margin-top: 10px;
-  }
-  .sig-box {
-    border: 1px solid #D1D5DB; border-radius: 6px; padding: 16px 18px 14px;
-    background: #fff; min-height: 110px;
-  }
-  .sig-lbl {
-    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
-    color: #6B7280; font-weight: 600; margin-bottom: 26px;
-  }
-  .sig-line {
-    border-top: 1px solid #9CA3AF; margin-top: 8px; padding-top: 6px;
-  }
-  .sig-name {
-    font-size: 12px; color: #1F2937; font-weight: 600; min-height: 16px;
-  }
-  .sig-date {
-    font-size: 10px; color: #6B7280; margin-top: 2px; min-height: 12px;
-  }
-
-  .photos {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
-    margin-bottom: 10px;
-  }
-  .photo {
-    border: 1px solid #D1D5DB; border-radius: 6px; overflow: hidden; background: #fff;
-  }
-  .photo img {
-    width: 100%; height: 220px; object-fit: cover; display: block;
-    background: #F3F4F6; border-bottom: 1px solid #D1D5DB;
-  }
-  .photo-meta { padding: 10px 14px 12px; }
-  .photo-num {
-    display: inline-block; font-size: 10px; font-weight: 700; color: #fff;
-    background: #3D70B2; padding: 3px 10px; border-radius: 4px;
-    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
-  }
-  .photo-ctx { font-size: 11.5px; color: #1F2937; font-weight: 600; line-height: 1.35; }
-  .photo-desc { font-size: 11px; color: #4B5563; margin-top: 4px; line-height: 1.45; }
-  .photo-file {
-    font-size: 9.5px; color: #6B7280; margin-top: 8px;
-    padding-top: 6px; border-top: 1px dashed #E5E7EB;
-    font-family: ui-monospace, monospace; word-break: break-all;
-  }
-
-  .note { font-size: 10.5px; color: #6B7280; font-style: italic; margin: 4px 0 8px; }
-
-  /* Klikalne linki w PDF do plików w paczce ZIP (zdjęcia/wideo).
-     Wygląd "tradycyjnego" linka: sure-blue underline. Działa po
-     rozpakowaniu paczki na desktopie. Pozycja linka jest dodawana
-     programowo w renderHtmlToBlob przez pdf.link() bo html2canvas
-     rasteryzuje wszystko do pikseli i traci hyperlinki. */
-  .media-link {
-    color: #3D70B2; text-decoration: underline; white-space: nowrap;
-  }
-  .photo[data-link-target] { cursor: pointer; }
-
-  /* Małe miniaturki POD opisem czynności/elementu/obserwacji.
-     Proporcje zachowane: tylko max-width/max-height + auto → obrazek skaluje się
-     w ramce zachowując oryginalny stosunek boków, bez przycinania. Klikalne
-     (data-link-target) — otwierają pełne zdjęcie z paczki ZIP. */
-  .thumb-row {
-    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
-  }
-  .pdf-thumb {
-    max-width: 120px; max-height: 90px; width: auto; height: auto;
-    border: 1px solid #D1D5DB; border-radius: 4px; display: block;
-    background: #F3F4F6;
-  }
-  /* Tekst opisu czynności/obserwacji nad miniaturkami */
-  .cell-text { white-space: pre-wrap; }
-  .cell-text--empty { color: #9CA3AF; }
-
-  /* Reklamacja — czerwony baner "blokuje montaż" */
-  .blocker-banner {
-    background: #FEE2E2; border: 2px solid #DC2626; color: #991B1B;
-    border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
-    font-size: 14px; font-weight: 700; text-align: center; letter-spacing: 0.3px;
-  }
-  /* Reklamacja — zdjęcia-dowody: duże, proporcje zachowane (contain, bez kadrowania) */
-  .evidence {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 6px;
-  }
-  .evidence.single { grid-template-columns: 1fr; }
-  .evidence-item {
-    border: 1px solid #D1D5DB; border-radius: 6px; overflow: hidden; background: #F9FAFB;
-  }
-  .evidence-item img {
-    width: 100%; max-height: 460px; object-fit: contain; display: block; background: #fff;
-  }
-  .evidence-cap {
-    font-size: 9.5px; color: #6B7280; padding: 6px 10px;
-    border-top: 1px solid #E5E7EB; font-family: ui-monospace, monospace; word-break: break-all;
-  }
-
-  .section-block { margin-bottom: 4px; }
-  .pair-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px;
-    margin-bottom: 10px;
-  }
-  .pair-item .lbl {
-    color: #6B7280; font-size: 10px; text-transform: uppercase;
-    letter-spacing: 0.5px; font-weight: 600; display: block; margin-bottom: 2px;
-  }
-  .pair-item .val { font-size: 12.5px; color: #1F2937; }
-
-  .footer {
-    margin-top: 36px; padding-top: 12px; border-top: 1px solid #E5E7EB;
-    display: flex; justify-content: space-between; font-size: 10px; color: #9CA3AF;
-  }
-`
-
-// Oddaj główny wątek na jedną klatkę — przeglądarka może odmalować UI
-// (spinner/overlay) i obsłużyć dotyk. Wstawiane między ciężkimi etapami
-// renderu PDF (każdy slice strony to JPEG-encode canvasa ~2400px szer.).
-// html2canvas sam w sobie pozostaje jednym blokiem (ogranicz. biblioteki),
-// ale etap cięcia stron — dotąd drugi największy — przestaje mrozić UI.
-function yieldToUI() {
-  return new Promise((r) => setTimeout(r, 0))
-}
-
-export async function renderHtmlToBlob(html) {
-  // Dynamic imports — Vite code-splits these into separate chunks. Browser
-  // caches the module after first call, so subsequent generations are instant.
-  const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-    import('jspdf'),
-    import('html2canvas'),
-  ])
-
-  const container = document.createElement('div')
-  container.style.position = 'fixed'
-  container.style.left = '-10000px'
-  container.style.top = '0'
-  container.style.pointerEvents = 'none'
-
-  const style = document.createElement('style')
-  style.textContent = CSS
-  container.appendChild(style)
-
-  const content = document.createElement('div')
-  content.innerHTML = html
-  container.appendChild(content)
-  document.body.appendChild(container)
-
-  try {
-    await new Promise((r) => setTimeout(r, 50))
-    const imgs = Array.from(content.querySelectorAll('img'))
-    await Promise.all(imgs.map((img) =>
-      img.complete && img.naturalWidth > 0
-        ? Promise.resolve()
-        : new Promise((r) => { img.onload = r; img.onerror = r })
-    ))
-
-    const node = content.querySelector('.page')
-
-    // IMPORTANT: measure ALL atomic-element bounds BEFORE html2canvas, so we use
-    // the exact same layout that html2canvas will render. (Doing it after has
-    // caused off-by-N-px discrepancies that produced visually clipped elements.)
-    // `.text-block` chroni cały kawałek przed cięciem — jeśli mieści się w jednej stronie.
-    // Jeśli text-block jest za wysoki (filter `b - t <= fullPageHeightPx - 40` go wyklucza),
-    // dolny poziom granularności daje `.text-line` — każda linia osobno.
-    //
-    // Tabele: `table` chroni całą tabelę jako jeden blok (gdy się mieści), `thead`
-    // chroni sam nagłówek przed cięciem horyzontalnym, `tbody tr` per-wiersz.
-    // Dla dużych tabel filter wyklucza `table`, ale thead + per-row nadal działa.
-    const NO_BREAK_SELECTORS = '.photo, .evidence-item, table, thead, tbody tr, .stat, .info-card, .sig-box, .text-block, .text-line, .pdf-thumb, h2'
-    const nodeRect = node.getBoundingClientRect()
-    const sourceHeightPx = node.offsetHeight
-    const sourceWidthPx = node.offsetWidth
-
-    // Zbierz pozycje wszystkich klikalnych elementów (`[data-link-target]`)
-    // PRZED html2canvas. Po rasteryzacji do canvas linki HTML giną — dodajemy
-    // je programowo do PDF przez `pdf.link()` po wyrenderowaniu obrazu.
-    const linkBoundsCss = Array.from(node.querySelectorAll('[data-link-target]'))
-      .map((el) => {
-        const r = el.getBoundingClientRect()
-        return {
-          target: el.dataset.linkTarget,
-          top: r.top - nodeRect.top,
-          left: r.left - nodeRect.left,
-          width: r.width,
-          height: r.height,
-        }
-      })
-      .filter((l) => l.target && l.width > 0 && l.height > 0)
-
-    const noBreakBoundsPx = Array.from(node.querySelectorAll(NO_BREAK_SELECTORS))
-      .map((el) => {
-        const r = el.getBoundingClientRect()
-        let bottom = r.bottom - nodeRect.top
-
-        // "Keep with next" dla nagłówków sekcji h2: rozszerz ich dolną granicę
-        // tak, żeby sięgała ZA początek pierwszego widocznego siblinga (treść
-        // sekcji). Dzięki temu jeśli pageEnd wypadnie MIĘDZY h2 a jego treścią
-        // (czyli h2 zostałby sam na poprzedniej stronie), algorytm wykryje
-        // konflikt i przeniesie h2 razem z treścią na nową stronę.
-        // +1px bo `bottom > pageEnd` to ostry warunek; przy bottom === pageEnd
-        // (np. pageEnd właśnie ustawiony na top siblinga) nie byłby konfliktu.
-        if (el.tagName === 'H2') {
-          let next = el.nextElementSibling
-          while (next && (next.offsetHeight === 0 || next.offsetWidth === 0)) {
-            next = next.nextElementSibling
-          }
-          if (next) {
-            const nextTopRel = next.getBoundingClientRect().top - nodeRect.top
-            bottom = Math.max(bottom, nextTopRel + 1)
-          }
-        }
-
-        // Analogicznie dla <thead>: rozszerz dolną granicę do top pierwszego
-        // <tbody tr> w tej samej tabeli. Bez tego thead mógłby zostać sam na
-        // końcu strony 1, a pierwszy wiersz danych szedłby na stronę 2 —
-        // wygląda jak zerwany nagłówek tabeli.
-        if (el.tagName === 'THEAD') {
-          const table = el.closest('table')
-          const firstBodyTr = table?.querySelector('tbody tr')
-          if (firstBodyTr) {
-            const nextTopRel = firstBodyTr.getBoundingClientRect().top - nodeRect.top
-            bottom = Math.max(bottom, nextTopRel + 1)
-          }
-        }
-
-        return [r.top - nodeRect.top, bottom]
-      })
-
-    // scale: 3 → dla source HTML 794px daje canvas 2382px → 288 DPI na A4.
-    // To poziom "print quality" (vs 192 DPI z scale 2). Tekst i tabele ostre,
-    // brak pikselacji nawet przy zoomie 200% w czytniku PDF. Trade-off:
-    // plik PDF urośnie ~2× (np. 1.3 MB → 2.6 MB dla typowego raportu),
-    // ale akceptowalne dla raportów typowo 1-5 MB do wysłania mailem.
-    const canvas = await html2canvas(node, {
-      scale: 3,
-      backgroundColor: '#ffffff',
-      useCORS: true,
-      logging: false,
-    })
-    await yieldToUI()
-
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-    const pageW = pdf.internal.pageSize.getWidth()
-    const pageH = pdf.internal.pageSize.getHeight()
-    const imgW = pageW
-    const imgH = (canvas.height * imgW) / canvas.width
-
-    // Track info per rendered page — używane potem do mapowania pozycji
-    // klikalnych linków (data-link-target) na konkretną stronę PDF.
-    const pagesInfo = []
-    const cssPerCanvasPx = sourceHeightPx / canvas.height // scale^-1
-
-    if (imgH <= pageH) {
-      // JPEG quality 0.95 — minimalizuje artefakty kompresji na krawędziach
-      // tekstu i ramek tabel.
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, imgW, imgH)
-      pagesInfo.push({ pageIndex: 0, startCssY: 0, endCssY: sourceHeightPx, yOffsetMm: 0 })
-    } else {
-      // Continuation pages (page 2, 3, ...) get a top margin so content doesn't
-      // sit flush against the paper edge. The first page already has its CSS
-      // padding baked into the source render.
-      const CONTINUATION_TOP_MM = 14
-      const BOTTOM_BUFFER_MM = 8
-      const fullPageHeightPx = Math.floor((pageH * canvas.width) / pageW)
-      const continuationOffsetPx = Math.round((CONTINUATION_TOP_MM * canvas.width) / pageW)
-      const bottomBufferPx = Math.round((BOTTOM_BUFFER_MM * canvas.width) / pageW)
-      const scaleY = canvas.height / sourceHeightPx
-
-      const ranges = noBreakBoundsPx
-        .map(([t, b]) => [Math.round(t * scaleY), Math.round(b * scaleY)])
-        .filter(([t, b]) => b - t > 0 && b - t <= fullPageHeightPx - 40)
-        .sort((a, b) => a[0] - b[0])
-
-      let y = 0
-      let isFirst = true
-      while (y < canvas.height) {
-        // Jedna strona na "oddech" — patrz yieldToUI().
-        await yieldToUI()
-        // Effective drawable area per page (reserve top margin on continuation pages
-        // and a small bottom buffer so the last protected element doesn't kiss the edge)
-        const topReserve = isFirst ? 0 : continuationOffsetPx
-        const availPx = fullPageHeightPx - topReserve - bottomBufferPx
-        let pageEnd = Math.min(y + availPx, canvas.height)
-
-        // Pull pageEnd up so we don't slice through a protected element.
-        for (let iter = 0; iter < 100; iter++) {
-          let conflict = null
-          for (const [top, bottom] of ranges) {
-            if (top >= pageEnd) break
-            if (top < pageEnd && bottom > pageEnd && top > y) {
-              conflict = top
-              break
-            }
-          }
-          if (conflict === null) break
-          pageEnd = conflict
-        }
-
-        // Fallback: if we couldn't fit anything (element too tall), force-fill.
-        if (pageEnd <= y) pageEnd = Math.min(y + availPx, canvas.height)
-
-        const sliceH = pageEnd - y
-        const slice = document.createElement('canvas')
-        slice.width = canvas.width
-        slice.height = sliceH
-        const ctx = slice.getContext('2d')
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, slice.width, slice.height)
-        ctx.drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH)
-        const sliceImgH = (sliceH * imgW) / canvas.width
-        if (!isFirst) pdf.addPage()
-        const yOffsetMm = isFirst ? 0 : CONTINUATION_TOP_MM
-        pdf.addImage(slice.toDataURL('image/jpeg', 0.95), 'JPEG', 0, yOffsetMm, imgW, sliceImgH)
-        pagesInfo.push({
-          pageIndex: pagesInfo.length,
-          startCssY: y * cssPerCanvasPx,
-          endCssY: pageEnd * cssPerCanvasPx,
-          yOffsetMm,
-        })
-        isFirst = false
-        y = pageEnd
-      }
-    }
-
-    // === KLIKALNE LINKI W PDF ===
-    // Po wszystkich addImage'ach, dodajemy linki przez pdf.link() w pozycjach
-    // odpowiadających HTML-owym [data-link-target]. Każdy link otwiera plik
-    // względny w paczce ZIP (np. zdjecia/01_xxx.jpg). Działa po rozpakowaniu
-    // paczki na komputerze w czytnikach PDF: Adobe, Foxit, Chrome PDF, etc.
-    if (linkBoundsCss.length > 0 && pagesInfo.length > 0) {
-      const mmPerCssPx = pageW / sourceWidthPx
-      for (const link of linkBoundsCss) {
-        // Wybierz stronę zawierającą środek linku (rzadko zdarza się że link
-        // przecina granicę stron — w takim wypadku trafi tam gdzie ma więcej).
-        const centerCss = link.top + link.height / 2
-        const page = pagesInfo.find(
-          (p) => centerCss >= p.startCssY && centerCss < p.endCssY
-        )
-        if (!page) continue
-
-        const yOnPageCss = link.top - page.startCssY
-        const xMm = link.left * mmPerCssPx
-        const yMm = yOnPageCss * mmPerCssPx + page.yOffsetMm
-        const wMm = link.width * mmPerCssPx
-        const hMm = link.height * mmPerCssPx
-
-        try {
-          pdf.setPage(page.pageIndex + 1) // jsPDF używa 1-indexed pages
-          pdf.link(xMm, yMm, wMm, hMm, { url: link.target })
-        } catch (e) {
-          console.warn('pdf.link failed for', link.target, e)
-        }
-      }
-    }
-
-    return pdf.output('blob')
-  } finally {
-    document.body.removeChild(container)
-  }
-}
-
 export function fileBase(report, fallback = 'raport') {
   const num = (report.header?.reportNumber || fallback).replace(/[^\w\-]+/g, '_')
   return `${num}_${report.header?.date || 'data'}`
 }
 
+// ============================== SILNIK RENDERU (natywny jsPDF) ==============================
+
+// Logo raz wczytane do dataURL (jsPDF.addImage potrzebuje danych, nie URL-a).
+let _logoCache = null
+async function getLogoDataUrl() {
+  if (_logoCache) return _logoCache
+  try {
+    const img = new Image()
+    img.src = logoUrl
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej })
+    const c = document.createElement('canvas')
+    c.width = img.naturalWidth
+    c.height = img.naturalHeight
+    c.getContext('2d').drawImage(img, 0, 0)
+    _logoCache = { dataUrl: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight }
+  } catch {
+    _logoCache = null
+  }
+  return _logoCache
+}
+
+async function setupDoc() {
+  const [jspdfMod, autoTableMod, regMod, boldMod] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+    import('./fonts/roboto-regular.js'),
+    import('./fonts/roboto-bold.js'),
+  ])
+  const jsPDF = jspdfMod.default || jspdfMod.jsPDF
+  const autoTable = autoTableMod.default || autoTableMod.autoTable
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+  // Osadzenie fontu Unicode — bez tego polskie znaki (ą ć ę ł ń ó ś ż ź) wyjdą
+  // zniekształcone (domyślny Helvetica = WinAnsi). Bold to osobny wariant
+  // (jsPDF nie symuluje faux-bold dla fontów własnych).
+  doc.addFileToVFS('Roboto-Regular.ttf', regMod.default)
+  doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal')
+  doc.addFileToVFS('Roboto-Bold.ttf', boldMod.default)
+  doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold')
+  doc.setFont('Roboto', 'normal')
+  doc.setTextColor(INK[0], INK[1], INK[2])
+  return { doc, autoTable }
+}
+
+function makeCtx(doc, autoTable, logo) {
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  const margin = { t: 15, r: 15, b: 16, l: 15 }
+  return {
+    doc, autoTable, logo,
+    pageW, pageH, margin,
+    x: margin.l, y: margin.t,
+    contentW: pageW - margin.l - margin.r,
+    links: [],
+  }
+}
+
+// Serce łamania stron dla treści NIE-tabelarycznej. Tabele łamie autotable sam.
+function ensureSpace(ctx, h) {
+  if (ctx.y + h > ctx.pageH - ctx.margin.b) {
+    ctx.doc.addPage()
+    ctx.y = ctx.margin.t
+    return true
+  }
+  return false
+}
+
+function setFill(doc, c) { doc.setFillColor(c[0], c[1], c[2]) }
+function setDraw(doc, c) { doc.setDrawColor(c[0], c[1], c[2]) }
+function setInk(doc, c) { doc.setTextColor(c[0], c[1], c[2]) }
+
+function fitBox(w, h, maxW, maxH) {
+  if (!w || !h) { w = 4; h = 3 } // domyślne proporcje 4:3 gdy brak wymiarów
+  const r = Math.min(maxW / w, maxH / h)
+  return [w * r, h * r]
+}
+
+// Badge (pill) w danym punkcie. vCenter=true → y to środek pionowy (komórki tabeli).
+function drawBadgeAt(doc, x, y, text, kind, vCenter = false, big = false) {
+  const [bg, fg] = BADGE[kind] || BADGE.neutral
+  const fs = big ? 11 : 7.5
+  const h = big ? 7 : 4.8
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(fs)
+  const tw = doc.getTextWidth(text)
+  const padX = big ? 3.5 : 1.8
+  const w = tw + 2 * padX
+  const top = vCenter ? y - h / 2 : y
+  setFill(doc, bg)
+  doc.roundedRect(x, top, w, h, 1.2, 1.2, 'F')
+  setInk(doc, fg)
+  doc.text(text, x + padX, top + h / 2, { baseline: 'middle' })
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+  return w
+}
+
+export function drawBadge(ctx, text, kind, big = false) {
+  ensureSpace(ctx, (big ? 8 : 6) + 1)
+  drawBadgeAt(ctx.doc, ctx.margin.l, ctx.y, text, kind, false, big)
+  ctx.y += (big ? 8 : 6) + 1
+}
+
+export function drawReportHeader(ctx, { title, number, subtitle }) {
+  const { doc, margin, contentW } = ctx
+  const top = ctx.y
+  const logoH = 14
+  if (ctx.logo) {
+    const lw = logoH * (ctx.logo.w / ctx.logo.h)
+    try { doc.addImage(ctx.logo.dataUrl, 'PNG', margin.l, top, lw, logoH) } catch { /* ignore */ }
+  }
+  const rx = margin.l + contentW
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(10.5); setInk(doc, BLUE)
+  const titleStr = (title || '').toUpperCase() + (subtitle ? ' · ' + subtitle : '')
+  const tlines = doc.splitTextToSize(titleStr, contentW - 42)
+  let ty = top + 3.5
+  tlines.forEach((l) => { doc.text(l, rx, ty, { align: 'right' }); ty += 4.6 })
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(12); setInk(doc, INK)
+  doc.text('Nr: ' + (number || '—'), rx, ty + 1.2, { align: 'right' })
+  const baseY = Math.max(top + logoH, ty + 3) + 2
+  setDraw(doc, BLUE); doc.setLineWidth(0.8)
+  doc.line(margin.l, baseY, margin.l + contentW, baseY)
+  ctx.y = baseY + 5
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+// Meta-tabela klucz:wartość. rows = [[{label,value|badge,colspan?}], ...].
+export function drawMetaTable(ctx, rows) {
+  const { doc, margin, contentW } = ctx
+  const padX = 3, padY = 2.2, labelH = 3, lineH = 4.2, valFS = 9, labelFS = 7
+  const rowMeta = rows.map((cells) => {
+    const totalSpan = cells.reduce((s, c) => s + (c.colspan || 1), 0)
+    let maxH = 0
+    const cellInfo = cells.map((c) => {
+      const w = contentW * ((c.colspan || 1) / totalSpan)
+      let vlines = []
+      if (!c.badge) {
+        doc.setFont('Roboto', 'normal'); doc.setFontSize(valFS)
+        vlines = doc.splitTextToSize(String(c.value ?? '—') || '—', w - 2 * padX)
+      }
+      const h = padY + labelH + (c.badge ? 6 : vlines.length * lineH) + padY
+      if (h > maxH) maxH = h
+      return { c, w, vlines }
+    })
+    return { cellInfo, h: maxH }
+  })
+  const totalH = rowMeta.reduce((s, r) => s + r.h, 0)
+  ensureSpace(ctx, totalH)
+  const x0 = margin.l, y0 = ctx.y
+  setFill(doc, ZEBRA); doc.rect(x0, y0, contentW, totalH, 'F')
+  setDraw(doc, BORDER); doc.setLineWidth(0.1); doc.rect(x0, y0, contentW, totalH)
+  let y = y0
+  rowMeta.forEach((rm, ri) => {
+    if (ri > 0) { setDraw(doc, BORDER); doc.line(x0, y, x0 + contentW, y) }
+    let x = x0
+    rm.cellInfo.forEach((ci) => {
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(labelFS); setInk(doc, MUT)
+      doc.text((ci.c.label || '').toUpperCase(), x + padX, y + padY + 2)
+      if (ci.c.badge) {
+        drawBadgeAt(doc, x + padX, y + padY + labelH + 3, ci.c.badge.text, ci.c.badge.kind)
+      } else {
+        doc.setFont('Roboto', 'normal'); doc.setFontSize(valFS); setInk(doc, INK)
+        let vy = y + padY + labelH + 3
+        ci.vlines.forEach((l) => { doc.text(l, x + padX, vy); vy += lineH })
+      }
+      x += ci.w
+    })
+    y += rm.h
+  })
+  ctx.y = y0 + totalH + 4
+  doc.setFont('Roboto', 'normal'); setInk(doc, INK)
+}
+
+// Nagłówek sekcji (niebieski + linia). keep-with-next: rezerwuje miejsce na
+// nagłówek + kawałek treści, żeby nie zostawić samego nagłówka na końcu strony.
+export function drawSectionHeader(ctx, text, keepH = 16) {
+  ensureSpace(ctx, 9 + keepH)
+  const { doc, margin, contentW } = ctx
+  ctx.y += 2
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(10.5); setInk(doc, BLUE)
+  doc.text((text || '').toUpperCase(), margin.l, ctx.y + 3.5)
+  const lineY = ctx.y + 5.5
+  setDraw(doc, BLUE); doc.setLineWidth(0.5)
+  doc.line(margin.l, lineY, margin.l + contentW, lineY)
+  ctx.y = lineY + 4
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+// Mała etykieta (np. "Strona klienta" nad tabelą uczestników SAT/FAT).
+export function drawSubLabel(ctx, text) {
+  const { doc, margin } = ctx
+  ensureSpace(ctx, 6)
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(8); setInk(doc, MUT)
+  doc.text(text, margin.l, ctx.y + 3.5)
+  ctx.y += 6
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+export function drawStatCards(ctx, cards) {
+  const { doc, margin, contentW } = ctx
+  const gap = 3, n = cards.length
+  const cw = (contentW - (n - 1) * gap) / n, ch = 15
+  ensureSpace(ctx, ch + 2)
+  const y0 = ctx.y
+  cards.forEach((c, i) => {
+    const x = margin.l + i * (cw + gap)
+    setFill(doc, ZEBRA); doc.rect(x, y0, cw, ch, 'F')
+    setFill(doc, BLUE); doc.rect(x, y0, 1.2, ch, 'F')
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(6.5); setInk(doc, MUT)
+    doc.text(doc.splitTextToSize((c.label || '').toUpperCase(), cw - 5), x + 3.5, y0 + 4)
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(14); setInk(doc, INK)
+    doc.text(String(c.value ?? '—'), x + 3.5, y0 + ch - 3.5)
+  })
+  ctx.y = y0 + ch + 4
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+// Tabela przez jspdf-autotable z brandingiem SureSolutions.
+// opts: { columns:[{header,dataKey,width?,align?}], rows:[obj],
+//   thumbsCol?, thumbsKey? (pole z deskryptorami), badge?:{col,resolve(raw)->{text,kind}},
+//   cellLinks?:{col,resolve(raw)->target} }
+export function drawTable(ctx, opts) {
+  const { doc } = ctx
+  const cols = opts.columns.map((c) => ({ header: c.header, dataKey: c.dataKey }))
+  const columnStyles = {}
+  const widthByKey = {}
+  opts.columns.forEach((c) => {
+    columnStyles[c.dataKey] = {}
+    if (c.width) { columnStyles[c.dataKey].cellWidth = c.width; widthByKey[c.dataKey] = c.width }
+    if (c.align) columnStyles[c.dataKey].halign = c.align
+  })
+
+  const thumbBlockRows = (n, cellW) => {
+    const perRow = Math.max(1, Math.floor((cellW - 2 * CELL_PAD) / (THUMB_W + THUMB_GAP)))
+    return { perRow, gridRows: Math.ceil(n / perRow) }
+  }
+
+  ctx.autoTable(doc, {
+    startY: ctx.y,
+    margin: { left: ctx.margin.l, right: ctx.margin.r },
+    theme: 'grid',
+    columns: cols,
+    body: opts.rows,
+    columnStyles,
+    styles: {
+      font: 'Roboto', fontStyle: 'normal', fontSize: BODY_FS,
+      textColor: INK, lineColor: BORDER, lineWidth: 0.1,
+      cellPadding: CELL_PAD, valign: 'top', overflow: 'linebreak',
+    },
+    headStyles: { font: 'Roboto', fontStyle: 'bold', fillColor: BLUE, textColor: WHITE, fontSize: 8 },
+    alternateRowStyles: { fillColor: ZEBRA },
+    showHead: 'everyPage',
+    rowPageBreak: 'avoid',
+    didParseCell: (data) => {
+      if (data.section !== 'body') return
+      const key = data.column.dataKey
+      if (opts.badge && key === opts.badge.col) {
+        data.cell.text = []
+        data.cell.styles.minCellHeight = Math.max(data.cell.styles.minCellHeight || 0, 7)
+      }
+      if (opts.thumbsKey && key === opts.thumbsCol) {
+        const thumbs = data.row.raw?.[opts.thumbsKey]
+        if (thumbs && thumbs.length) {
+          // Stała szerokość kolumny miniaturek pozwala policzyć układ + rzetelnie
+          // zarezerwować wysokość = (wysokość tekstu) + (blok miniaturek).
+          const cellW = widthByKey[key] || 50
+          const { gridRows } = thumbBlockRows(thumbs.length, cellW)
+          const blockH = gridRows * (THUMB_H + THUMB_GAP) + 1
+          doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS)
+          const txt = String(data.row.raw?.[key] ?? '')
+          const tlines = txt ? doc.splitTextToSize(txt, cellW - 2 * CELL_PAD) : []
+          const textH = tlines.length * BODY_LH + 2 * CELL_PAD
+          data.cell.styles.minCellHeight = Math.max(data.cell.styles.minCellHeight || 0, textH + blockH)
+        }
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section !== 'body') return
+      const key = data.column.dataKey
+      const raw = data.row.raw
+      if (opts.badge && key === opts.badge.col) {
+        const b = opts.badge.resolve(raw)
+        if (b) drawBadgeAt(doc, data.cell.x + CELL_PAD, data.cell.y + data.cell.height / 2, b.text, b.kind, true)
+      }
+      if (opts.cellLinks && key === opts.cellLinks.col) {
+        const target = opts.cellLinks.resolve(raw)
+        if (target) ctx.links.push({ page: doc.getNumberOfPages(), x: data.cell.x, y: data.cell.y, w: data.cell.width, h: data.cell.height, target })
+      }
+      if (opts.thumbsKey && key === opts.thumbsCol) {
+        const thumbs = raw?.[opts.thumbsKey]
+        if (thumbs && thumbs.length) {
+          const cellW = data.cell.width
+          const { perRow, gridRows } = thumbBlockRows(thumbs.length, cellW)
+          const blockH = gridRows * THUMB_H + (gridRows - 1) * THUMB_GAP
+          const baseY = data.cell.y + data.cell.height - CELL_PAD - blockH
+          thumbs.forEach((t, i) => {
+            const cI = i % perRow, rI = Math.floor(i / perRow)
+            const x = data.cell.x + CELL_PAD + cI * (THUMB_W + THUMB_GAP)
+            const y = baseY + rI * (THUMB_H + THUMB_GAP)
+            const [dw, dh] = fitBox(t.w, t.h, THUMB_W, THUMB_H)
+            try { doc.addImage(t.dataUrl, 'JPEG', x, y, dw, dh) } catch { /* ignore */ }
+            setDraw(doc, THUMB_BORDER); doc.setLineWidth(0.1); doc.rect(x, y, dw, dh)
+            if (t.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y, w: dw, h: dh, target: t.target })
+          })
+        }
+      }
+    },
+  })
+  ctx.y = doc.lastAutoTable.finalY + 4
+}
+
+// Blok tekstu z tłem ZEBRA. Tło rysowane SEGMENTAMI per strona (przy łamaniu
+// kolejny segment dostaje własny prostokąt — bez "wiszącego" tła za krawędzią).
+export function drawTextBlock(ctx, text, { label } = {}) {
+  const { doc, margin, contentW } = ctx
+  const padX = 3, padY = 2.5, lineH = 4.4, fs = 9
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(fs)
+  const hasText = text !== null && text !== undefined && String(text).trim() !== ''
+  const bodyLines = doc.splitTextToSize(hasText ? String(text) : '—', contentW - 2 * padX)
+  const items = []
+  if (label) items.push({ text: label, bold: true })
+  bodyLines.forEach((t) => items.push({ text: t }))
+
+  ensureSpace(ctx, lineH + 2 * padY)
+  let i = 0
+  while (i < items.length) {
+    const avail = (ctx.pageH - ctx.margin.b) - ctx.y - 2 * padY
+    const fit = Math.max(1, Math.floor(avail / lineH))
+    const seg = items.slice(i, i + fit)
+    const segH = seg.length * lineH + 2 * padY
+    setFill(doc, ZEBRA); doc.rect(margin.l, ctx.y, contentW, segH, 'F')
+    setDraw(doc, BORDER); doc.setLineWidth(0.1); doc.rect(margin.l, ctx.y, contentW, segH)
+    let ty = ctx.y + padY + 3
+    seg.forEach((it) => {
+      doc.setFont('Roboto', it.bold ? 'bold' : 'normal'); doc.setFontSize(fs)
+      setInk(doc, it.bold ? MUT : INK)
+      doc.text(it.text, margin.l + padX, ty)
+      ty += lineH
+    })
+    ctx.y += segH
+    i += fit
+    if (i < items.length) { doc.addPage(); ctx.y = ctx.margin.t }
+  }
+  ctx.y += 1
+  doc.setFont('Roboto', 'normal'); setInk(doc, INK)
+}
+
+// Pusty stan sekcji ("Brak wpisów.") — odpowiednik dawnej klasy .empty.
+export function drawEmpty(ctx, text) {
+  const { doc, margin } = ctx
+  ensureSpace(ctx, 8)
+  doc.setFont('Roboto', 'italic'); doc.setFontSize(9); setInk(doc, [156, 163, 175])
+  // Roboto-Italic nie jest osadzony — użyj normal (jsPDF i tak nie udaje italic dla custom)
+  doc.setFont('Roboto', 'normal')
+  doc.text(text, margin.l, ctx.y + 4)
+  ctx.y += 8
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+// Rząd małych klikalnych miniaturek (dokumentacja ogólna / media sekcyjne).
+export function drawThumbsRow(ctx, thumbs) {
+  if (!thumbs || !thumbs.length) return
+  const { doc, margin, contentW } = ctx
+  const maxW = 26, maxH = 18, gap = 2
+  ensureSpace(ctx, maxH + 2)
+  let rowTop = ctx.y
+  let x = margin.l
+  thumbs.forEach((t) => {
+    const [dw, dh] = fitBox(t.w, t.h, maxW, maxH)
+    if (x + dw > margin.l + contentW) {
+      rowTop += maxH + gap
+      ctx.y = rowTop
+      ensureSpace(ctx, maxH + 2)
+      rowTop = ctx.y
+      x = margin.l
+    }
+    try { doc.addImage(t.dataUrl, 'JPEG', x, rowTop, dw, dh) } catch { /* ignore */ }
+    setDraw(doc, THUMB_BORDER); doc.setLineWidth(0.1); doc.rect(x, rowTop, dw, dh)
+    if (t.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y: rowTop, w: dw, h: dh, target: t.target })
+    x += dw + gap
+  })
+  ctx.y = rowTop + maxH + 3
+}
+
+// Czerwony baner "BLOKUJE MONTAŻ" (reklamacja).
+export function drawBlockerBanner(ctx, text) {
+  const { doc, margin, contentW } = ctx
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(11)
+  const lines = doc.splitTextToSize(text, contentW - 8)
+  const h = lines.length * 5 + 6
+  ensureSpace(ctx, h + 2)
+  setFill(doc, [254, 226, 226]); doc.rect(margin.l, ctx.y, contentW, h, 'F')
+  setDraw(doc, [220, 38, 38]); doc.setLineWidth(0.5); doc.rect(margin.l, ctx.y, contentW, h)
+  setInk(doc, [153, 27, 27])
+  let ty = ctx.y + 5
+  lines.forEach((l) => { doc.text(l, margin.l + contentW / 2, ty, { align: 'center' }); ty += 5 })
+  ctx.y += h + 3
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
+// Duże zdjęcia-dowody (reklamacja) — contain, z podpisem.
+export function drawEvidencePhotos(ctx, photos) {
+  if (!photos || !photos.length) return
+  const { doc, margin, contentW } = ctx
+  photos.forEach((p) => {
+    const [dw, dh] = fitBox(p.w, p.h, contentW, 150)
+    const capH = p.description ? 5 : 0
+    ensureSpace(ctx, dh + capH + 4)
+    const x = margin.l + (contentW - dw) / 2
+    try { doc.addImage(p.dataUrl, 'JPEG', x, ctx.y, dw, dh) } catch { /* ignore */ }
+    setDraw(doc, BORDER); doc.setLineWidth(0.2); doc.rect(x, ctx.y, dw, dh)
+    if (p.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y: ctx.y, w: dw, h: dh, target: p.target })
+    ctx.y += dh
+    if (p.description) {
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5); setInk(doc, MUT)
+      doc.text(doc.splitTextToSize(p.description, contentW), x, ctx.y + 3.5)
+      ctx.y += capH
+    }
+    ctx.y += 4
+  })
+  setInk(doc, INK)
+}
+
+// Dwa bloki podpisów (SAT/FAT). left/right = {label,name,date}.
+export function drawSignatures(ctx, left, right) {
+  const { doc, margin, contentW } = ctx
+  const gap = 6, bw = (contentW - gap) / 2, bh = 28
+  ensureSpace(ctx, bh + 2)
+  const y0 = ctx.y
+  ;[[margin.l, left], [margin.l + bw + gap, right]].forEach(([x, s]) => {
+    setDraw(doc, THUMB_BORDER); doc.setLineWidth(0.2); doc.roundedRect(x, y0, bw, bh, 1.5, 1.5)
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(7); setInk(doc, MUT)
+    doc.text((s.label || '').toUpperCase(), x + 4, y0 + 5)
+    setDraw(doc, LINE_GRAY); doc.setLineWidth(0.2); doc.line(x + 4, y0 + bh - 9, x + bw - 4, y0 + bh - 9)
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(9); setInk(doc, INK)
+    if (s.name) doc.text(s.name, x + 4, y0 + bh - 5)
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); setInk(doc, MUT)
+    if (s.date) doc.text(s.date, x + 4, y0 + bh - 1.5)
+  })
+  ctx.y = y0 + bh + 4
+  doc.setFont('Roboto', 'normal'); setInk(doc, INK)
+}
+
+// Tabela wideo (wideo nie da się osadzić — listujemy klikalne nazwy plików).
+export function drawVideosTable(ctx, videos) {
+  if (!videos || !videos.length) return
+  const { doc, margin, contentW } = ctx
+  drawSectionHeader(ctx, 'Dokumentacja wideo')
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5); setInk(doc, MUT)
+  const note = doc.splitTextToSize('Pełne pliki wideo znajdziesz w paczce ZIP w folderze wideo/. Kliknij nazwę pliku, aby otworzyć wideo (po rozpakowaniu paczki na komputerze).', contentW)
+  note.forEach((l) => { doc.text(l, margin.l, ctx.y + 3); ctx.y += 4 })
+  ctx.y += 1
+  setInk(doc, INK)
+  const rows = videos.map((v, i) => ({
+    nr: String(i + 1).padStart(2, '0'),
+    kontekst: v._ctxLabel || '—',
+    opis: v.description || '—',
+    plik: v._zipFilename || v.filename || '—',
+    _target: v._zipFilename ? 'wideo/' + v._zipFilename : null,
+  }))
+  drawTable(ctx, {
+    columns: [
+      { header: 'Nr', dataKey: 'nr', width: 12 },
+      { header: 'Kontekst', dataKey: 'kontekst' },
+      { header: 'Opis', dataKey: 'opis' },
+      { header: 'Plik w paczce', dataKey: 'plik' },
+    ],
+    rows,
+    cellLinks: { col: 'plik', resolve: (r) => r._target },
+  })
+}
+
+function applyFooters(ctx) {
+  const { doc } = ctx
+  const n = doc.getNumberOfPages()
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i)
+    const fy = ctx.pageH - ctx.margin.b + 6
+    setDraw(doc, BORDER); doc.setLineWidth(0.1)
+    doc.line(ctx.margin.l, fy - 3, ctx.pageW - ctx.margin.r, fy - 3)
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); setInk(doc, LINE_GRAY)
+    doc.text('Wygenerowano: ' + nowStamp(), ctx.margin.l, fy)
+    doc.text('Strona ' + i + ' / ' + n, ctx.pageW - ctx.margin.r, fy, { align: 'right' })
+  }
+}
+
+// Linki dodawane na KONIEC: numer strony jest pewny dopiero po wszystkich
+// addPage (także tych z autotable). Zbieramy je w trakcie (page=getNumberOfPages()).
+function applyLinks(ctx) {
+  const { doc } = ctx
+  for (const l of ctx.links) {
+    try { doc.setPage(l.page); doc.link(l.x, l.y, l.w, l.h, { url: l.target }) } catch { /* ignore */ }
+  }
+}
+
+// Główne wejście: drawFn(ctx) rysuje raport prymitywami; my dokładamy stopki+linki.
+export async function renderReportToBlob(drawFn) {
+  const { doc, autoTable } = await setupDoc()
+  const logo = await getLogoDataUrl()
+  const ctx = makeCtx(doc, autoTable, logo)
+  await drawFn(ctx)
+  applyFooters(ctx)
+  applyLinks(ctx)
+  return doc.output('blob')
+}
+
+// ============================== PACZKA ZIP (bez zmian) ==============================
 export async function assemblePackage(pdfBlob, photos, videos, baseName) {
   const hasMedia = photos.length > 0 || videos.length > 0
   if (!hasMedia) {
     return { blob: pdfBlob, filename: `${baseName}.pdf` }
   }
-  // Lazy-loaded — only paid for when the report actually has media.
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
   zip.file(`${baseName}.pdf`, pdfBlob)
 
   if (photos.length > 0) {
     const folder = zip.folder('zdjecia')
-
-    // Resolve full-resolution originals up-front. Photos uploaded before originals
-    // were stored have only a thumbnail dataURL — those fall back to embedding the
-    // compressed thumbnail bytes.
     const originalIds = photos.map((p) => p.originalId).filter(Boolean)
     const originalsMap = originalIds.length > 0 ? await getOriginals(originalIds) : new Map()
-
     let legacyCount = 0
     photos.forEach((p, i) => {
       const original = p.originalId ? originalsMap.get(p.originalId) : null
       if (original) {
-        // Full-resolution path: use the blob as-is, infer extension from its MIME type.
         const ext = (extFromImageBlob(original) || extractExt(p.filename) || 'jpg').toLowerCase()
         const fname = makeFilename(i, p._ctxSlug, p.description, ext)
-        p._zipFilename = fname  // keep PDF caption in sync with the actual file we packed
+        p._zipFilename = fname
         folder.file(fname, original)
       } else if (p.dataUrl) {
-        // Legacy fallback (no original stored — only compressed thumb in IDB).
         legacyCount++
         const base64 = p.dataUrl.replace(/^data:image\/[a-z]+;base64,/, '')
         folder.file(p._zipFilename, base64, { base64: true })

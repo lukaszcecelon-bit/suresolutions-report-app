@@ -1,27 +1,24 @@
-// Raport SERWISU NA OBIEKCIE — builder HTML + paczka.
-// To jest WZORZEC podejścia do zdjęć w PDF (miniaturki inline pod tekstem,
-// klikalne do pełnego pliku w ZIP) — pozostałe typy raportów go naśladują.
+// Raport SERWISU NA OBIEKCIE — natywny tekst (jsPDF + autotable + Roboto).
+// WZORZEC podejścia: nagłówek → meta-tabele → tabele z miniaturkami pod tekstem
+// (klikalne do pełnego pliku w ZIP) + badge priorytetu → blok tekstu.
 import {
-  logoUrl, esc, nowStamp, textLines, textWithThumbs, buildLinkMaps,
-  mediaCollector, slugify, resolveReportPhotos, renderHtmlToBlob,
-  assemblePackage, fileBase, downloadBlob,
+  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
+  renderReportToBlob, assemblePackage, fileBase, downloadBlob, slugify,
+  drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock, drawEmpty,
 } from './core.js'
 
-const TITLE = 'RAPORT SERWISU NA OBIEKCIE'
-
-const PRIORITY_LABELS = {
-  urgent: '🔴 Pilne',
-  planned: '🟡 Planowe',
-  watch: '🟢 Obserwacja',
+const PRIORITY_BADGE = {
+  urgent: { text: 'Pilne', kind: 'rejected' },
+  planned: { text: 'Planowe', kind: 'warning' },
+  watch: { text: 'Obserwacja', kind: 'completed' },
 }
 
 const VISIT_STATUS_LABELS = {
-  completed: '✓ Zakończono (maszyna działa)',
-  followup: '⏳ Wymaga spotkania / dalszych działań',
-  parts: '🔴 Maszyna zatrzymana',
+  completed: 'Zakończono (maszyna działa)',
+  followup: 'Wymaga spotkania / dalszych działań',
+  parts: 'Maszyna zatrzymana',
 }
 
-// Łączny czas wizyty z godzin HH:MM (z obsługą przejścia przez północ).
 function serviceVisitDuration(arrival, departure) {
   if (!arrival || !departure) return null
   const [ah, am] = String(arrival).split(':').map(Number)
@@ -39,161 +36,97 @@ function collectMedia(report) {
   const { push, finalize } = mediaCollector()
   ;(report.actions || []).forEach((a, idx) => {
     const desc = a.description ? ' — ' + a.description.slice(0, 40) : ''
-    push(a.media,
-      `Czynność #${idx + 1}${desc}`,
-      `Czynnosc-${idx + 1}`)
+    push(a.media, `Czynność #${idx + 1}${desc}`, `Czynnosc-${idx + 1}`)
   })
   ;(report.parts || []).forEach((p, idx) => {
-    push(p.media,
-      `Element #${idx + 1}${p.name ? ' — ' + p.name : ''}`,
-      `Element-${idx + 1}_${slugify(p.name) || 'X'}`)
+    push(p.media, `Element #${idx + 1}${p.name ? ' — ' + p.name : ''}`, `Element-${idx + 1}_${slugify(p.name) || 'X'}`)
   })
   ;(Array.isArray(report.observations) ? report.observations : []).forEach((o, idx) => {
-    push(o.media,
-      `Obserwacja #${idx + 1}`,
-      `Obserwacja-${idx + 1}`)
+    push(o.media, `Obserwacja #${idx + 1}`, `Obserwacja-${idx + 1}`)
   })
   return finalize()
 }
 
-function buildHtml(report, photos /* videos nieużywane w serwisie */) {
+function buildPdf(ctx, report, photos) {
   const h = report.header || {}
   const v = report.visit || {}
   const { photoMap } = buildLinkMaps(photos)
   const observations = Array.isArray(report.observations) ? report.observations : []
   const totalTime = serviceVisitDuration(v.arrival, v.departure)
+  const W = ctx.contentW
 
-  // B. Czynności — Nr + opis (z miniaturkami pod tekstem). Bez kolumny kategorii i linków.
-  const actionsHtml = (report.actions || []).length > 0 ? `
-    <table class="stops">
-      <thead>
-        <tr>
-          <th style="width:36px">Nr</th>
-          <th>Opis czynności</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(report.actions || []).map((a, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${textWithThumbs(a.description, a.media, photoMap)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  ` : '<p class="empty">Brak wpisów.</p>'
+  drawReportHeader(ctx, { title: 'RAPORT SERWISU NA OBIEKCIE', number: h.reportNumber })
 
-  // C. Elementy — miniaturki pod komentarzem.
-  const partsHtml = (report.parts || []).length > 0 ? `
-    <table class="stops">
-      <thead>
-        <tr>
-          <th style="width:36px">Nr</th>
-          <th>Element</th>
-          <th style="width:110px">Nr katalogowy</th>
-          <th style="width:90px">Priorytet</th>
-          <th>Komentarz</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(report.parts || []).map((p, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${esc(p.name || '—')}</td>
-            <td>${esc(p.catalogNo || '—')}</td>
-            <td>${esc(PRIORITY_LABELS[p.priority] || p.priority || '—')}</td>
-            <td>${textWithThumbs(p.comment, p.media, photoMap)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  ` : '<p class="empty">Brak wpisów.</p>'
+  drawMetaTable(ctx, [
+    [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
+    [{ label: 'Autor', value: h.author || '—' }, { label: 'Rola', value: report.role || '—' }, { label: 'Status', value: VISIT_STATUS_LABELS[report.visitStatus] || '—' }],
+  ])
 
-  // D. Obserwacje — rekordy z miniaturkami (jak czynności).
-  const obsHtml = observations.length > 0 ? `
-    <table class="stops">
-      <thead>
-        <tr>
-          <th style="width:36px">Nr</th>
-          <th>Obserwacja</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${observations.map((o, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${textWithThumbs(o.text, o.media, photoMap)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  ` : '<p class="empty">Brak obserwacji.</p>'
+  drawSectionHeader(ctx, 'A. Dane wizyty')
+  drawMetaTable(ctx, [
+    [{ label: 'Klient', value: v.client || '—' }, { label: 'Lokalizacja', value: v.location || '—' }],
+    [{ label: 'Przyjazd', value: v.arrival || '—' }, { label: 'Odjazd', value: v.departure || '—' }, { label: 'Łączny czas', value: totalTime || '—' }],
+    [{ label: 'Odbiór prac (kto odebrał)', value: report.receivedBy || '—', colspan: 3 }],
+  ])
 
-  return `
-  <div class="page">
-    <div class="hdr">
-      <div class="hdr-left">
-        <img src="${logoUrl}" class="logo" />
-      </div>
-      <div class="hdr-right">
-        <div class="title">${esc(TITLE)}</div>
-        <div class="num">Nr: <strong>${esc(h.reportNumber || '—')}</strong></div>
-      </div>
-    </div>
+  drawSectionHeader(ctx, `B. Wykonane czynności (${(report.actions || []).length})`)
+  if ((report.actions || []).length === 0) {
+    drawEmpty(ctx, 'Brak wpisów.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Opis czynności', dataKey: 'opis', width: W - 12 },
+      ],
+      rows: report.actions.map((a, i) => ({ nr: i + 1, opis: a.description || '', _thumbs: thumbDescriptors(a.media, photoMap) })),
+      thumbsCol: 'opis', thumbsKey: '_thumbs',
+    })
+  }
 
-    <table class="meta">
-      <tr>
-        <td><span class="lbl">Projekt:</span> ${esc(h.projectName || '—')}</td>
-        <td><span class="lbl">Maszyna:</span> ${esc(h.machineName || '—')}</td>
-        <td><span class="lbl">Data:</span> ${esc(h.date || '—')}</td>
-      </tr>
-      <tr>
-        <td><span class="lbl">Autor:</span> ${esc(h.author || '—')}</td>
-        <td><span class="lbl">Rola:</span> ${esc(report.role || '—')}</td>
-        <td><span class="lbl">Status:</span> <strong>${esc(VISIT_STATUS_LABELS[report.visitStatus] || '—')}</strong></td>
-      </tr>
-    </table>
+  drawSectionHeader(ctx, `C. Elementy do wymiany / uwagi (${(report.parts || []).length})`)
+  if ((report.parts || []).length === 0) {
+    drawEmpty(ctx, 'Brak wpisów.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Element', dataKey: 'name', width: 40 },
+        { header: 'Nr katalogowy', dataKey: 'cat', width: 28 },
+        { header: 'Priorytet', dataKey: 'prio', width: 24 },
+        { header: 'Komentarz', dataKey: 'comment', width: W - 12 - 40 - 28 - 24 },
+      ],
+      rows: report.parts.map((p, i) => ({
+        nr: i + 1, name: p.name || '—', cat: p.catalogNo || '—',
+        prio: '', _prio: p.priority,
+        comment: p.comment || '', _thumbs: thumbDescriptors(p.media, photoMap),
+      })),
+      badge: { col: 'prio', resolve: (r) => PRIORITY_BADGE[r._prio] },
+      thumbsCol: 'comment', thumbsKey: '_thumbs',
+    })
+  }
 
-    <h2>A. Dane wizyty</h2>
-    <table class="meta">
-      <tr>
-        <td><span class="lbl">Klient:</span> ${esc(v.client || '—')}</td>
-        <td><span class="lbl">Lokalizacja:</span> ${esc(v.location || '—')}</td>
-      </tr>
-      <tr>
-        <td><span class="lbl">Przyjazd:</span> ${esc(v.arrival || '—')}</td>
-        <td><span class="lbl">Odjazd:</span> ${esc(v.departure || '—')}</td>
-        <td><span class="lbl">Łączny czas:</span> ${esc(totalTime || '—')}</td>
-      </tr>
-      <tr>
-        <td colspan="3"><span class="lbl">Odbiór prac (kto odebrał):</span> ${esc(report.receivedBy || '—')}</td>
-      </tr>
-    </table>
+  drawSectionHeader(ctx, `D. Obserwacje własne (${observations.length})`)
+  if (observations.length === 0) {
+    drawEmpty(ctx, 'Brak obserwacji.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Obserwacja', dataKey: 'text', width: W - 12 },
+      ],
+      rows: observations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+      thumbsCol: 'text', thumbsKey: '_thumbs',
+    })
+  }
 
-    <h2>B. Wykonane czynności (${(report.actions || []).length})</h2>
-    ${actionsHtml}
-
-    <h2>C. Elementy do wymiany / uwagi (${(report.parts || []).length})</h2>
-    ${partsHtml}
-
-    <h2>D. Obserwacje własne (${observations.length})</h2>
-    ${obsHtml}
-
-    <h2>E. Rekomendacje</h2>
-    <div class="text-block">${textLines(report.recommendations)}</div>
-
-    <div class="footer">
-      <span>Wygenerowano: ${nowStamp()}</span>
-    </div>
-  </div>
-  `
+  drawSectionHeader(ctx, 'E. Rekomendacje')
+  drawTextBlock(ctx, report.recommendations)
 }
 
 export async function generateServicePackage(report) {
   const r = await resolveReportPhotos(report)
   const { photos, videos } = collectMedia(r)
-  const html = buildHtml(r, photos)
-  const pdfBlob = await renderHtmlToBlob(html)
+  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos))
   const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r, 'serwis'))
   downloadBlob(pack.blob, pack.filename)
 }

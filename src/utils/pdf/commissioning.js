@@ -1,110 +1,89 @@
-// Raport URUCHOMIENIA / OBSERWACJI MASZYNY — builder HTML + paczka.
+// Raport URUCHOMIENIA / OBSERWACJI MASZYNY — natywny tekst.
 import {
-  logoUrl, esc, timeHHMM, nowStamp, formatDurationFull, formatDurationShort,
-  textLines, textWithThumbs, thumbsSection, buildLinkMaps, renderVideosHtml,
-  mediaCollector, slugify, resolveReportPhotos, renderHtmlToBlob,
-  assemblePackage, fileBase, downloadBlob,
+  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
+  renderReportToBlob, assemblePackage, fileBase, downloadBlob, slugify,
+  timeHHMM, formatDurationFull, formatDurationShort,
+  drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
+  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable,
 } from './core.js'
-
-const TITLE = 'RAPORT URUCHOMIENIA / OBSERWACJI MASZYNY'
 
 function collectMedia(report) {
   const { push, finalize } = mediaCollector()
   ;(report.stops || []).forEach((s, idx) => {
     const reason = s.reason === 'Inne' && s.customReason ? s.customReason : (s.reason || '')
-    push(s.media,
-      `Zatrzymanie #${idx + 1} — ${reason}`,
-      `Zatrzymanie-${idx + 1}_${slugify(reason) || 'X'}`)
+    push(s.media, `Zatrzymanie #${idx + 1} — ${reason}`, `Zatrzymanie-${idx + 1}_${slugify(reason) || 'X'}`)
   })
   push(report.generalMedia, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
   return finalize()
 }
 
-function buildHtml(report, photos, videos) {
+function buildPdf(ctx, report, photos, videos) {
   const h = report.header || {}
   const { photoMap } = buildLinkMaps(photos)
+  const W = ctx.contentW
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
-    ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt)
-    : 0
+    ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt) : 0
   const totalStopMs = (report.stops || []).reduce((s, st) => s + (st.durationMs || 0), 0)
   const longest = (report.stops || []).reduce((m, st) => Math.max(m, st.durationMs || 0), 0)
 
-  const stopsRows = (report.stops || []).map((s, i) => {
-    return `
-    <tr>
-      <td>${i + 1}</td>
-      <td>${esc(timeHHMM(s.startAt))}</td>
-      <td>${esc(formatDurationShort(s.durationMs))}</td>
-      <td>${esc(s.reason === 'Inne' && s.customReason ? s.customReason : s.reason)}</td>
-      <td>${textWithThumbs(s.comment, s.media, photoMap)}</td>
-    </tr>
-  `}).join('')
+  drawReportHeader(ctx, { title: 'RAPORT URUCHOMIENIA / OBSERWACJI MASZYNY', number: h.reportNumber })
 
-  const videosHtml = renderVideosHtml(videos)
+  drawMetaTable(ctx, [
+    [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
+    [{ label: 'Autor', value: h.author || '—', colspan: 2 }, { label: 'Sesja', value: `${timeHHMM(report.sessionStartAt)} — ${timeHHMM(report.sessionEndAt)}` }],
+  ])
 
-  return `
-  <div class="page">
-    <div class="hdr">
-      <div class="hdr-left">
-        <img src="${logoUrl}" class="logo" />
-      </div>
-      <div class="hdr-right">
-        <div class="title">${esc(TITLE)}</div>
-        <div class="num">Nr: <strong>${esc(h.reportNumber || '—')}</strong></div>
-      </div>
-    </div>
+  drawSectionHeader(ctx, 'Podsumowanie statystyk')
+  drawStatCards(ctx, [
+    { label: 'Całkowity czas pracy', value: formatDurationFull(totalRunMs) },
+    { label: 'Liczba zatrzymań', value: report.stops?.length || 0 },
+    { label: 'Łączny czas przestojów', value: formatDurationShort(totalStopMs) },
+    { label: 'Najdłuższe zatrzymanie', value: formatDurationShort(longest) },
+  ])
 
-    <table class="meta">
-      <tr>
-        <td><span class="lbl">Projekt:</span> ${esc(h.projectName || '—')}</td>
-        <td><span class="lbl">Maszyna:</span> ${esc(h.machineName || '—')}</td>
-        <td><span class="lbl">Data:</span> ${esc(h.date || '—')}</td>
-      </tr>
-      <tr>
-        <td colspan="2"><span class="lbl">Autor:</span> ${esc(h.author || '—')}</td>
-        <td><span class="lbl">Start sesji:</span> ${esc(timeHHMM(report.sessionStartAt))} — <span class="lbl">Koniec:</span> ${esc(timeHHMM(report.sessionEndAt))}</td>
-      </tr>
-    </table>
+  drawSectionHeader(ctx, 'Log zatrzymań')
+  if ((report.stops || []).length === 0) {
+    drawTextBlock(ctx, 'Brak zatrzymań — maszyna pracowała bez przestojów.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Godzina', dataKey: 'godz', width: 20 },
+        { header: 'Czas trwania', dataKey: 'czas', width: 24 },
+        { header: 'Powód', dataKey: 'powod', width: 40 },
+        { header: 'Komentarz', dataKey: 'komentarz', width: W - 12 - 20 - 24 - 40 },
+      ],
+      rows: (report.stops || []).map((s, i) => ({
+        nr: i + 1,
+        godz: timeHHMM(s.startAt),
+        czas: formatDurationShort(s.durationMs),
+        powod: s.reason === 'Inne' && s.customReason ? s.customReason : (s.reason || '—'),
+        komentarz: s.comment || '',
+        _thumbs: thumbDescriptors(s.media, photoMap),
+      })),
+      thumbsCol: 'komentarz', thumbsKey: '_thumbs',
+    })
+  }
 
-    <h2>Podsumowanie statystyk</h2>
-    <div class="stats">
-      <div class="stat"><div class="stat-lbl">Całkowity czas pracy</div><div class="stat-val mono">${formatDurationFull(totalRunMs)}</div></div>
-      <div class="stat"><div class="stat-lbl">Liczba zatrzymań</div><div class="stat-val">${report.stops?.length || 0}</div></div>
-      <div class="stat"><div class="stat-lbl">Łączny czas przestojów</div><div class="stat-val">${formatDurationShort(totalStopMs)}</div></div>
-      <div class="stat"><div class="stat-lbl">Najdłuższe zatrzymanie</div><div class="stat-val">${formatDurationShort(longest)}</div></div>
-    </div>
+  drawSectionHeader(ctx, 'Obserwacje ogólne')
+  drawTextBlock(ctx, report.observations)
 
-    <h2>Log zatrzymań</h2>
-    ${stopsRows ? `
-      <table class="stops">
-        <thead>
-          <tr><th>Nr</th><th>Godzina</th><th>Czas trwania</th><th>Powód</th><th>Komentarz</th></tr>
-        </thead>
-        <tbody>${stopsRows}</tbody>
-      </table>
-    ` : '<p class="empty">Brak zatrzymań — maszyna pracowała bez przestojów.</p>'}
+  drawSectionHeader(ctx, 'Wnioski i rekomendacje')
+  drawTextBlock(ctx, report.conclusions)
 
-    <h2>Obserwacje ogólne</h2>
-    <div class="text-block">${textLines(report.observations)}</div>
+  const generalThumbs = thumbDescriptors(report.generalMedia, photoMap)
+  if (generalThumbs.length) {
+    drawSectionHeader(ctx, 'Dokumentacja ogólna')
+    drawThumbsRow(ctx, generalThumbs)
+  }
 
-    <h2>Wnioski i rekomendacje</h2>
-    <div class="text-block">${textLines(report.conclusions)}</div>
-
-    ${thumbsSection('Dokumentacja ogólna', report.generalMedia, photoMap)}
-    ${videosHtml}
-
-    <div class="footer">
-      <span>Wygenerowano: ${nowStamp()}</span>
-    </div>
-  </div>
-  `
+  drawVideosTable(ctx, videos)
 }
 
 export async function generateCommissioningPackage(report) {
   const r = await resolveReportPhotos(report)
   const { photos, videos } = collectMedia(r)
-  const html = buildHtml(r, photos, videos)
-  const pdfBlob = await renderHtmlToBlob(html)
+  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
   const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r))
   downloadBlob(pack.blob, pack.filename)
 }

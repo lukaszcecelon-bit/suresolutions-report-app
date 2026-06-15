@@ -1,51 +1,32 @@
-// Raport TESTÓW PROTOTYPU — builder HTML + paczka.
+// Raport TESTÓW PROTOTYPU — natywny tekst.
 import {
-  logoUrl, esc, nowStamp, textLines, textWithThumbs, renderThumbs,
-  thumbsSection, buildLinkMaps, renderVideosHtml, mediaCollector, slugify,
-  resolveReportPhotos, renderHtmlToBlob, assemblePackage, downloadBlob,
+  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
+  renderReportToBlob, assemblePackage, downloadBlob, slugify,
+  drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
+  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge, drawEmpty,
 } from './core.js'
 
-const TITLE = 'RAPORT TESTÓW PROTOTYPU'
-
-const SAMPLE_METHOD_LABELS = {
-  print3d: 'Druk 3D',
-  cnc: 'Obróbka CNC',
-  other: 'Inne',
+const SAMPLE_METHOD_LABELS = { print3d: 'Druk 3D', cnc: 'Obróbka CNC', other: 'Inne' }
+const OVERALL_RESULT_LABELS = { positive: 'Pozytywny', negative: 'Negatywny', conditional: 'Warunkowo pozytywny' }
+const DECISION_BADGE = {
+  implement: { text: 'Wdrożyć rozwiązanie', kind: 'completed' },
+  iterate: { text: 'Poprawki / kolejna iteracja', kind: 'info' },
+  reject: { text: 'Odrzucić koncepcję', kind: 'rejected' },
 }
-
-const OVERALL_RESULT_LABELS = {
-  positive: '✓ Pozytywny',
-  negative: '✗ Negatywny',
-  conditional: '~ Warunkowo pozytywny',
+const POINT_BADGE = {
+  ok: { text: 'OK', kind: 'completed' },
+  nok: { text: 'NOK', kind: 'rejected' },
+  cond: { text: 'Warunkowo', kind: 'warning' },
 }
-
-const DECISION_LABELS = {
-  implement: '✓ Wdrożyć rozwiązanie',
-  iterate: '⟳ Poprawki → kolejna iteracja',
-  reject: '✗ Odrzucić koncepcję',
-}
-
-const POINT_RESULT_LABELS = {
-  ok: '✓ OK',
-  nok: '✗ NOK',
-  cond: '~ Warunkowo',
-}
-
-const POINT_RESULT_SLUGS = {
-  ok: 'OK',
-  nok: 'NOK',
-  cond: 'Warunkowo',
-}
+const POINT_RESULT_SLUGS = { ok: 'OK', nok: 'NOK', cond: 'Warunkowo' }
 
 function collectMedia(report) {
   const { push, finalize } = mediaCollector()
   push(report.info?.media, 'Sekcja A — Informacje o teście', 'Sekcja-A_Informacje')
   ;(report.points || []).forEach((pt, idx) => {
-    const ctxLabel = `Punkt #${idx + 1}${pt.description ? ' — ' + pt.description : ''} (${POINT_RESULT_LABELS[pt.result] || ''})`
+    const ctxLabel = `Punkt #${idx + 1}${pt.description ? ' — ' + pt.description : ''} (${POINT_BADGE[pt.result]?.text || ''})`
     const descSlug = pt.description ? '_' + slugify(pt.description) : ''
-    push(pt.media,
-      ctxLabel,
-      `Punkt-${idx + 1}_${POINT_RESULT_SLUGS[pt.result] || 'X'}${descSlug}`)
+    push(pt.media, ctxLabel, `Punkt-${idx + 1}_${POINT_RESULT_SLUGS[pt.result] || 'X'}${descSlug}`)
   })
   push(report.resultsMedia, 'Sekcja C — Wyniki testu (ogólne)', 'Sekcja-C_Wyniki')
   push(report.observationsMedia, 'Sekcja D — Obserwacje i wnioski', 'Sekcja-D_Obserwacje')
@@ -53,136 +34,100 @@ function collectMedia(report) {
   return finalize()
 }
 
-function buildHtml(report, photos, videos) {
+function buildPdf(ctx, report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const cond = report.conditions || {}
   const { photoMap } = buildLinkMaps(photos)
-  const videosHtml = renderVideosHtml(videos)
-
+  const W = ctx.contentW
+  const iter = info.iteration || 1
   const sampleMethod = info.sampleMethod === 'other'
     ? (info.sampleMethodOther || 'Inne')
     : (SAMPLE_METHOD_LABELS[info.sampleMethod] || '—')
 
-  const paramsHtml = (cond.params || []).length > 0 ? `
-    <table class="stops">
-      <thead>
-        <tr><th style="width:36px">Nr</th><th>Parametr</th><th>Wartość</th></tr>
-      </thead>
-      <tbody>
-        ${(cond.params || []).map((p, i) => `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${esc(p.key || '—')}</td>
-            <td>${esc(p.value || '—')}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  ` : '<p class="empty">Brak parametrów.</p>'
+  drawReportHeader(ctx, { title: 'RAPORT TESTÓW PROTOTYPU', subtitle: 'Test #' + iter, number: h.reportNumber })
 
-  const pointsHtml = (report.points || []).length > 0 ? `
-    <table class="stops">
-      <thead>
-        <tr>
-          <th style="width:36px">Nr</th>
-          <th>Punkt kontrolny</th>
-          <th style="width:90px">Wynik</th>
-          <th>Komentarz</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${(report.points || []).map((p, i) => {
-          return `
-          <tr>
-            <td>${i + 1}</td>
-            <td>${esc(p.description || '—')}</td>
-            <td>${esc(POINT_RESULT_LABELS[p.result] || '—')}</td>
-            <td>${textWithThumbs(p.comment, p.media, photoMap)}</td>
-          </tr>
-        `}).join('')}
-      </tbody>
-    </table>
-  ` : '<p class="empty">Brak punktów kontrolnych.</p>'
+  drawMetaTable(ctx, [
+    [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
+    [{ label: 'Autor', value: h.author || '—' }, { label: 'Ocena ogólna', value: OVERALL_RESULT_LABELS[report.overallResult] || '—', colspan: 2 }],
+  ])
+
+  drawSectionHeader(ctx, 'A. Informacje o teście')
+  drawMetaTable(ctx, [[
+    { label: 'Podzespół', value: info.component || '—' },
+    { label: 'Iteracja', value: 'Test #' + iter },
+    { label: 'Metoda próbki', value: sampleMethod },
+  ]])
+  drawTextBlock(ctx, info.goal, { label: 'Cel testu:' })
+  drawThumbsRow(ctx, thumbDescriptors(info.media, photoMap))
+
+  drawSectionHeader(ctx, 'B. Warunki testu')
+  drawTextBlock(ctx, cond.setup, { label: 'Setup:' })
+  if ((cond.params || []).length === 0) {
+    drawEmpty(ctx, 'Brak parametrów.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Parametr', dataKey: 'key', width: 70 },
+        { header: 'Wartość', dataKey: 'value', width: W - 12 - 70 },
+      ],
+      rows: cond.params.map((p, i) => ({ nr: i + 1, key: p.key || '—', value: p.value || '—' })),
+    })
+  }
 
   const okCount = (report.points || []).filter((p) => p.result === 'ok').length
   const nokCount = (report.points || []).filter((p) => p.result === 'nok').length
   const condCount = (report.points || []).filter((p) => p.result === 'cond').length
 
-  return `
-  <div class="page">
-    <div class="hdr">
-      <div class="hdr-left">
-        <img src="${logoUrl}" class="logo" />
-      </div>
-      <div class="hdr-right">
-        <div class="title">${esc(TITLE)} · Test #${esc(info.iteration || 1)}</div>
-        <div class="num">Nr: <strong>${esc(h.reportNumber || '—')}</strong></div>
-      </div>
-    </div>
+  drawSectionHeader(ctx, 'C. Wyniki testu')
+  drawStatCards(ctx, [
+    { label: 'Punkty kontrolne', value: report.points?.length || 0 },
+    { label: 'OK', value: okCount },
+    { label: 'NOK', value: nokCount },
+    { label: 'Warunkowo', value: condCount },
+  ])
+  if ((report.points || []).length === 0) {
+    drawEmpty(ctx, 'Brak punktów kontrolnych.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Punkt kontrolny', dataKey: 'punkt', width: 55 },
+        { header: 'Wynik', dataKey: 'wynik', width: 24, align: 'center' },
+        { header: 'Komentarz', dataKey: 'comment', width: W - 12 - 55 - 24 },
+      ],
+      rows: report.points.map((p, i) => ({
+        nr: i + 1, punkt: p.description || '—', wynik: '', _wynik: p.result,
+        comment: p.comment || '', _thumbs: thumbDescriptors(p.media, photoMap),
+      })),
+      badge: { col: 'wynik', resolve: (r) => POINT_BADGE[r._wynik] },
+      thumbsCol: 'comment', thumbsKey: '_thumbs',
+    })
+  }
+  drawThumbsRow(ctx, thumbDescriptors(report.resultsMedia, photoMap))
 
-    <table class="meta">
-      <tr>
-        <td><span class="lbl">Projekt:</span> ${esc(h.projectName || '—')}</td>
-        <td><span class="lbl">Maszyna:</span> ${esc(h.machineName || '—')}</td>
-        <td><span class="lbl">Data:</span> ${esc(h.date || '—')}</td>
-      </tr>
-      <tr>
-        <td><span class="lbl">Autor:</span> ${esc(h.author || '—')}</td>
-        <td colspan="2"><span class="lbl">Ocena ogólna:</span> <strong>${esc(OVERALL_RESULT_LABELS[report.overallResult] || '—')}</strong></td>
-      </tr>
-    </table>
+  drawSectionHeader(ctx, 'D. Obserwacje i wnioski')
+  drawTextBlock(ctx, report.observations)
+  drawThumbsRow(ctx, thumbDescriptors(report.observationsMedia, photoMap))
 
-    <h2>A. Informacje o teście</h2>
-    <table class="meta">
-      <tr>
-        <td><span class="lbl">Podzespół:</span> ${esc(info.component || '—')}</td>
-        <td><span class="lbl">Iteracja:</span> Test #${esc(info.iteration || 1)}</td>
-        <td><span class="lbl">Metoda próbki:</span> ${esc(sampleMethod)}</td>
-      </tr>
-    </table>
-    <div class="text-block" style="margin-top:8px"><span class="lbl">Cel testu:</span>${textLines(info.goal)}</div>
-    ${renderThumbs(info.media, photoMap)}
+  drawSectionHeader(ctx, 'E. Decyzja')
+  if (DECISION_BADGE[report.decision]) drawBadge(ctx, DECISION_BADGE[report.decision].text, DECISION_BADGE[report.decision].kind)
+  drawTextBlock(ctx, report.decisionNotes)
 
-    <h2>B. Warunki testu</h2>
-    <div class="text-block"><span class="lbl">Setup:</span>${textLines(cond.setup)}</div>
-    <div style="margin-top:8px"><span class="lbl">Parametry:</span></div>
-    ${paramsHtml}
+  const generalThumbs = thumbDescriptors(report.media, photoMap)
+  if (generalThumbs.length) {
+    drawSectionHeader(ctx, 'Dokumentacja ogólna')
+    drawThumbsRow(ctx, generalThumbs)
+  }
 
-    <h2>C. Wyniki testu</h2>
-    <div class="stats">
-      <div class="stat"><div class="stat-lbl">Punkty kontrolne</div><div class="stat-val">${report.points?.length || 0}</div></div>
-      <div class="stat"><div class="stat-lbl">OK</div><div class="stat-val">${okCount}</div></div>
-      <div class="stat"><div class="stat-lbl">NOK</div><div class="stat-val">${nokCount}</div></div>
-      <div class="stat"><div class="stat-lbl">Warunkowo</div><div class="stat-val">${condCount}</div></div>
-    </div>
-    <div style="margin-top:10px"></div>
-    ${pointsHtml}
-    ${renderThumbs(report.resultsMedia, photoMap)}
-
-    <h2>D. Obserwacje i wnioski</h2>
-    <div class="text-block">${textLines(report.observations)}</div>
-    ${renderThumbs(report.observationsMedia, photoMap)}
-
-    <h2>E. Decyzja</h2>
-    <div style="margin-bottom:6px"><strong>${esc(DECISION_LABELS[report.decision] || '—')}</strong></div>
-    <div class="text-block">${textLines(report.decisionNotes)}</div>
-
-    ${thumbsSection('Dokumentacja ogólna', report.media, photoMap)}
-    ${videosHtml}
-
-    <div class="footer">
-      <span>Wygenerowano: ${nowStamp()}</span>
-    </div>
-  </div>
-  `
+  drawVideosTable(ctx, videos)
 }
 
 export async function generatePrototypePackage(report) {
   const r = await resolveReportPhotos(report)
   const { photos, videos } = collectMedia(r)
-  const html = buildHtml(r, photos, videos)
-  const pdfBlob = await renderHtmlToBlob(html)
+  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
   const iter = r.info?.iteration || 1
   const baseNum = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
   const baseName = `${baseNum}_test${iter}_${r.header?.date || 'data'}`
