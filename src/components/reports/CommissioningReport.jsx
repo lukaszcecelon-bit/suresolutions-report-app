@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
@@ -7,6 +7,7 @@ import { MicTextarea } from '../common/VoiceMic.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
+import { deleteImage, deleteVideo, deleteOriginal } from '../../utils/imageStore.js'
 
 const STOP_REASONS = [
   'Zacięcie detalu',
@@ -22,6 +23,15 @@ const nowISO = () => new Date().toISOString()
 const timeHHMM = (iso) => {
   const d = new Date(iso)
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// Ustawia porę dnia (HH:MM) na istniejącej dacie rekordu, zachowując dzień.
+// Używane przy ręcznej korekcie godziny rozpoczęcia zatrzymania w trybie edycji.
+function setTimeOnISO(iso, hhmm) {
+  const [hh, mm] = (hhmm || '00:00').split(':').map((n) => parseInt(n, 10) || 0)
+  const d = iso ? new Date(iso) : new Date()
+  d.setHours(hh, mm, 0, 0)
+  return d.toISOString()
 }
 
 function formatDuration(ms) {
@@ -87,8 +97,8 @@ export default function CommissioningReport({ navigate, reportId }) {
   const [attemptedStart, setAttemptedStart] = useState(false)
 
   // Wspólny szkielet strony raportu (auto-save, paczki). Uruchomienie NIE
-  // używa locka ukończonych — faza 3 (po sesji) to właśnie miejsce
-  // uzupełniania obserwacji/wniosków, blokada odcięłaby te pola.
+  // używa locka ukończonych — obserwacje/wnioski i edycja zatrzymań muszą
+  // pozostać dostępne także po zakończeniu sesji, a blokada odcięłaby te pola.
   const page = useReportPage({ report, setReport, generatePackage: generateCommissioningPackage })
   const { toast, confirm } = page
 
@@ -113,8 +123,8 @@ export default function CommissioningReport({ navigate, reportId }) {
     }))
   }
 
-  // ==== PHASE 2: STOPPAGE LOG ====
-  const [stopModal, setStopModal] = useState(null) // { reason, customReason, comment }
+  // ==== PHASE 2: STOPPAGE LOG (tworzenie nowego zatrzymania na żywo) ====
+  const [stopModal, setStopModal] = useState(null) // { reason, customReason, comment, media }
 
   const openStop = () => {
     setReport((r) => ({
@@ -154,9 +164,61 @@ export default function CommissioningReport({ navigate, reportId }) {
     setStopModal(null)
   }
 
+  // ==== EDYCJA istniejącego zatrzymania ====
+  // Edycja działa "na żywo" (każda zmiana auto-zapisywana), spójnie z resztą
+  // aplikacji. Dzięki temu MediaUploader operuje wprost na rekordzie — nie ma
+  // rozjazdu draft/commit ani osieroconych blobów przy "Anuluj".
+  const [editStopId, setEditStopId] = useState(null)
+  const editStop = (report.stops || []).find((s) => s.id === editStopId) || null
+
+  const patchStop = (id, patch) =>
+    setReport((r) => ({
+      ...r,
+      stops: (r.stops || []).map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }))
+
+  // Korekta godziny rozpoczęcia: zachowujemy czas trwania, przeliczamy koniec.
+  const patchStopStart = (id, hhmm) =>
+    setReport((r) => ({
+      ...r,
+      stops: (r.stops || []).map((s) => {
+        if (s.id !== id) return s
+        const startAt = setTimeOnISO(s.startAt, hhmm)
+        const endAt = new Date(new Date(startAt).getTime() + (s.durationMs || 0)).toISOString()
+        return { ...s, startAt, endAt }
+      }),
+    }))
+
+  // Korekta czasu trwania: zachowujemy start, przeliczamy koniec.
+  const patchStopDuration = (id, durationMs) =>
+    setReport((r) => ({
+      ...r,
+      stops: (r.stops || []).map((s) => {
+        if (s.id !== id) return s
+        const endAt = new Date(new Date(s.startAt).getTime() + durationMs).toISOString()
+        return { ...s, durationMs, endAt }
+      }),
+    }))
+
+  const deleteStop = async (id) => {
+    if (!(await confirm('Usunąć ten rekord zatrzymania? Tej operacji nie można cofnąć.', {
+      title: 'Usuń zatrzymanie', confirmLabel: 'Usuń', variant: 'danger'
+    }))) return
+    const s = (report.stops || []).find((x) => x.id === id)
+    // best-effort sprzątanie blobów w IndexedDB, żeby nie zostawiać śmieci
+    ;(s?.media || []).forEach((m) => {
+      if (m.photoId) deleteImage(m.photoId).catch(() => {})
+      if (m.originalId) deleteOriginal(m.originalId).catch(() => {})
+      if (m.videoId) deleteVideo(m.videoId).catch(() => {})
+    })
+    setReport((r) => ({ ...r, stops: (r.stops || []).filter((x) => x.id !== id) }))
+    setEditStopId(null)
+    toast.success('Zatrzymanie usunięte')
+  }
+
   // ==== PHASE 3: FINISH ====
   const finishSession = async () => {
-    if (!(await confirm('Zakończyć sesję? Po zakończeniu nie można dodawać kolejnych zatrzymań.', {
+    if (!(await confirm('Zakończyć sesję? Po zakończeniu nie można dodawać kolejnych zatrzymań (obserwacje, wnioski i edycję rekordów możesz nadal uzupełniać).', {
       title: 'Zakończenie sesji', confirmLabel: 'Zakończ', variant: 'danger'
     }))) return
     setReport((r) => ({
@@ -277,48 +339,13 @@ export default function CommissioningReport({ navigate, reportId }) {
             {report.stops.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400 italic">Maszyna pracuje bez przestojów — brak zatrzymań do zalogowania.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-gray-500 dark:text-gray-400">
-                    <tr>
-                      <th className="py-2 pr-2">Nr</th>
-                      <th className="py-2 pr-2">Godzina</th>
-                      <th className="py-2 pr-2">Czas</th>
-                      <th className="py-2 pr-2">Powód</th>
-                      <th className="py-2 pr-2">Komentarz</th>
-                      <th className="py-2 pr-2">Media</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.stops.map((s, i) => {
-                      const photos = (s.media || []).filter((m) => m.kind === 'image').length
-                      const videos = (s.media || []).filter((m) => m.kind === 'video').length
-                      return (
-                        <tr key={s.id} className="border-t border-gray-100 dark:border-gray-700">
-                          <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
-                          <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
-                          <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
-                          <td className="py-2 pr-2">
-                            {s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}
-                          </td>
-                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300">{s.comment || '—'}</td>
-                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                            {photos === 0 && videos === 0 ? '—' : (
-                              <span>
-                                {photos > 0 && <span>📷 {photos}</span>}
-                                {photos > 0 && videos > 0 && <span> · </span>}
-                                {videos > 0 && <span>🎬 {videos}</span>}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <StopsTable stops={report.stops} onEdit={setEditStopId} />
             )}
           </div>
+
+          {/* Obserwacje i wnioski — dostępne NA BIEŻĄCO, nie tylko po sesji.
+              Inżynier może zapisywać spostrzeżenia w trakcie obserwacji maszyny. */}
+          <NotesSection report={report} setReport={setReport} />
 
           {/* Finish */}
           {report.phase === 'running' && (
@@ -330,7 +357,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             </button>
           )}
 
-          {/* Stop modal */}
+          {/* Stop modal (nowe zatrzymanie na żywo) */}
           {stopModal && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 overflow-y-auto">
               <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-5 space-y-4 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
@@ -410,66 +437,11 @@ export default function CommissioningReport({ navigate, reportId }) {
           {report.stops.length > 0 && (
             <div className="card">
               <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-gray-500 dark:text-gray-400">
-                    <tr>
-                      <th className="py-2 pr-2">#</th>
-                      <th className="py-2 pr-2">Godzina</th>
-                      <th className="py-2 pr-2">Czas</th>
-                      <th className="py-2 pr-2">Powód</th>
-                      <th className="py-2 pr-2">Komentarz</th>
-                      <th className="py-2 pr-2">Media</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.stops.map((s, i) => {
-                      const photos = (s.media || []).filter((m) => m.kind === 'image').length
-                      const videos = (s.media || []).filter((m) => m.kind === 'video').length
-                      return (
-                        <tr key={s.id} className="border-t border-gray-100 dark:border-gray-700">
-                          <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
-                          <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
-                          <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
-                          <td className="py-2 pr-2">
-                            {s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}
-                          </td>
-                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300">{s.comment || '—'}</td>
-                          <td className="py-2 pr-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                            {photos === 0 && videos === 0 ? '—' : (
-                              <span>
-                                {photos > 0 && <span>📷 {photos}</span>}
-                                {photos > 0 && videos > 0 && <span> · </span>}
-                                {videos > 0 && <span>🎬 {videos}</span>}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <StopsTable stops={report.stops} onEdit={setEditStopId} />
             </div>
           )}
 
-          <div className="card">
-            <h3 className="section-title">Obserwacje ogólne</h3>
-            <MicTextarea
-              value={report.observations}
-              onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
-              placeholder="Co zauważyłeś podczas obserwacji maszyny?"
-            />
-          </div>
-
-          <div className="card">
-            <h3 className="section-title">Wnioski i rekomendacje</h3>
-            <MicTextarea
-              value={report.conclusions}
-              onChange={(e) => setReport((r) => ({ ...r, conclusions: e.target.value }))}
-              placeholder="Wnioski, propozycje usprawnień, dalsze kroki…"
-            />
-          </div>
+          <NotesSection report={report} setReport={setReport} />
 
           <div className="card">
             <h3 className="section-title">Dokumentacja fotograficzna (ogólna)</h3>
@@ -485,7 +457,200 @@ export default function CommissioningReport({ navigate, reportId }) {
           <ReportActionBar page={page} status={report.status} navigate={navigate} showFinish={false} />
         </>
       )}
+
+      {/* Modal edycji istniejącego zatrzymania — dostępny w Fazie 2 i 3 */}
+      {editStop && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-5 space-y-4 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold dark:text-gray-100">Edytuj zatrzymanie</h3>
+              <button
+                onClick={() => setEditStopId(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xl leading-none px-1"
+                aria-label="Zamknij"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Godzina rozpoczęcia</label>
+                <input
+                  type="time"
+                  className="field-input"
+                  value={timeHHMM(editStop.startAt)}
+                  onChange={(e) => { if (e.target.value) patchStopStart(editStop.id, e.target.value) }}
+                />
+              </div>
+              <div>
+                <label className="field-label">Czas trwania</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    className="field-input"
+                    value={Math.floor((editStop.durationMs || 0) / 60000)}
+                    onChange={(e) => {
+                      const min = Math.max(0, parseInt(e.target.value || '0', 10) || 0)
+                      const sec = Math.floor(((editStop.durationMs || 0) % 60000) / 1000)
+                      patchStopDuration(editStop.id, (min * 60 + sec) * 1000)
+                    }}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">min</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="field-input"
+                    value={Math.floor(((editStop.durationMs || 0) % 60000) / 1000)}
+                    onChange={(e) => {
+                      const sec = Math.min(59, Math.max(0, parseInt(e.target.value || '0', 10) || 0))
+                      const min = Math.floor((editStop.durationMs || 0) / 60000)
+                      patchStopDuration(editStop.id, (min * 60 + sec) * 1000)
+                    }}
+                  />
+                  <span className="text-xs text-gray-500 dark:text-gray-400">s</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="field-label">Powód zatrzymania</label>
+              <select
+                className="field-input"
+                value={editStop.reason}
+                onChange={(e) => patchStop(editStop.id, { reason: e.target.value })}
+              >
+                {STOP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            {editStop.reason === 'Inne' && (
+              <div>
+                <label className="field-label">Opisz powód</label>
+                <input
+                  type="text"
+                  className="field-input"
+                  value={editStop.customReason || ''}
+                  onChange={(e) => patchStop(editStop.id, { customReason: e.target.value })}
+                />
+              </div>
+            )}
+            <div>
+              <label className="field-label">Komentarz</label>
+              <MicTextarea
+                value={editStop.comment || ''}
+                onChange={(e) => patchStop(editStop.id, { comment: e.target.value })}
+                placeholder="Krótki opis sytuacji…"
+              />
+            </div>
+            <div>
+              <label className="field-label">Dokumentacja foto / wideo</label>
+              <MediaUploader
+                media={editStop.media || []}
+                onChange={(m) => patchStop(editStop.id, { media: m })}
+              />
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => deleteStop(editStop.id)}
+                className="btn-secondary flex-1 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                🗑 Usuń zatrzymanie
+              </button>
+              <button onClick={() => setEditStopId(null)} className="btn-success flex-1">
+                Gotowe
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+// Tabela logu zatrzymań — współdzielona przez Fazę 2 (na żywo) i Fazę 3
+// (podsumowanie). Każdy wiersz ma przycisk edycji wywołujący onEdit(id).
+function StopsTable({ stops, onEdit }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-gray-500 dark:text-gray-400">
+          <tr>
+            <th className="py-2 pr-2">Nr</th>
+            <th className="py-2 pr-2">Godzina</th>
+            <th className="py-2 pr-2">Czas</th>
+            <th className="py-2 pr-2">Powód</th>
+            <th className="py-2 pr-2">Komentarz</th>
+            <th className="py-2 pr-2">Media</th>
+            <th className="py-2 pr-2 text-right">Akcje</th>
+          </tr>
+        </thead>
+        <tbody>
+          {stops.map((s, i) => {
+            const photos = (s.media || []).filter((m) => m.kind === 'image').length
+            const videos = (s.media || []).filter((m) => m.kind === 'video').length
+            return (
+              <tr key={s.id} className="border-t border-gray-100 dark:border-gray-700">
+                <td className="py-2 pr-2"><span className="index-badge">{i + 1}</span></td>
+                <td className="py-2 pr-2 tabular-nums">{timeHHMM(s.startAt)}</td>
+                <td className="py-2 pr-2 tabular-nums">{formatDurationShort(s.durationMs)}</td>
+                <td className="py-2 pr-2">
+                  {s.reason === 'Inne' && s.customReason ? s.customReason : s.reason}
+                </td>
+                <td className="py-2 pr-2 text-gray-600 dark:text-gray-300">{s.comment || '—'}</td>
+                <td className="py-2 pr-2 text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                  {photos === 0 && videos === 0 ? '—' : (
+                    <span>
+                      {photos > 0 && <span>📷 {photos}</span>}
+                      {photos > 0 && videos > 0 && <span> · </span>}
+                      {videos > 0 && <span>🎬 {videos}</span>}
+                    </span>
+                  )}
+                </td>
+                <td className="py-2 pr-2 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(s.id)}
+                    className="btn-sm bg-white text-sure-blue border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-blue-300 dark:border-gray-600 dark:hover:bg-gray-600 whitespace-nowrap"
+                    aria-label={`Edytuj zatrzymanie ${i + 1}`}
+                  >
+                    ✎ Edytuj
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// Obserwacje + wnioski/rekomendacje — wydzielone, by były identyczne i dostępne
+// zarówno w trakcie sesji (Faza 2), jak i w podsumowaniu (Faza 3).
+function NotesSection({ report, setReport }) {
+  return (
+    <>
+      <div className="card">
+        <h3 className="section-title">Obserwacje ogólne</h3>
+        <MicTextarea
+          value={report.observations}
+          onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
+          placeholder="Co zauważyłeś podczas obserwacji maszyny?"
+        />
+      </div>
+
+      <div className="card">
+        <h3 className="section-title">Wnioski i rekomendacje</h3>
+        <MicTextarea
+          value={report.conclusions}
+          onChange={(e) => setReport((r) => ({ ...r, conclusions: e.target.value }))}
+          placeholder="Wnioski, propozycje usprawnień, dalsze kroki…"
+        />
+      </div>
+    </>
   )
 }
 
