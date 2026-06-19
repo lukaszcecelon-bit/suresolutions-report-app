@@ -1,10 +1,10 @@
 // Raport URUCHOMIENIA / OBSERWACJI MASZYNY — natywny tekst.
 import {
-  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
-  renderReportToBlob, assemblePackage, fileBase, downloadBlob, slugify,
+  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
+  assemblePackage, fileBase, downloadBlob, slugify,
   timeHHMM, formatDurationFull, formatDurationShort,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
-  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable,
+  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawPhotoAppendix,
 } from './core.js'
 
 function collectMedia(report) {
@@ -77,13 +77,18 @@ function buildPdf(ctx, report, photos, videos) {
     drawThumbsRow(ctx, generalThumbs)
   }
 
+  drawPhotoAppendix(ctx, photos)
+
   drawVideosTable(ctx, videos)
 }
 
+export async function generateCommissioningPdf(report) {
+  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  downloadBlob(pdfBlob, fileBase(r) + '.pdf')
+}
+
 export async function generateCommissioningPackage(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
+  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
   const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r))
   downloadBlob(pack.blob, pack.filename)
 }

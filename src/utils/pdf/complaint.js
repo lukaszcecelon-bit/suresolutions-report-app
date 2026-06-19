@@ -2,8 +2,8 @@
 // Inne podejście do zdjęć: DUŻE zdjęcia-dowody (contain), bo zdjęcie wady to
 // główny dowód dla dostawcy — nie małe miniaturki.
 import {
-  resolveReportPhotos, mediaCollector, buildLinkMaps, evidenceDescriptors,
-  renderReportToBlob, assemblePackage, downloadBlob, slugify,
+  buildReportPdf, mediaCollector, buildLinkMaps, evidenceDescriptors,
+  assemblePackage, downloadBlob, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTextBlock,
   drawEvidencePhotos, drawBlockerBanner, drawEmpty,
 } from './core.js'
@@ -44,16 +44,24 @@ function buildPdf(ctx, report, photos) {
   }
 }
 
+function baseName(r) {
+  const baseNum = (r.header?.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')
+  return `${baseNum}_${r.header?.date || 'data'}`
+}
+
+// Sam PDF (z dużymi zdjęciami-dowodami osadzonymi w treści) — odbiorca otwiera
+// jeden plik, bez rozpakowywania paczki.
+export async function generateComplaintPdf(report) {
+  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+}
+
 // Buduje paczkę ZIP reklamacji (PDF + zdjęcia w PEŁNEJ rozdzielczości) i zwraca
 // { blob, filename } BEZ pobierania — caller albo pobiera (komputer), albo
 // udostępnia przez Web Share (telefon → Outlook z załącznikiem).
 export async function generateComplaintZip(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos))
-  const baseNum = (r.header?.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')
-  const baseName = `${baseNum}_${r.header?.date || 'data'}`
-  return await assemblePackage(pdfBlob, photos, videos, baseName)
+  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
 }
 
 export async function generateComplaintPackage(report) {

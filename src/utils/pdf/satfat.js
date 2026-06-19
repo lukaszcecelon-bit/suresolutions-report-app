@@ -1,9 +1,10 @@
 // Raport ODBIORU SAT / FAT — natywny tekst (najbogatszy typ).
 import {
-  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
-  renderReportToBlob, assemblePackage, downloadBlob, slugify,
+  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
+  assemblePackage, downloadBlob, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawSubLabel, drawStatCards,
-  drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge, drawVideosTable, drawEmpty,
+  drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge,
+  drawVideosTable, drawEmpty, drawPhotoAppendix,
 } from './core.js'
 
 const TITLES = { fat: 'RAPORT ODBIORU FABRYCZNEGO (FAT)', sat: 'RAPORT ODBIORU NA OBIEKCIE (SAT)' }
@@ -162,16 +163,24 @@ function buildPdf(ctx, report, photos, videos) {
     drawThumbsRow(ctx, generalThumbs)
   }
 
+  drawPhotoAppendix(ctx, photos)
+
   drawVideosTable(ctx, videos)
 }
 
-export async function generateSatFatPackage(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
+function baseName(r) {
   const typeTag = (r.testType || 'fat').toUpperCase()
   const baseNum = (r.header?.reportNumber || 'odbior').replace(/[^\w\-]+/g, '_')
-  const baseName = `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
-  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  return `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
+}
+
+export async function generateSatFatPdf(report) {
+  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+}
+
+export async function generateSatFatPackage(report) {
+  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName(r))
   downloadBlob(pack.blob, pack.filename)
 }

@@ -15,7 +15,7 @@ import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename
 // i uchwyty drag, bo wszystkie są <button>/<input>). „Odblokuj edycję"
 // zdejmuje blokadę na czas tej wizyty na stronie (status zostaje completed).
 // Pobieranie/wysyłka działają mimo blokady — pasek akcji jest poza fieldsetem.
-export function useReportPage({ report, setReport, generatePackage }) {
+export function useReportPage({ report, setReport, generatePackage, generatePdf }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [downloading, setDownloading] = useState(false)
@@ -60,12 +60,14 @@ export function useReportPage({ report, setReport, generatePackage }) {
     }
   }
 
-  const downloadPdf = async () => {
+  // Wspólny przebieg pobierania: walidacja → spinner → generator → toast.
+  const runDownload = async (fn, okMsg) => {
+    if (!fn) return
     if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
-      await generatePackage(report)
-      toast.success('Paczka pobrana')
+      await fn(report)
+      toast.success(okMsg)
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
@@ -73,10 +75,16 @@ export function useReportPage({ report, setReport, generatePackage }) {
     }
   }
 
+  // Sam PDF — wygodne do maila/SharePointa (odbiorca otwiera bez rozpakowywania).
+  // Fallback do paczki, gdyby strona nie przekazała generatePdf.
+  const downloadPdf = () => runDownload(generatePdf || generatePackage, generatePdf ? 'PDF pobrany' : 'Paczka pobrana')
+  // Pełna paczka ZIP (PDF + zdjęcia/wideo w pełnej rozdzielczości).
+  const downloadPackage = () => runDownload(generatePackage, 'Paczka ZIP pobrana')
+
   return {
     toast, confirm, savedAt,
     downloading, sending,
     locked, unlock,
-    finishReport, sendToDevice, downloadPdf,
+    finishReport, sendToDevice, downloadPdf, downloadPackage,
   }
 }

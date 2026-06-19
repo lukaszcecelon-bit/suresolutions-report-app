@@ -6,7 +6,7 @@ import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generateCommissioningPackage } from '../../utils/pdfGenerator.js'
+import { generateCommissioningPackage, generateCommissioningPdf } from '../../utils/pdfGenerator.js'
 import { deleteImage, deleteVideo, deleteOriginal } from '../../utils/imageStore.js'
 
 const STOP_REASONS = [
@@ -99,7 +99,7 @@ export default function CommissioningReport({ navigate, reportId }) {
   // Wspólny szkielet strony raportu (auto-save, paczki). Uruchomienie NIE
   // używa locka ukończonych — obserwacje/wnioski i edycja zatrzymań muszą
   // pozostać dostępne także po zakończeniu sesji, a blokada odcięłaby te pola.
-  const page = useReportPage({ report, setReport, generatePackage: generateCommissioningPackage })
+  const page = useReportPage({ report, setReport, generatePackage: generateCommissioningPackage, generatePdf: generateCommissioningPdf })
   const { toast, confirm } = page
 
   const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))

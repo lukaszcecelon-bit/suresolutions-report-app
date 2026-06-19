@@ -711,6 +711,44 @@ export function drawEvidencePhotos(ctx, photos) {
   setInk(doc, INK)
 }
 
+// Załącznik fotograficzny: WSZYSTKIE zdjęcia raportu DUŻE (≈ pół strony A4 każde,
+// ~2 na stronę), proporcje zachowane (contain — bez zniekształcenia), z podpisem
+// (kontekst sekcji + opis) i klikalnym linkiem do pełnego pliku w paczce ZIP.
+// Dzięki temu odbiorca PDF widzi zdjęcia bez rozpakowywania paczki.
+// `photos` to płaska lista z mediaCollector().finalize() (ma _ctxLabel/_zipFilename).
+export function drawPhotoAppendix(ctx, photos, { title = 'Załącznik — wszystkie zdjęcia' } = {}) {
+  const list = (photos || []).filter((p) => p.dataUrl)
+  if (!list.length) return
+  const { doc, margin, contentW } = ctx
+  drawSectionHeader(ctx, `${title} (${list.length})`, 70)
+  const CAP_LH = 3.4
+  list.forEach((p, i) => {
+    const [dw, dh] = fitBox(p._w, p._h, contentW, 118) // 118 mm ≈ pół strony A4
+    doc.setFontSize(7.5)
+    const label = `Zdjęcie ${i + 1} / ${list.length}${p._ctxLabel ? ' · ' + p._ctxLabel : ''}`
+    const labelLines = doc.splitTextToSize(label, contentW)
+    const descLines = p.description ? doc.splitTextToSize(p.description, contentW) : []
+    const capH = (labelLines.length + descLines.length) * CAP_LH + 2
+    ensureSpace(ctx, capH + dh + 5)
+    let cy = ctx.y + 3
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(7.5); setInk(doc, MUT)
+    labelLines.forEach((l) => { doc.text(l, margin.l, cy); cy += CAP_LH })
+    if (descLines.length) {
+      doc.setFont('Roboto', 'normal'); setInk(doc, INK)
+      descLines.forEach((l) => { doc.text(l, margin.l, cy); cy += CAP_LH })
+    }
+    ctx.y = cy + 1.5
+    const x = margin.l + (contentW - dw) / 2
+    try { doc.addImage(p.dataUrl, 'JPEG', x, ctx.y, dw, dh) } catch { /* ignore */ }
+    setDraw(doc, BORDER); doc.setLineWidth(0.2); doc.rect(x, ctx.y, dw, dh)
+    if (p.photoId && p._zipFilename) {
+      ctx.links.push({ page: doc.getNumberOfPages(), x, y: ctx.y, w: dw, h: dh, target: 'zdjecia/' + p._zipFilename })
+    }
+    ctx.y += dh + 5
+  })
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)
+}
+
 // Dwa bloki podpisów (SAT/FAT). left/right = {label,name,date}.
 export function drawSignatures(ctx, left, right) {
   const { doc, margin, contentW } = ctx
@@ -792,6 +830,18 @@ export async function renderReportToBlob(drawFn) {
   applyFooters(ctx)
   applyLinks(ctx)
   return doc.output('blob')
+}
+
+// Wspólny pipeline budowy raportu: klonuje + resolwuje zdjęcia (medium-res),
+// zbiera media i renderuje PDF. Zwraca surowce, których caller użyje albo do
+// pobrania SAMEGO PDF, albo do złożenia paczki ZIP — bez duplikowania tych
+// trzech kroków w każdym module. buildPdf dostaje (ctx, r, photos, videos);
+// moduły bez wideo po prostu ignorują ostatni argument.
+export async function buildReportPdf(report, collectMedia, buildPdf) {
+  const r = await resolveReportPhotos(report)
+  const { photos, videos } = collectMedia(r)
+  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
+  return { r, photos, videos, pdfBlob }
 }
 
 // ============================== PACZKA ZIP (bez zmian) ==============================

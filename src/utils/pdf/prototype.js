@@ -1,9 +1,10 @@
 // Raport TESTÓW PROTOTYPU — natywny tekst.
 import {
-  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
-  renderReportToBlob, assemblePackage, downloadBlob, slugify,
+  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
+  assemblePackage, downloadBlob, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
-  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge, drawEmpty,
+  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge,
+  drawEmpty, drawPhotoAppendix,
 } from './core.js'
 
 const SAMPLE_METHOD_LABELS = { print3d: 'Druk 3D', cnc: 'Obróbka CNC', other: 'Inne' }
@@ -121,16 +122,24 @@ function buildPdf(ctx, report, photos, videos) {
     drawThumbsRow(ctx, generalThumbs)
   }
 
+  drawPhotoAppendix(ctx, photos)
+
   drawVideosTable(ctx, videos)
 }
 
-export async function generatePrototypePackage(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
+function baseName(r) {
   const iter = r.info?.iteration || 1
   const baseNum = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
-  const baseName = `${baseNum}_test${iter}_${r.header?.date || 'data'}`
-  const pack = await assemblePackage(pdfBlob, photos, videos, baseName)
+  return `${baseNum}_test${iter}_${r.header?.date || 'data'}`
+}
+
+export async function generatePrototypePdf(report) {
+  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+}
+
+export async function generatePrototypePackage(report) {
+  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName(r))
   downloadBlob(pack.blob, pack.filename)
 }

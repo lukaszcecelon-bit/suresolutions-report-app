@@ -12,7 +12,7 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generateSatFatPackage } from '../../utils/pdfGenerator.js'
+import { generateSatFatPackage, generateSatFatPdf } from '../../utils/pdfGenerator.js'
 
 // FAT (Factory Acceptance Test) vs SAT (Site Acceptance Test): identyczna
 // struktura raportu, tylko inna etykieta i miejsce. Jeden komponent obsługuje oba,
@@ -106,7 +106,7 @@ export default function SatFatReport({ navigate, reportId }) {
   })
 
   // Wspólny szkielet strony raportu: auto-save, paczki, lock ukończonych.
-  const page = useReportPage({ report, setReport, generatePackage: generateSatFatPackage })
+  const page = useReportPage({ report, setReport, generatePackage: generateSatFatPackage, generatePdf: generateSatFatPdf })
   const { confirm, locked } = page
 
   // Memoizowane źródła autouzupełniania (zamiast pełnego parse localStorage co render).

@@ -2,9 +2,10 @@
 // WZORZEC podejścia: nagłówek → meta-tabele → tabele z miniaturkami pod tekstem
 // (klikalne do pełnego pliku w ZIP) + badge priorytetu → blok tekstu.
 import {
-  resolveReportPhotos, mediaCollector, buildLinkMaps, thumbDescriptors,
-  renderReportToBlob, assemblePackage, fileBase, downloadBlob, slugify,
-  drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock, drawEmpty,
+  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
+  assemblePackage, fileBase, downloadBlob, slugify,
+  drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock,
+  drawEmpty, drawPhotoAppendix,
 } from './core.js'
 
 const PRIORITY_BADGE = {
@@ -121,12 +122,19 @@ function buildPdf(ctx, report, photos) {
 
   drawSectionHeader(ctx, 'E. Rekomendacje')
   drawTextBlock(ctx, report.recommendations)
+
+  drawPhotoAppendix(ctx, photos)
+}
+
+const baseName = (r) => fileBase(r, 'serwis')
+
+export async function generateServicePdf(report) {
+  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  downloadBlob(pdfBlob, baseName(r) + '.pdf')
 }
 
 export async function generateServicePackage(report) {
-  const r = await resolveReportPhotos(report)
-  const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos))
-  const pack = await assemblePackage(pdfBlob, photos, videos, fileBase(r, 'serwis'))
+  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
+  const pack = await assemblePackage(pdfBlob, photos, videos, baseName(r))
   downloadBlob(pack.blob, pack.filename)
 }

@@ -9,8 +9,8 @@
 //   complaint.js     — zgłoszenie wady / reklamacja
 // Importerzy (strony raportów, Home, App-warmup) używają wyłącznie tego pliku.
 export { warmupLibs } from './pdf/core.js'
-export { generateCommissioningPackage } from './pdf/commissioning.js'
-export { generateServicePackage } from './pdf/service.js'
-export { generatePrototypePackage } from './pdf/prototype.js'
-export { generateSatFatPackage } from './pdf/satfat.js'
-export { generateComplaintPackage, generateComplaintZip } from './pdf/complaint.js'
+export { generateCommissioningPackage, generateCommissioningPdf } from './pdf/commissioning.js'
+export { generateServicePackage, generateServicePdf } from './pdf/service.js'
+export { generatePrototypePackage, generatePrototypePdf } from './pdf/prototype.js'
+export { generateSatFatPackage, generateSatFatPdf } from './pdf/satfat.js'
+export { generateComplaintPackage, generateComplaintPdf, generateComplaintZip } from './pdf/complaint.js'

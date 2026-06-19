@@ -25,15 +25,28 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
     <>
       <LoadingOverlay visible={page.downloading} />
 
-      <div className="action-bar">
+      <div className="action-bar space-y-2">
+        {/* Gotowy raport do wysyłki — osobno PDF (otwierany od razu) i ZIP. */}
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={page.downloadPdf}
             disabled={page.downloading}
             className="btn-primary flex-[2] text-base"
+            title="Sam plik PDF — odbiorca otwiera bezpośrednio, bez rozpakowywania"
           >
-            {page.downloading ? '⏳ Generowanie…' : '📦 Pobierz paczkę (PDF + media)'}
+            {page.downloading ? '⏳ Generowanie…' : '📄 Pobierz PDF'}
           </button>
+          <button
+            onClick={page.downloadPackage}
+            disabled={page.downloading}
+            className="btn-secondary flex-1 text-base"
+            title="Paczka ZIP: PDF + wszystkie zdjęcia i wideo w pełnej rozdzielczości"
+          >
+            {page.downloading ? '⏳' : '📦 ZIP (PDF + zdjęcia)'}
+          </button>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
           {showFinish && status !== 'completed' && (
             <button onClick={page.finishReport} className="btn-success flex-1">
               ✓ Oznacz ukończony
@@ -51,9 +64,9 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
             onClick={() => page.sendToDevice(true)}
             disabled={page.sending}
             className="btn-secondary flex-1"
-            title="Pobierz paczkę jako plik (do Pobranych/Files)"
+            title="Zapisz paczkę jako plik na inne urządzenie (do Pobranych/Files)"
           >
-            {page.sending ? '⏳' : '💾 Pobierz plik'}
+            {page.sending ? '⏳' : '💾 Zapisz na urządzenie'}
           </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź

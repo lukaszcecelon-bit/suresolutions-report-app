@@ -8,7 +8,7 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generateComplaintPackage, generateComplaintZip } from '../../utils/pdfGenerator.js'
+import { generateComplaintPackage, generateComplaintPdf, generateComplaintZip } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import { shareFileOrDownload, downloadBlob } from '../../utils/syncPackage.js'
 import { BUYER_EMAIL_KEY } from '../../utils/settings.js'
@@ -106,7 +106,7 @@ export default function ComplaintReport({ navigate, reportId }) {
 
   // Wspólny szkielet (auto-save, paczka ZIP, sync). Wysyłka do zakupowca jest
   // specyficzna dla reklamacji — zostaje lokalnie, z własnym stanem spinnera.
-  const page = useReportPage({ report, setReport, generatePackage: generateComplaintPackage })
+  const page = useReportPage({ report, setReport, generatePackage: generateComplaintPackage, generatePdf: generateComplaintPdf })
   const { toast, confirm } = page
   const [sendingBuyer, setSendingBuyer] = useState(false)
   const busy = page.downloading || page.sending || sendingBuyer
@@ -320,9 +320,17 @@ export default function ComplaintReport({ navigate, reportId }) {
             onClick={page.downloadPdf}
             disabled={busy}
             className="btn-secondary flex-1"
+            title="Sam PDF z dużymi zdjęciami wady — odbiorca otwiera bez rozpakowywania"
+          >
+            {page.downloading ? '⏳' : '📄 PDF'}
+          </button>
+          <button
+            onClick={page.downloadPackage}
+            disabled={busy}
+            className="btn-secondary flex-1"
             title="Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości)"
           >
-            {page.downloading ? '⏳' : '📦 Paczka ZIP'}
+            {page.downloading ? '⏳' : '📦 ZIP'}
           </button>
           <button
             onClick={() => page.sendToDevice(true)}
