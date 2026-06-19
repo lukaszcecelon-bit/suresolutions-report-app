@@ -1,7 +1,7 @@
 // Raport TESTÓW PROTOTYPU — natywny tekst.
 import {
-  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
-  assemblePackage, slugify,
+  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge,
   drawEmpty, drawPhotoAppendix,
@@ -133,12 +133,6 @@ function baseName(r) {
   return `${baseNum}_test${iter}_${r.header?.date || 'data'}`
 }
 
-export async function buildPrototypePdf(report) {
-  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
-}
-
-export async function buildPrototypePackage(report) {
-  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
-}
+const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
+export const buildPrototypePdf = gen.pdf
+export const buildPrototypePackage = gen.pkg

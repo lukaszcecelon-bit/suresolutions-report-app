@@ -2,8 +2,8 @@
 // Inne podejście do zdjęć: DUŻE zdjęcia-dowody (contain), bo zdjęcie wady to
 // główny dowód dla dostawcy — nie małe miniaturki.
 import {
-  buildReportPdf, mediaCollector, buildLinkMaps, evidenceDescriptors,
-  assemblePackage, slugify,
+  makeReportGenerators, mediaCollector, buildLinkMaps, evidenceDescriptors,
+  slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTextBlock,
   drawEvidencePhotos, drawBlockerBanner, drawEmpty,
 } from './core.js'
@@ -49,16 +49,9 @@ function baseName(r) {
   return `${baseNum}_${r.header?.date || 'data'}`
 }
 
-// Buildery zwracają { blob, filename } BEZ pobierania — caller (useReportPage
-// / wysyłka do zakupowca) decyduje: pobrać, udostępnić (Web Share) czy załączyć
-// do maila. PDF ma duże zdjęcia-dowody osadzone w treści (odbiorca otwiera jeden
-// plik bez rozpakowywania); ZIP dokłada zdjęcia w pełnej rozdzielczości.
-export async function buildComplaintPdf(report) {
-  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
-}
-
-export async function buildComplaintPackage(report) {
-  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
-}
+// Buildery { blob, filename } (bez pobierania). PDF ma duże zdjęcia-dowody
+// osadzone w treści (odbiorca otwiera jeden plik); ZIP dokłada zdjęcia w pełnej
+// rozdzielczości. Używane przez useReportPage ORAZ wysyłkę do zakupowca.
+const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
+export const buildComplaintPdf = gen.pdf
+export const buildComplaintPackage = gen.pkg

@@ -2,8 +2,8 @@
 // WZORZEC podejścia: nagłówek → meta-tabele → tabele z miniaturkami pod tekstem
 // (klikalne do pełnego pliku w ZIP) + badge priorytetu → blok tekstu.
 import {
-  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
-  assemblePackage, fileBase, slugify,
+  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock,
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
@@ -127,15 +127,6 @@ function buildPdf(ctx, report, photos) {
 }
 
 const baseName = (r) => fileBase(r, 'serwis')
-
-// Buildery zwracają { blob, filename } BEZ pobierania — caller (useReportPage)
-// decyduje: pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
-export async function buildServicePdf(report) {
-  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
-}
-
-export async function buildServicePackage(report) {
-  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
-}
+const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
+export const buildServicePdf = gen.pdf
+export const buildServicePackage = gen.pkg

@@ -844,6 +844,24 @@ export async function buildReportPdf(report, collectMedia, buildPdf) {
   return { r, photos, videos, pdfBlob }
 }
 
+// Fabryka generatorów dla typu raportu — usuwa powtarzalny, identyczny w każdym
+// module boilerplate (buildXPdf / buildXPackage). Zwraca dwa buildery
+// `{ blob, filename }` BEZ pobierania; useReportPage decyduje czy pobrać, czy
+// udostępnić (Web Share). `collectMedia(r)` i `drawPdf(ctx,r,photos,videos)` to
+// część specyficzna typu; `baseName(r)` → nazwa pliku bez rozszerzenia.
+export function makeReportGenerators(collectMedia, drawPdf, baseName) {
+  return {
+    pdf: async (report) => {
+      const { r, pdfBlob } = await buildReportPdf(report, collectMedia, drawPdf)
+      return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
+    },
+    pkg: async (report) => {
+      const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, drawPdf)
+      return assemblePackage(pdfBlob, photos, videos, baseName(r))
+    },
+  }
+}
+
 // ============================== PACZKA ZIP (bez zmian) ==============================
 export async function assemblePackage(pdfBlob, photos, videos, baseName) {
   const hasMedia = photos.length > 0 || videos.length > 0

@@ -1,7 +1,7 @@
 // Raport URUCHOMIENIA / OBSERWACJI MASZYNY — natywny tekst.
 import {
-  buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
-  assemblePackage, fileBase, slugify,
+  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  fileBase, slugify,
   timeHHMM, formatDurationFull, formatDurationShort,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawPhotoAppendix,
@@ -82,12 +82,6 @@ function buildPdf(ctx, report, photos, videos) {
   drawVideosTable(ctx, videos)
 }
 
-export async function buildCommissioningPdf(report) {
-  const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return { blob: pdfBlob, filename: fileBase(r) + '.pdf' }
-}
-
-export async function buildCommissioningPackage(report) {
-  const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  return await assemblePackage(pdfBlob, photos, videos, fileBase(r))
-}
+const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r))
+export const buildCommissioningPdf = gen.pdf
+export const buildCommissioningPackage = gen.pkg
