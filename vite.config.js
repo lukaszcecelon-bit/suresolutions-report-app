@@ -18,6 +18,10 @@ export default defineConfig({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
+          // pdf.js (podgląd PDF w apce) w osobnym, nazwanym chunku — ładowany
+          // leniwie dopiero przy otwarciu podglądu i WYKLUCZONy z precache
+          // (patrz globIgnores) by nie obciążać instalacji ~1 MB.
+          'pdfjs': ['pdfjs-dist'],
         },
       },
     },
@@ -59,7 +63,7 @@ export default defineConfig({
         // precache'owałby ~370KB martwego kodu przy KAŻDEJ instalacji/aktualizacji.
         // Fonty Roboto (roboto-*.js) ŚWIADOMIE zostają w precache — są potrzebne
         // do generowania PDF OFFLINE (jednorazowy koszt, zmieniają się rzadko).
-        globIgnores: ['**/index.es-*.js', '**/purify.es-*.js', '**/html2canvas*.js'],
+        globIgnores: ['**/index.es-*.js', '**/purify.es-*.js', '**/html2canvas*.js', '**/pdfjs-*.js', '**/pdf.worker*.js'],
         // limit precache entry size so large jspdf/html2canvas chunks still get cached
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         navigateFallback: 'index.html',

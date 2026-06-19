@@ -3,6 +3,7 @@ import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import LoadingOverlay from '../common/LoadingOverlay.jsx'
+import PdfPreview from '../common/PdfPreview.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
@@ -308,8 +309,16 @@ export default function ComplaintReport({ navigate, reportId }) {
       <LoadingOverlay visible={busy} />
 
       {/* Sticky action bar */}
-      <div className="action-bar">
+      <div className="action-bar space-y-2">
         <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={page.openPreview}
+            disabled={busy}
+            className="btn-secondary flex-1"
+            title="Zobacz gotowe zgłoszenie w aplikacji (bez pobierania)"
+          >
+            {page.previewing ? '⏳' : '👁 Podgląd'}
+          </button>
           <button
             onClick={sendToBuyer}
             disabled={busy}
@@ -338,6 +347,17 @@ export default function ComplaintReport({ navigate, reportId }) {
           </button>
         </div>
       </div>
+
+      {page.preview && (
+        <PdfPreview
+          blob={page.preview.blob}
+          filename={page.preview.filename}
+          canShare={canShare}
+          onShare={page.sharePdf}
+          onDownload={page.downloadPdf}
+          onClose={page.closePreview}
+        />
+      )}
     </div>
   )
 }

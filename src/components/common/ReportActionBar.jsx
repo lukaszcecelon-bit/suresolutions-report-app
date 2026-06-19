@@ -1,4 +1,5 @@
 import LoadingOverlay from './LoadingOverlay.jsx'
+import PdfPreview from './PdfPreview.jsx'
 import { canShareFiles } from '../../utils/syncPackage.js'
 
 // Baner blokady ukończonego raportu (F4). Renderowany NAD treścią strony,
@@ -30,8 +31,16 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
       <LoadingOverlay visible={page.downloading} />
 
       <div className="action-bar space-y-2">
-        {/* Gotowy raport do wysyłki — osobno PDF (otwierany od razu) i ZIP. */}
+        {/* Gotowy raport do wysyłki — podgląd w apce + osobno PDF i ZIP. */}
         <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            onClick={page.openPreview}
+            disabled={page.previewing || page.downloading}
+            className="btn-secondary flex-1 text-base"
+            title="Zobacz gotowy raport w aplikacji (bez pobierania)"
+          >
+            {page.previewing ? '⏳ Przygotowanie…' : '👁 Podgląd'}
+          </button>
           {canShare ? (
             <>
               <button
@@ -92,6 +101,17 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
           </button>
         </div>
       </div>
+
+      {page.preview && (
+        <PdfPreview
+          blob={page.preview.blob}
+          filename={page.preview.filename}
+          canShare={canShare}
+          onShare={page.sharePdf}
+          onDownload={page.downloadPdf}
+          onClose={page.closePreview}
+        />
+      )}
     </>
   )
 }

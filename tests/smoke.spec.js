@@ -107,3 +107,29 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
   const zip = await dlZip
   expect(zip.suggestedFilename()).toMatch(/\.zip$/)
 })
+
+test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
+  const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
+    .jpeg().toBuffer()
+  const dataUrl = 'data:image/jpeg;base64,' + jpg.toString('base64')
+  const report = {
+    id: 'r_prev_test', type: 'service', status: 'draft', schemaVersion: 1,
+    createdAt: '2026-06-19T08:00:00.000Z', updatedAt: '2026-06-19T08:00:00.000Z',
+    header: { reportNumber: 'RPT-99-992-2026-06-19', projectName: 'Projekt', machineName: 'Maszyna', date: '2026-06-19', author: 'Jan' },
+    visit: { client: 'Klient', location: 'Hala', arrival: '08:00', departure: '10:00' },
+    role: 'serwisant', visitStatus: 'completed',
+    actions: [{ id: 'a1', description: 'Czynność', media: [{ id: 'm1', kind: 'image', photoId: 'p1', dataUrl }] }],
+    parts: [], observations: [], recommendations: 'OK', receivedBy: 'Klient',
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, report)
+
+  await page.goto('/#/service/r_prev_test')
+  await page.getByRole('button', { name: /Podgląd/ }).click()
+
+  // pdf.js wczytał + sparsował PDF → nagłówek pokazuje liczbę stron
+  await expect(page.locator('.fixed.inset-0').getByText(/\d+\s*stron/)).toBeVisible({ timeout: 60_000 })
+  // …i co najmniej jedna strona wyrenderowała się na <canvas> (worker działa)
+  await expect(page.locator('.fixed.inset-0 canvas').first()).toBeVisible({ timeout: 60_000 })
+})

@@ -21,6 +21,8 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const [downloading, setDownloading] = useState(false)
   const [sending, setSending] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
+  const [previewing, setPreviewing] = useState(false)
+  const [preview, setPreview] = useState(null) // { blob, filename } | null
 
   // Debounced auto-save (300ms idle) — keeps typing smooth without losing data
   const savedAt = useAutoSave(report)
@@ -91,10 +93,28 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const sharePdf = () => runArtifact(buildPdf || buildPackage, { share: true, mime: 'application/pdf' })
   const sharePackage = () => runArtifact(buildPackage, { share: true, mime: 'application/zip' })
 
+  // Podgląd PDF w aplikacji — BEZ bramki walidacji (można podejrzeć też szkic).
+  // Buduje ten sam PDF co wysyłka i przekazuje go do <PdfPreview>.
+  const openPreview = async () => {
+    const builder = buildPdf || buildPackage
+    if (!builder) return
+    setPreviewing(true)
+    try {
+      const artifact = await builder(report)
+      setPreview(artifact)
+    } catch (e) {
+      toast.error('Błąd podglądu: ' + (e.message || e))
+    } finally {
+      setPreviewing(false)
+    }
+  }
+  const closePreview = () => setPreview(null)
+
   return {
     toast, confirm, savedAt,
-    downloading, sending,
+    downloading, sending, previewing, preview,
     locked, unlock,
     finishReport, sendToDevice, downloadPdf, downloadPackage, sharePdf, sharePackage,
+    openPreview, closePreview,
   }
 }
