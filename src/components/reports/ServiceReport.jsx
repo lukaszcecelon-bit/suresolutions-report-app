@@ -15,7 +15,7 @@ import {
 } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generateServicePackage, generateServicePdf } from '../../utils/pdfGenerator.js'
+import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
 
 // Rola serwisanta — typ pracownika wykonującego serwis.
 const ROLE_OPTIONS = ['Technik serwisu', 'Konstruktor', 'Automatyk']
@@ -114,7 +114,7 @@ export default function ServiceReport({ navigate, reportId }) {
   })
 
   // Wspólny szkielet strony raportu: auto-save, paczki, lock ukończonych.
-  const page = useReportPage({ report, setReport, generatePackage: generateServicePackage, generatePdf: generateServicePdf })
+  const page = useReportPage({ report, setReport, buildPackage: buildServicePackage, buildPdf: buildServicePdf })
   const { confirm, locked } = page
 
   // Źródła autouzupełniania — memoizowane, żeby nie przeliczać całego localStorage

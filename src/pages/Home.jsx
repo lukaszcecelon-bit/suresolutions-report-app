@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
-import { generateCommissioningPackage, generateServicePackage, generatePrototypePackage, generateSatFatPackage, generateComplaintPackage } from '../utils/pdfGenerator.js'
-import { exportAllReportsPackage, shareOrDownload, makeBackupFilename } from '../utils/syncPackage.js'
+import { buildCommissioningPackage, buildServicePackage, buildPrototypePackage, buildSatFatPackage, buildComplaintPackage } from '../utils/pdfGenerator.js'
+import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
 
@@ -199,16 +199,28 @@ export default function Home({ navigate }) {
     toast.success('Raport usunięty')
   }
 
+  const PACKAGE_BUILDERS = {
+    commissioning: buildCommissioningPackage,
+    service: buildServicePackage,
+    prototype: buildPrototypePackage,
+    satfat: buildSatFatPackage,
+    complaint: buildComplaintPackage,
+  }
+
   const handlePdf = async (r) => {
+    const build = PACKAGE_BUILDERS[r.type]
+    if (!build) { toast.info('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.'); return }
     setBusyId(r.id)
     try {
-      if (r.type === 'commissioning') await generateCommissioningPackage(r)
-      else if (r.type === 'service') await generateServicePackage(r)
-      else if (r.type === 'prototype') await generatePrototypePackage(r)
-      else if (r.type === 'satfat') await generateSatFatPackage(r)
-      else if (r.type === 'complaint') await generateComplaintPackage(r)
-      else toast.info('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.')
-      toast.success('Paczka pobrana')
+      const { blob, filename } = await build(r)
+      // Telefon → systemowe okno (Teams/Mail), desktop → pobranie pliku.
+      if (canShareFiles()) {
+        const ok = await shareFileOrDownload(blob, filename, 'application/zip')
+        if (ok) toast.success('Udostępniono')
+      } else {
+        downloadBlob(blob, filename)
+        toast.success('Paczka pobrana')
+      }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {

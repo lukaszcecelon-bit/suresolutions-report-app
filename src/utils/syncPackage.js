@@ -331,6 +331,18 @@ export function downloadBlob(blob, filename) {
   }, 200)
 }
 
+// Czy urządzenie potrafi udostępniać PLIKI przez Web Share API (iOS/Android).
+// Na desktopie zwykle false → UI pokazuje wtedy klasyczne „Pobierz".
+export function canShareFiles() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.canShare) return false
+    const probe = new File(['x'], 'probe.txt', { type: 'text/plain' })
+    return navigator.canShare({ files: [probe] })
+  } catch {
+    return false
+  }
+}
+
 // Generyczne udostępnienie DOWOLNEGO pliku przez Web Share API z opcjonalnym
 // tematem (title) i treścią (text) — używane przez reklamację do wysłania PDF
 // mailem do zakupowca. W odróżnieniu od shareOrDownload (paczki .zip) tu

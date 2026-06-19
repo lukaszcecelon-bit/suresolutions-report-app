@@ -8,9 +8,11 @@
 //   satfat.js        — raport odbioru SAT / FAT
 //   complaint.js     — zgłoszenie wady / reklamacja
 // Importerzy (strony raportów, Home, App-warmup) używają wyłącznie tego pliku.
+// Buildery zwracają { blob, filename } (bez pobierania). useReportPage decyduje:
+// pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
 export { warmupLibs } from './pdf/core.js'
-export { generateCommissioningPackage, generateCommissioningPdf } from './pdf/commissioning.js'
-export { generateServicePackage, generateServicePdf } from './pdf/service.js'
-export { generatePrototypePackage, generatePrototypePdf } from './pdf/prototype.js'
-export { generateSatFatPackage, generateSatFatPdf } from './pdf/satfat.js'
-export { generateComplaintPackage, generateComplaintPdf, generateComplaintZip } from './pdf/complaint.js'
+export { buildCommissioningPackage, buildCommissioningPdf } from './pdf/commissioning.js'
+export { buildServicePackage, buildServicePdf } from './pdf/service.js'
+export { buildPrototypePackage, buildPrototypePdf } from './pdf/prototype.js'
+export { buildSatFatPackage, buildSatFatPdf } from './pdf/satfat.js'
+export { buildComplaintPackage, buildComplaintPdf } from './pdf/complaint.js'

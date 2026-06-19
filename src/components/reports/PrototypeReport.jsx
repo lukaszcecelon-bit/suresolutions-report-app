@@ -11,7 +11,7 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generatePrototypePackage, generatePrototypePdf } from '../../utils/pdfGenerator.js'
+import { buildPrototypePackage, buildPrototypePdf } from '../../utils/pdfGenerator.js'
 
 const SAMPLE_METHOD_ITEMS = [
   { key: 'print3d', label: 'Druk 3D' },
@@ -89,7 +89,7 @@ export default function PrototypeReport({ navigate, reportId }) {
   })
 
   // Wspólny szkielet strony raportu: auto-save, paczki, lock ukończonych.
-  const page = useReportPage({ report, setReport, generatePackage: generatePrototypePackage, generatePdf: generatePrototypePdf })
+  const page = useReportPage({ report, setReport, buildPackage: buildPrototypePackage, buildPdf: buildPrototypePdf })
   const { confirm, locked } = page
 
   // Memoizowane źródło autouzupełniania (raz na mount, nie co render).

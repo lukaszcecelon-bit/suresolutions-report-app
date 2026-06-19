@@ -8,9 +8,9 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
-import { generateComplaintPackage, generateComplaintPdf, generateComplaintZip } from '../../utils/pdfGenerator.js'
+import { buildComplaintPackage, buildComplaintPdf } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
-import { shareFileOrDownload, downloadBlob } from '../../utils/syncPackage.js'
+import { shareFileOrDownload, downloadBlob, canShareFiles } from '../../utils/syncPackage.js'
 import { BUYER_EMAIL_KEY } from '../../utils/settings.js'
 
 // Zapisany e-mail zakupowca — jeden, globalny (ustawienia globalne #/settings).
@@ -106,10 +106,11 @@ export default function ComplaintReport({ navigate, reportId }) {
 
   // Wspólny szkielet (auto-save, paczka ZIP, sync). Wysyłka do zakupowca jest
   // specyficzna dla reklamacji — zostaje lokalnie, z własnym stanem spinnera.
-  const page = useReportPage({ report, setReport, generatePackage: generateComplaintPackage, generatePdf: generateComplaintPdf })
+  const page = useReportPage({ report, setReport, buildPackage: buildComplaintPackage, buildPdf: buildComplaintPdf })
   const { toast, confirm } = page
   const [sendingBuyer, setSendingBuyer] = useState(false)
   const busy = page.downloading || page.sending || sendingBuyer
+  const canShare = canShareFiles() // telefon → udostępnianie wprost; desktop → pobranie
 
   // Źródła autouzupełniania — memoizowane (jednorazowo na mount), zamiast
   // przeliczać cały localStorage przy każdym renderze/klawiszu.
@@ -141,7 +142,7 @@ export default function ComplaintReport({ navigate, reportId }) {
     if (!(await ensureValidOrConfirm(report, confirm))) return
     setSendingBuyer(true)
     try {
-      const pack = await generateComplaintZip(report) // { blob, filename }
+      const pack = await buildComplaintPackage(report) // { blob, filename }
       const subject = `REKLAMACJA ${report.header.reportNumber || ''}${report.partNo ? ` / ${report.partNo}` : ''}`.trim()
       if (report.buyerEmail) {
         try { await navigator.clipboard.writeText(report.buyerEmail) } catch {}
@@ -317,28 +318,20 @@ export default function ComplaintReport({ navigate, reportId }) {
             {sendingBuyer ? '⏳ Przygotowanie…' : '📤 Wyślij do zakupowca'}
           </button>
           <button
-            onClick={page.downloadPdf}
+            onClick={canShare ? page.sharePdf : page.downloadPdf}
             disabled={busy}
             className="btn-secondary flex-1"
             title="Sam PDF z dużymi zdjęciami wady — odbiorca otwiera bez rozpakowywania"
           >
-            {page.downloading ? '⏳' : '📄 PDF'}
+            {page.downloading ? '⏳' : (canShare ? '📲 PDF' : '📄 PDF')}
           </button>
           <button
-            onClick={page.downloadPackage}
+            onClick={canShare ? page.sharePackage : page.downloadPackage}
             disabled={busy}
             className="btn-secondary flex-1"
             title="Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości)"
           >
             {page.downloading ? '⏳' : '📦 ZIP'}
-          </button>
-          <button
-            onClick={() => page.sendToDevice(true)}
-            disabled={busy}
-            className="btn-secondary flex-1"
-            title="Zapisz paczkę na inne urządzenie"
-          >
-            {page.sending ? '⏳' : '💾 Zapisz plik'}
           </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź

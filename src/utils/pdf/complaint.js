@@ -3,7 +3,7 @@
 // główny dowód dla dostawcy — nie małe miniaturki.
 import {
   buildReportPdf, mediaCollector, buildLinkMaps, evidenceDescriptors,
-  assemblePackage, downloadBlob, slugify,
+  assemblePackage, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTextBlock,
   drawEvidencePhotos, drawBlockerBanner, drawEmpty,
 } from './core.js'
@@ -49,22 +49,16 @@ function baseName(r) {
   return `${baseNum}_${r.header?.date || 'data'}`
 }
 
-// Sam PDF (z dużymi zdjęciami-dowodami osadzonymi w treści) — odbiorca otwiera
-// jeden plik, bez rozpakowywania paczki.
-export async function generateComplaintPdf(report) {
+// Buildery zwracają { blob, filename } BEZ pobierania — caller (useReportPage
+// / wysyłka do zakupowca) decyduje: pobrać, udostępnić (Web Share) czy załączyć
+// do maila. PDF ma duże zdjęcia-dowody osadzone w treści (odbiorca otwiera jeden
+// plik bez rozpakowywania); ZIP dokłada zdjęcia w pełnej rozdzielczości.
+export async function buildComplaintPdf(report) {
   const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
 }
 
-// Buduje paczkę ZIP reklamacji (PDF + zdjęcia w PEŁNEJ rozdzielczości) i zwraca
-// { blob, filename } BEZ pobierania — caller albo pobiera (komputer), albo
-// udostępnia przez Web Share (telefon → Outlook z załącznikiem).
-export async function generateComplaintZip(report) {
+export async function buildComplaintPackage(report) {
   const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
   return await assemblePackage(pdfBlob, photos, videos, baseName(r))
-}
-
-export async function generateComplaintPackage(report) {
-  const pack = await generateComplaintZip(report)
-  downloadBlob(pack.blob, pack.filename)
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import { useAutoSave } from './useAutoSave.js'
 import { ensureValidOrConfirm } from './validateReport.js'
-import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
+import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
 
 // Wspólny szkielet strony raportu — wcześniej każdy z 5 typów raportów
 // powielał ten sam zestaw: toast/confirm, stany downloading/sending,
@@ -15,7 +15,7 @@ import { exportReportPackage, shareOrDownload, downloadBlob, makePackageFilename
 // i uchwyty drag, bo wszystkie są <button>/<input>). „Odblokuj edycję"
 // zdejmuje blokadę na czas tej wizyty na stronie (status zostaje completed).
 // Pobieranie/wysyłka działają mimo blokady — pasek akcji jest poza fieldsetem.
-export function useReportPage({ report, setReport, generatePackage, generatePdf }) {
+export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [downloading, setDownloading] = useState(false)
@@ -60,14 +60,22 @@ export function useReportPage({ report, setReport, generatePackage, generatePdf 
     }
   }
 
-  // Wspólny przebieg pobierania: walidacja → spinner → generator → toast.
-  const runDownload = async (fn, okMsg) => {
-    if (!fn) return
+  // Wspólny przebieg: walidacja → spinner → builder zwraca { blob, filename } →
+  // pobranie (downloadBlob) ALBO udostępnienie (Web Share → Teams/Mail).
+  const runArtifact = async (builder, { share = false, mime, okMsg } = {}) => {
+    if (!builder) return
     if (!(await ensureValidOrConfirm(report, confirm))) return
     setDownloading(true)
     try {
-      await fn(report)
-      toast.success(okMsg)
+      const { blob, filename } = await builder(report)
+      if (share) {
+        const ok = await shareFileOrDownload(blob, filename, mime)
+        // ok=false → użytkownik anulował systemowe okno; nie pokazujemy sukcesu.
+        if (ok) toast.success('Udostępniono')
+      } else {
+        downloadBlob(blob, filename)
+        toast.success(okMsg)
+      }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
     } finally {
@@ -75,16 +83,18 @@ export function useReportPage({ report, setReport, generatePackage, generatePdf 
     }
   }
 
-  // Sam PDF — wygodne do maila/SharePointa (odbiorca otwiera bez rozpakowywania).
-  // Fallback do paczki, gdyby strona nie przekazała generatePdf.
-  const downloadPdf = () => runDownload(generatePdf || generatePackage, generatePdf ? 'PDF pobrany' : 'Paczka pobrana')
-  // Pełna paczka ZIP (PDF + zdjęcia/wideo w pełnej rozdzielczości).
-  const downloadPackage = () => runDownload(generatePackage, 'Paczka ZIP pobrana')
+  // Pobranie lokalne (desktop) — sam PDF lub pełna paczka ZIP.
+  const downloadPdf = () => runArtifact(buildPdf || buildPackage, { mime: 'application/pdf', okMsg: 'PDF pobrany' })
+  const downloadPackage = () => runArtifact(buildPackage, { mime: 'application/zip', okMsg: 'Paczka ZIP pobrana' })
+  // Udostępnienie przez systemowe okno (telefon) — wprost do Teams/Maila,
+  // bez okrężnej drogi „pobierz → Pliki → udostępnij".
+  const sharePdf = () => runArtifact(buildPdf || buildPackage, { share: true, mime: 'application/pdf' })
+  const sharePackage = () => runArtifact(buildPackage, { share: true, mime: 'application/zip' })
 
   return {
     toast, confirm, savedAt,
     downloading, sending,
     locked, unlock,
-    finishReport, sendToDevice, downloadPdf, downloadPackage,
+    finishReport, sendToDevice, downloadPdf, downloadPackage, sharePdf, sharePackage,
   }
 }

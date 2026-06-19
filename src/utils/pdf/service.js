@@ -3,7 +3,7 @@
 // (klikalne do pełnego pliku w ZIP) + badge priorytetu → blok tekstu.
 import {
   buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
-  assemblePackage, fileBase, downloadBlob, slugify,
+  assemblePackage, fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock,
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
@@ -128,13 +128,14 @@ function buildPdf(ctx, report, photos) {
 
 const baseName = (r) => fileBase(r, 'serwis')
 
-export async function generateServicePdf(report) {
+// Buildery zwracają { blob, filename } BEZ pobierania — caller (useReportPage)
+// decyduje: pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
+export async function buildServicePdf(report) {
   const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
 }
 
-export async function generateServicePackage(report) {
+export async function buildServicePackage(report) {
   const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  const pack = await assemblePackage(pdfBlob, photos, videos, baseName(r))
-  downloadBlob(pack.blob, pack.filename)
+  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
 }

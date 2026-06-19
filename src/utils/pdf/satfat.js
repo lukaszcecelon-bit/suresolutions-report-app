@@ -1,7 +1,7 @@
 // Raport ODBIORU SAT / FAT — natywny tekst (najbogatszy typ).
 import {
   buildReportPdf, mediaCollector, buildLinkMaps, thumbDescriptors,
-  assemblePackage, downloadBlob, slugify,
+  assemblePackage, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawSubLabel, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge,
   drawVideosTable, drawEmpty, drawPhotoAppendix,
@@ -174,13 +174,12 @@ function baseName(r) {
   return `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
 }
 
-export async function generateSatFatPdf(report) {
+export async function buildSatFatPdf(report) {
   const { r, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  downloadBlob(pdfBlob, baseName(r) + '.pdf')
+  return { blob: pdfBlob, filename: baseName(r) + '.pdf' }
 }
 
-export async function generateSatFatPackage(report) {
+export async function buildSatFatPackage(report) {
   const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, buildPdf)
-  const pack = await assemblePackage(pdfBlob, photos, videos, baseName(r))
-  downloadBlob(pack.blob, pack.filename)
+  return await assemblePackage(pdfBlob, photos, videos, baseName(r))
 }

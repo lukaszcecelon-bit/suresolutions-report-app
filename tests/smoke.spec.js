@@ -10,8 +10,12 @@ import sharp from 'sharp'
 
 test.beforeEach(async ({ page }) => {
   // Onboarding-tour zasłania UI przy pierwszej wizycie — wyłącz przed startem.
+  // Web Share wyłączamy, żeby pasek akcji pokazał przyciski „Pobierz" (a nie
+  // „Udostępnij") — w headless i tak nie da się przejść systemowego okna share.
   await page.addInitScript(() => {
     try { localStorage.setItem('suresolutions.onboarding.v2.dismissed', '1') } catch {}
+    try { Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true }) } catch {}
+    try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }) } catch {}
   })
 })
 
