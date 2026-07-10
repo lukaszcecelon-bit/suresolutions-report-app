@@ -4,7 +4,7 @@ import {
   fileBase, slugify,
   timeHHMM, formatDurationFull, formatDurationShort,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
-  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawPhotoAppendix,
+  drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawPhotoAppendix, drawEmpty,
 } from './core.js'
 
 function collectMedia(report) {
@@ -13,8 +13,29 @@ function collectMedia(report) {
     const reason = s.reason === 'Inne' && s.customReason ? s.customReason : (s.reason || '')
     push(s.media, `Zatrzymanie #${idx + 1} — ${reason}`, `Zatrzymanie-${idx + 1}_${slugify(reason) || 'X'}`)
   })
+  ;(Array.isArray(report.observations) ? report.observations : []).forEach((o, idx) => {
+    push(o.media, `Obserwacja #${idx + 1}`, `Obserwacja-${idx + 1}`)
+  })
+  ;(Array.isArray(report.conclusions) ? report.conclusions : []).forEach((o, idx) => {
+    push(o.media, `Wniosek #${idx + 1}`, `Wniosek-${idx + 1}`)
+  })
   push(report.generalMedia, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
   return finalize()
+}
+
+// Sekcja z listą powtarzalnych wpisów {text, media} — jak obserwacje w serwisie.
+function notesSection(ctx, title, colHeader, records, photoMap) {
+  const list = Array.isArray(records) ? records : []
+  drawSectionHeader(ctx, `${title} (${list.length})`)
+  if (!list.length) { drawEmpty(ctx, 'Brak wpisów.'); return }
+  drawTable(ctx, {
+    columns: [
+      { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+      { header: colHeader, dataKey: 'text', width: ctx.contentW - 12 },
+    ],
+    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+    thumbsCol: 'text', thumbsKey: '_thumbs',
+  })
 }
 
 function buildPdf(ctx, report, photos, videos) {
@@ -65,11 +86,8 @@ function buildPdf(ctx, report, photos, videos) {
     })
   }
 
-  drawSectionHeader(ctx, 'Obserwacje ogólne')
-  drawTextBlock(ctx, report.observations)
-
-  drawSectionHeader(ctx, 'Wnioski i rekomendacje')
-  drawTextBlock(ctx, report.conclusions)
+  notesSection(ctx, 'Obserwacje', 'Obserwacja', report.observations, photoMap)
+  notesSection(ctx, 'Wnioski i rekomendacje', 'Wniosek / rekomendacja', report.conclusions, photoMap)
 
   const generalThumbs = thumbDescriptors(report.generalMedia, photoMap)
   if (generalThumbs.length) {

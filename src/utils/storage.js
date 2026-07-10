@@ -19,25 +19,36 @@ const PREFIX = 'suresolutions.report.v2:'
 // i dopisz krok w migrateReport() — zamiast rozsianych po komponentach
 // "if (Array.isArray(...))". Raporty migrują się przy odczycie, a trwale
 // przy najbliższym zapisie (upsert stempluje aktualną wersję).
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 let cache = null
 
 const reportKey = (id) => PREFIX + id
 
-// Migracje v0 → v1 (zebrane dotychczasowe fixupy ad-hoc):
-//  - service.observations: string (stary model) → lista rekordów [{id,text,media}]
-//  - satfat.punchlist: wpisy sprzed v0.25 nie miały pola media
+// Pole tekstowe (stary model) → lista rekordów [{id,text,media}] (nowy model).
+function strToRecords(v) {
+  const txt = typeof v === 'string' ? v.trim() : ''
+  return txt ? [{ id: newId(), text: txt, media: [] }] : []
+}
+
+// Migracje kształtu danych (kumulatywne, idempotentne):
+//  v0→v1: service.observations string→lista; satfat.punchlist media:[]
+//  v1→v2: service.recommendations string→lista; commissioning.observations
+//         i .conclusions string→lista (te pola stały się listami rekordów).
 function migrateReport(r) {
   if (!r || typeof r !== 'object') return r
   if ((r.schemaVersion || 0) >= SCHEMA_VERSION) return r
   const m = { ...r }
-  if (m.type === 'service' && !Array.isArray(m.observations)) {
-    const txt = typeof m.observations === 'string' ? m.observations.trim() : ''
-    m.observations = txt ? [{ id: newId(), text: txt, media: [] }] : []
+  if (m.type === 'service') {
+    if (!Array.isArray(m.observations)) m.observations = strToRecords(m.observations)
+    if (!Array.isArray(m.recommendations)) m.recommendations = strToRecords(m.recommendations)
   }
   if (m.type === 'satfat' && Array.isArray(m.punchlist)) {
     m.punchlist = m.punchlist.map((p) => ({ media: [], ...p }))
+  }
+  if (m.type === 'commissioning') {
+    if (!Array.isArray(m.observations)) m.observations = strToRecords(m.observations)
+    if (!Array.isArray(m.conclusions)) m.conclusions = strToRecords(m.conclusions)
   }
   m.schemaVersion = SCHEMA_VERSION
   return m
@@ -204,8 +215,8 @@ export function cloneReport(source) {
       sessionEndAt: null,
       activeStop: null,
       stops: [],          // never carry over stops
-      observations: '',
-      conclusions: '',
+      observations: [],
+      conclusions: [],
       generalMedia: [],
     }
   }
@@ -232,7 +243,7 @@ export function cloneReport(source) {
       actions: [],
       parts: [],
       observations: [],                          // lista rekordów
-      recommendations: '',
+      recommendations: [],                       // lista rekordów
       receivedBy: '',                            // reset — nowa wizyta
       visitStatus: 'completed',
     }

@@ -87,19 +87,18 @@ function normalize(s) {
 function getSearchableText(r) {
   const parts = []
   const push = (v) => { if (v && typeof v === 'string') parts.push(v) }
+  // Listy rekordów {text,media} (obserwacje/rekomendacje/wnioski) — indeksuj teksty.
+  const pushList = (arr) => { if (Array.isArray(arr)) for (const o of arr) push(o?.text) }
   const h = r.header || {}
   push(h.reportNumber); push(h.projectName); push(h.machineName); push(h.author)
   if (r.type === 'service') {
     push(r.visit?.client); push(r.visit?.location)
-    push(r.recommendations); push(r.receivedBy); push(r.role)
+    push(r.receivedBy); push(r.role)
     for (const a of (r.actions || [])) { push(a.description) }
     for (const p of (r.parts || [])) { push(p.name); push(p.catalogNo); push(p.comment) }
-    // Obserwacje: nowy model (lista rekordów) + wsteczna zgodność (string)
-    if (Array.isArray(r.observations)) {
-      for (const o of r.observations) push(o?.text)
-    } else {
-      push(r.observations)
-    }
+    pushList(r.observations)      // nowy model (lista rekordów)
+    pushList(r.recommendations)   // nowy model (lista rekordów)
+    if (typeof r.observations === 'string') push(r.observations) // wsteczna zgodność
   } else if (r.type === 'complaint') {
     push(r.partNo); push(r.defectCategory); push(r.description)
   } else if (r.type === 'prototype') {
@@ -108,7 +107,7 @@ function getSearchableText(r) {
     for (const p of (r.conditions?.params || [])) { push(p.key); push(p.value) }
     for (const p of (r.points || [])) { push(p.description); push(p.comment) }
   } else if (r.type === 'commissioning') {
-    push(r.observations); push(r.conclusions)
+    pushList(r.observations); pushList(r.conclusions)   // nowy model (listy rekordów)
     for (const s of (r.stops || [])) { push(s.comment); push(s.customReason); push(s.reason) }
   } else if (r.type === 'satfat') {
     push(r.info?.client); push(r.info?.location); push(r.info?.referenceDoc)

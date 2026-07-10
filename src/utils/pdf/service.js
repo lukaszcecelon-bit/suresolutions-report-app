@@ -4,7 +4,7 @@
 import {
   makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
   fileBase, slugify,
-  drawReportHeader, drawMetaTable, drawSectionHeader, drawTable, drawTextBlock,
+  drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
 
@@ -45,6 +45,9 @@ function collectMedia(report) {
   ;(Array.isArray(report.observations) ? report.observations : []).forEach((o, idx) => {
     push(o.media, `Obserwacja #${idx + 1}`, `Obserwacja-${idx + 1}`)
   })
+  ;(Array.isArray(report.recommendations) ? report.recommendations : []).forEach((o, idx) => {
+    push(o.media, `Rekomendacja #${idx + 1}`, `Rekomendacja-${idx + 1}`)
+  })
   return finalize()
 }
 
@@ -53,6 +56,7 @@ function buildPdf(ctx, report, photos) {
   const v = report.visit || {}
   const { photoMap } = buildLinkMaps(photos)
   const observations = Array.isArray(report.observations) ? report.observations : []
+  const recommendations = Array.isArray(report.recommendations) ? report.recommendations : []
   const totalTime = serviceVisitDuration(v.arrival, v.departure)
   const W = ctx.contentW
 
@@ -120,8 +124,19 @@ function buildPdf(ctx, report, photos) {
     })
   }
 
-  drawSectionHeader(ctx, 'E. Rekomendacje')
-  drawTextBlock(ctx, report.recommendations)
+  drawSectionHeader(ctx, `E. Rekomendacje (${recommendations.length})`)
+  if (recommendations.length === 0) {
+    drawEmpty(ctx, 'Brak rekomendacji.')
+  } else {
+    drawTable(ctx, {
+      columns: [
+        { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+        { header: 'Rekomendacja', dataKey: 'text', width: W - 12 },
+      ],
+      rows: recommendations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+      thumbsCol: 'text', thumbsKey: '_thumbs',
+    })
+  }
 
   drawPhotoAppendix(ctx, photos)
 }

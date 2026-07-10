@@ -4,6 +4,7 @@ import MediaUploader from '../common/MediaUploader.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
+import NotesList from '../common/NotesList.jsx'
 import { getById, newId } from '../../utils/storage.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildCommissioningPackage, buildCommissioningPdf } from '../../utils/pdfGenerator.js'
@@ -81,8 +82,8 @@ function defaultReport() {
     sessionEndAt: null,
     activeStop: null, // { startAt }
     stops: [], // { id, startAt, endAt, durationMs, reason, customReason, comment, media: [] }
-    observations: '',
-    conclusions: '',
+    observations: [], // lista rekordów {id, text, media} (jak obserwacje w serwisie)
+    conclusions: [],  // lista rekordów {id, text, media} — wnioski/rekomendacje
     generalMedia: [], // ogólna dokumentacja foto/video w Fazie 3
   }
 }
@@ -366,7 +367,7 @@ export default function CommissioningReport({ navigate, reportId }) {
 
           {/* Obserwacje i wnioski — dostępne NA BIEŻĄCO, nie tylko po sesji.
               Inżynier może zapisywać spostrzeżenia w trakcie obserwacji maszyny. */}
-          <NotesSection report={report} setReport={setReport} />
+          <NotesSection report={report} setReport={setReport} confirm={confirm} />
 
           {/* Finish */}
           {report.phase === 'running' && (
@@ -462,7 +463,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             </div>
           )}
 
-          <NotesSection report={report} setReport={setReport} />
+          <NotesSection report={report} setReport={setReport} confirm={confirm} />
 
           <div className="card">
             <h3 className="section-title">Dokumentacja fotograficzna (ogólna)</h3>
@@ -650,25 +651,46 @@ function StopsTable({ stops, onEdit }) {
 }
 
 // Obserwacje + wnioski/rekomendacje — wydzielone, by były identyczne i dostępne
-// zarówno w trakcie sesji (Faza 2), jak i w podsumowaniu (Faza 3).
-function NotesSection({ report, setReport }) {
+// zarówno w trakcie sesji (Faza 2), jak i w podsumowaniu (Faza 3). Każda sekcja
+// to lista powtarzalnych rekordów (jak obserwacje w raporcie serwisowym).
+function NotesSection({ report, setReport, confirm }) {
   return (
     <>
       <div className="card">
-        <h3 className="section-title">Obserwacje ogólne</h3>
-        <MicTextarea
-          value={report.observations}
-          onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">Obserwacje</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{(report.observations || []).length}</span>
+        </div>
+        <NotesList
+          items={report.observations}
+          onChange={(v) => setReport((r) => ({ ...r, observations: v }))}
+          confirm={confirm}
+          addLabel="+ Dodaj obserwację"
           placeholder="Co zauważyłeś podczas obserwacji maszyny?"
+          emptyIcon="👁️"
+          emptyTitle="Brak obserwacji"
+          emptyHint={'Kliknij „+ Dodaj obserwację" poniżej. Każda obserwacja to osobny wpis — możesz dodać zdjęcie i zmieniać kolejność (≡).'}
+          removeConfirm="Usunąć tę obserwację?"
+          newItemLabel="Nowa obserwacja"
         />
       </div>
 
       <div className="card">
-        <h3 className="section-title">Wnioski i rekomendacje</h3>
-        <MicTextarea
-          value={report.conclusions}
-          onChange={(e) => setReport((r) => ({ ...r, conclusions: e.target.value }))}
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">Wnioski i rekomendacje</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{(report.conclusions || []).length}</span>
+        </div>
+        <NotesList
+          items={report.conclusions}
+          onChange={(v) => setReport((r) => ({ ...r, conclusions: v }))}
+          confirm={confirm}
+          addLabel="+ Dodaj wniosek / rekomendację"
           placeholder="Wnioski, propozycje usprawnień, dalsze kroki…"
+          emptyIcon="💡"
+          emptyTitle="Brak wniosków"
+          emptyHint={'Kliknij „+ Dodaj wniosek / rekomendację" poniżej. Każdy wpis jest osobny.'}
+          removeConfirm="Usunąć ten wpis?"
+          newItemLabel="Nowy wniosek"
         />
       </div>
     </>

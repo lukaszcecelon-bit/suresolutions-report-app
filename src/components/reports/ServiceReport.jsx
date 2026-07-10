@@ -7,6 +7,7 @@ import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
+import NotesList from '../common/NotesList.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import {
@@ -81,7 +82,7 @@ function defaultReport() {
     actions: [],
     parts: [],
     observations: [],       // lista rekordów {id, text, media}
-    recommendations: '',
+    recommendations: [],    // lista rekordów {id, text, media} (jak obserwacje)
     receivedBy: '',         // kto odebrał prace serwisowe
     visitStatus: 'completed',
   }
@@ -100,13 +101,19 @@ export default function ServiceReport({ navigate, reportId }) {
     if (reportId) {
       const existing = getById(reportId)
       if (existing) {
-        // Migracja starych raportów: obserwacje jako string → lista rekordów
+        // Migracja starych raportów: obserwacje/rekomendacje jako string → lista rekordów
         if (typeof existing.observations === 'string') {
           existing.observations = existing.observations.trim()
             ? [{ id: newId(), text: existing.observations, media: [] }]
             : []
         }
         if (!Array.isArray(existing.observations)) existing.observations = []
+        if (typeof existing.recommendations === 'string') {
+          existing.recommendations = existing.recommendations.trim()
+            ? [{ id: newId(), text: existing.recommendations, media: [] }]
+            : []
+        }
+        if (!Array.isArray(existing.recommendations)) existing.recommendations = []
         return existing
       }
     }
@@ -161,21 +168,6 @@ export default function ServiceReport({ navigate, reportId }) {
   const removePart = async (id) => {
     if (!(await confirm('Usunąć ten element?', { variant: 'danger', confirmLabel: 'Usuń' }))) return
     setReport((r) => ({ ...r, parts: r.parts.filter((p) => p.id !== id) }))
-  }
-
-  // ---- Obserwacje (rekordy, jak czynności) ----
-  const addObservation = () => {
-    setReport((r) => ({
-      ...r,
-      observations: [...r.observations, { id: newId(), text: '', media: [] }],
-    }))
-  }
-  const updateObservation = (id, patch) => {
-    setReport((r) => ({ ...r, observations: r.observations.map((o) => (o.id === id ? { ...o, ...patch } : o)) }))
-  }
-  const removeObservation = async (id) => {
-    if (!(await confirm('Usunąć tę obserwację?', { variant: 'danger', confirmLabel: 'Usuń' }))) return
-    setReport((r) => ({ ...r, observations: r.observations.filter((o) => o.id !== id) }))
   }
 
   const totalTime = visitDurationLabel(report.visit.arrival, report.visit.departure)
@@ -381,62 +373,36 @@ export default function ServiceReport({ navigate, reportId }) {
           <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">D. Obserwacje własne</h3>
           <span className="text-xs text-gray-500 dark:text-gray-400">{report.observations.length}</span>
         </div>
-        <div className="space-y-3">
-          {report.observations.length === 0 ? (
-            <EmptyState
-              icon="👁️"
-              title="Brak obserwacji"
-              hint={'Kliknij „+ Dodaj obserwację" poniżej. Każda obserwacja to osobny wpis — możesz dodać zdjęcie i zmieniać kolejność (≡).'}
-            />
-          ) : (
-          <SortableList
-            items={report.observations}
-            onReorder={(newList) => setReport((r) => ({ ...r, observations: newList }))}
-            getId={(o) => o.id}
-          >
-            {(o, dragHandle, i) => (
-            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3 bg-gray-50 dark:bg-gray-700/40">
-              <div className="flex items-center gap-2">
-                {dragHandle}
-                <span className="index-badge">{i + 1}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 flex-1 truncate">
-                  {o.text ? o.text.slice(0, 60) : 'Nowa obserwacja'}
-                </span>
-                <button
-                  onClick={() => removeObservation(o.id)}
-                  className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40"
-                  aria-label="Usuń obserwację"
-                >✕</button>
-              </div>
-              <MicTextarea
-                placeholder="Co zauważyłeś podczas wizyty?"
-                value={o.text}
-                onChange={(e) => updateObservation(o.id, { text: e.target.value })}
-              />
-              <div>
-                <label className="field-label">Zdjęcia (opcjonalne)</label>
-                <MediaUploader
-                  photoOnly
-                  media={o.media || []}
-                  onChange={(m) => updateObservation(o.id, { media: m })}
-                />
-              </div>
-            </div>
-            )}
-          </SortableList>
-          )}
-        </div>
-        <button onClick={addObservation} className="mt-3 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full">
-          + Dodaj obserwację
-        </button>
+        <NotesList
+          items={report.observations}
+          onChange={(v) => setReport((r) => ({ ...r, observations: v }))}
+          confirm={confirm}
+          addLabel="+ Dodaj obserwację"
+          placeholder="Co zauważyłeś podczas wizyty?"
+          emptyIcon="👁️"
+          emptyTitle="Brak obserwacji"
+          emptyHint={'Kliknij „+ Dodaj obserwację" poniżej. Każda obserwacja to osobny wpis — możesz dodać zdjęcie i zmieniać kolejność (≡).'}
+          removeConfirm="Usunąć tę obserwację?"
+          newItemLabel="Nowa obserwacja"
+        />
       </div>
 
       <div id="sec-e" className="card">
-        <h3 className="section-title">E. Rekomendacje</h3>
-        <MicTextarea
-          value={report.recommendations}
-          onChange={(e) => setReport((r) => ({ ...r, recommendations: e.target.value }))}
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">E. Rekomendacje</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{report.recommendations.length}</span>
+        </div>
+        <NotesList
+          items={report.recommendations}
+          onChange={(v) => setReport((r) => ({ ...r, recommendations: v }))}
+          confirm={confirm}
+          addLabel="+ Dodaj rekomendację"
           placeholder="Co rekomendujesz klientowi / dalsze kroki…"
+          emptyIcon="💡"
+          emptyTitle="Brak rekomendacji"
+          emptyHint={'Kliknij „+ Dodaj rekomendację" poniżej. Każda rekomendacja to osobny wpis.'}
+          removeConfirm="Usunąć tę rekomendację?"
+          newItemLabel="Nowa rekomendacja"
         />
       </div>
 
