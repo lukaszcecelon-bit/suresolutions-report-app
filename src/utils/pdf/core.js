@@ -590,7 +590,7 @@ export function drawTable(ctx, opts) {
             const [dw, dh] = fitBox(t.w, t.h, THUMB_W, THUMB_H)
             try { doc.addImage(t.dataUrl, 'JPEG', x, y, dw, dh) } catch { /* ignore */ }
             setDraw(doc, THUMB_BORDER); doc.setLineWidth(0.1); doc.rect(x, y, dw, dh)
-            if (t.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y, w: dw, h: dh, target: t.target })
+            // (bez hiperłącza do pliku w ZIP — zdjęcia w PDF nie są klikalne)
           })
         }
       }
@@ -666,7 +666,7 @@ export function drawThumbsRow(ctx, thumbs) {
     }
     try { doc.addImage(t.dataUrl, 'JPEG', x, rowTop, dw, dh) } catch { /* ignore */ }
     setDraw(doc, THUMB_BORDER); doc.setLineWidth(0.1); doc.rect(x, rowTop, dw, dh)
-    if (t.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y: rowTop, w: dw, h: dh, target: t.target })
+    // (bez hiperłącza — zdjęcia w PDF nie są klikalne)
     x += dw + gap
   })
   ctx.y = rowTop + maxH + 3
@@ -699,7 +699,7 @@ export function drawEvidencePhotos(ctx, photos) {
     const x = margin.l + (contentW - dw) / 2
     try { doc.addImage(p.dataUrl, 'JPEG', x, ctx.y, dw, dh) } catch { /* ignore */ }
     setDraw(doc, BORDER); doc.setLineWidth(0.2); doc.rect(x, ctx.y, dw, dh)
-    if (p.target) ctx.links.push({ page: doc.getNumberOfPages(), x, y: ctx.y, w: dw, h: dh, target: p.target })
+    // (bez hiperłącza — zdjęcia w PDF nie są klikalne)
     ctx.y += dh
     if (p.description) {
       doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5); setInk(doc, MUT)
@@ -741,9 +741,7 @@ export function drawPhotoAppendix(ctx, photos, { title = 'Załącznik — wszyst
     const x = margin.l + (contentW - dw) / 2
     try { doc.addImage(p.dataUrl, 'JPEG', x, ctx.y, dw, dh) } catch { /* ignore */ }
     setDraw(doc, BORDER); doc.setLineWidth(0.2); doc.rect(x, ctx.y, dw, dh)
-    if (p.photoId && p._zipFilename) {
-      ctx.links.push({ page: doc.getNumberOfPages(), x, y: ctx.y, w: dw, h: dh, target: 'zdjecia/' + p._zipFilename })
-    }
+    // (bez hiperłącza — zdjęcia w PDF nie są klikalne)
     ctx.y += dh + 5
   })
   doc.setFont('Roboto', 'normal'); doc.setFontSize(BODY_FS); setInk(doc, INK)

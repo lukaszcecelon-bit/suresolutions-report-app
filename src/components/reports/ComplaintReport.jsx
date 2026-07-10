@@ -326,13 +326,15 @@ export default function ComplaintReport({ navigate, reportId }) {
           >
             {sendingBuyer ? '⏳ Przygotowanie…' : '📤 Wyślij do zakupowca'}
           </button>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2">
           <button
-            onClick={canShare ? page.sharePdf : page.downloadPdf}
+            onClick={page.downloadPdf}
             disabled={busy}
             className="btn-secondary flex-1"
-            title="Sam PDF z dużymi zdjęciami wady — odbiorca otwiera bez rozpakowywania"
+            title="Zapisz PDF na dysku komputera / w Plikach telefonu"
           >
-            {page.downloading ? '⏳' : (canShare ? '📲 PDF' : '📄 PDF')}
+            {page.downloading ? '⏳' : '💾 Zapisz PDF'}
           </button>
           <button
             onClick={canShare ? page.sharePackage : page.downloadPackage}
@@ -340,7 +342,7 @@ export default function ComplaintReport({ navigate, reportId }) {
             className="btn-secondary flex-1"
             title="Pełna paczka ZIP (PDF + zdjęcia w pełnej rozdzielczości)"
           >
-            {page.downloading ? '⏳' : '📦 ZIP'}
+            {page.downloading ? '⏳' : (canShare ? '📦 Udostępnij ZIP' : '📦 Zapisz ZIP')}
           </button>
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź

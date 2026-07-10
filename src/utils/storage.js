@@ -188,8 +188,17 @@ export function cloneReport(source) {
   }
 
   if (source.type === 'commissioning') {
+    // Numer raportu jak w serwisie: URU-{nr projektu}-{data}, przeliczany z
+    // zachowanego numeru projektu (data → dziś).
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
     return {
       ...base,
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `URU-${projectNumber}-${date}` : '',
+      },
       phase: 'setup',
       sessionStartAt: null,
       sessionEndAt: null,

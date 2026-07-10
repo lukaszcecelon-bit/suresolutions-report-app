@@ -31,7 +31,7 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
       <LoadingOverlay visible={page.downloading} />
 
       <div className="action-bar space-y-2">
-        {/* Gotowy raport do wysyłki — podgląd w apce + osobno PDF i ZIP. */}
+        {/* Podgląd + ZAPIS PDF na urządzenie (dysk komputera / Pliki telefonu). */}
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             onClick={page.openPreview}
@@ -41,45 +41,36 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
           >
             {page.previewing ? '⏳ Przygotowanie…' : '👁 Podgląd'}
           </button>
-          {canShare ? (
-            <>
-              <button
-                onClick={page.sharePdf}
-                disabled={page.downloading}
-                className="btn-primary flex-[2] text-base"
-                title="Udostępnij sam PDF wprost do Teams / Maila / Plików"
-              >
-                {page.downloading ? '⏳ Generowanie…' : '📲 Udostępnij PDF'}
-              </button>
-              <button
-                onClick={page.sharePackage}
-                disabled={page.downloading}
-                className="btn-secondary flex-1 text-base"
-                title="Udostępnij paczkę ZIP (PDF + zdjęcia w pełnej rozdzielczości)"
-              >
-                {page.downloading ? '⏳' : '📦 Udostępnij ZIP'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={page.downloadPdf}
-                disabled={page.downloading}
-                className="btn-primary flex-[2] text-base"
-                title="Sam plik PDF — odbiorca otwiera bezpośrednio, bez rozpakowywania"
-              >
-                {page.downloading ? '⏳ Generowanie…' : '📄 Pobierz PDF'}
-              </button>
-              <button
-                onClick={page.downloadPackage}
-                disabled={page.downloading}
-                className="btn-secondary flex-1 text-base"
-                title="Paczka ZIP: PDF + wszystkie zdjęcia i wideo w pełnej rozdzielczości"
-              >
-                {page.downloading ? '⏳' : '📦 ZIP (PDF + zdjęcia)'}
-              </button>
-            </>
+          <button
+            onClick={page.downloadPdf}
+            disabled={page.downloading}
+            className="btn-primary flex-[2] text-base"
+            title="Zapisz PDF na dysku komputera / w Plikach telefonu"
+          >
+            {page.downloading ? '⏳ Generowanie…' : '💾 Zapisz PDF na urządzenie'}
+          </button>
+        </div>
+
+        {/* Udostępnianie (telefon) / paczka ZIP z pełnymi zdjęciami. */}
+        <div className="flex flex-col sm:flex-row gap-2">
+          {canShare && (
+            <button
+              onClick={page.sharePdf}
+              disabled={page.downloading}
+              className="btn-secondary flex-1"
+              title="Udostępnij PDF wprost do Teams / Maila / Plików"
+            >
+              {page.downloading ? '⏳' : '📲 Udostępnij PDF'}
+            </button>
           )}
+          <button
+            onClick={canShare ? page.sharePackage : page.downloadPackage}
+            disabled={page.downloading}
+            className="btn-secondary flex-1"
+            title="Paczka ZIP: PDF + wszystkie zdjęcia i wideo w pełnej rozdzielczości"
+          >
+            {page.downloading ? '⏳' : (canShare ? '📦 Udostępnij ZIP' : '📦 Zapisz ZIP')}
+          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">

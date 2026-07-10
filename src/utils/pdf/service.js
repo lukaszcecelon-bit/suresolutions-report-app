@@ -65,7 +65,7 @@ function buildPdf(ctx, report, photos) {
 
   drawSectionHeader(ctx, 'A. Dane wizyty')
   drawMetaTable(ctx, [
-    [{ label: 'Klient', value: v.client || '—' }, { label: 'Lokalizacja', value: v.location || '—' }],
+    [{ label: 'Klient', value: v.client || '—' }, { label: 'Lokalizacja', value: v.location || '—' }, { label: 'Osoby obecne', value: v.attendees ? String(v.attendees) : '—' }],
     [{ label: 'Przyjazd', value: v.arrival || '—' }, { label: 'Odjazd', value: v.departure || '—' }, { label: 'Łączny czas', value: totalTime || '—' }],
     [{ label: 'Odbiór prac (kto odebrał)', value: report.receivedBy || '—', colspan: 3 }],
   ])

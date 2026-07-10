@@ -52,6 +52,15 @@ function formatDurationShort(ms) {
   return `${m} min ${s} s`
 }
 
+// Auto-generacja numeru raportu z numeru projektu i daty — jak w raporcie
+// serwisowym (tam prefiks RPT-). Uruchomienie ma własny prefiks URU-, żeby
+// nie mylić dokumentów. Pusty numer projektu → pusty numer raportu.
+function computeReportNumber(projectNumber, date) {
+  const pn = (projectNumber || '').trim()
+  if (!pn) return ''
+  return `URU-${pn}-${date || ''}`
+}
+
 function defaultReport() {
   return {
     id: newId(),
@@ -60,7 +69,8 @@ function defaultReport() {
     createdAt: nowISO(),
     updatedAt: nowISO(),
     header: {
-      reportNumber: '',
+      projectNumber: '',   // numer projektu (wpisywany) — jak w raporcie serwisowym
+      reportNumber: '',     // auto: URU-{projectNumber}-{date}
       projectName: '',
       machineName: '',
       date: todayISO(),
@@ -102,7 +112,18 @@ export default function CommissioningReport({ navigate, reportId }) {
   const page = useReportPage({ report, setReport, buildPackage: buildCommissioningPackage, buildPdf: buildCommissioningPdf })
   const { toast, confirm } = page
 
-  const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
+  // Numer raportu liczony automatycznie z numeru projektu + daty (jak w serwisie).
+  // Gdy numer projektu pusty, zachowujemy ewentualny ręczny numer starszych
+  // raportów (sprzed tej zmiany), by ich nie skasować.
+  const updateHeader = (h) => setReport((r) => ({
+    ...r,
+    header: {
+      ...h,
+      reportNumber: (h.projectNumber || '').trim()
+        ? computeReportNumber(h.projectNumber, h.date)
+        : h.reportNumber,
+    },
+  }))
 
   // ==== PHASE 1: START ====
   const canStart = useMemo(() => {

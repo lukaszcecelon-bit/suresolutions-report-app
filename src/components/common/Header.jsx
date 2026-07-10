@@ -37,11 +37,11 @@ export default function Header({
   const machineNameSug = useMemo(() => suggestMachineNames(header.projectName), [header.projectName])
   const authorSug = useMemo(() => suggestAuthors(), [])
 
-  // Raport serwisowy: zamiast numeru raportu wpisuje się numer projektu,
-  // a numer raportu generuje się automatycznie (RPT-{nr projektu}-{data}).
-  // Wartość auto jest liczona w ServiceReport.updateHeader i trzymana w
+  // Raport serwisowy i uruchomieniowy: zamiast numeru raportu wpisuje się numer
+  // projektu, a numer raportu generuje się automatycznie (RPT-/URU-{nr}-{data}).
+  // Wartość auto jest liczona w updateHeader danej strony i trzymana w
   // header.reportNumber — tu tylko ją pokazujemy jako podgląd.
-  const isService = reportType === 'service'
+  const autoNumber = reportType === 'service' || reportType === 'commissioning'
 
   return (
     <div className="space-y-3">
@@ -59,7 +59,7 @@ export default function Header({
             past the container — important for iOS Safari where some input types
             (most notably type="date") have a wider intrinsic min-width. */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {isService ? (
+          {autoNumber ? (
             <div className="min-w-0">
               <label className="field-label field-required">Numer projektu</label>
               <input

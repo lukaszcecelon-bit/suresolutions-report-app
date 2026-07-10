@@ -76,7 +76,7 @@ function defaultReport() {
       date: todayISO(),
       author: '',
     },
-    visit: { client: '', location: '', arrival: '', departure: '' },
+    visit: { client: '', location: '', arrival: '', departure: '', attendees: '' },
     role: '',               // rola serwisanta (typ pracownika)
     actions: [],
     parts: [],
@@ -227,7 +227,13 @@ export default function ServiceReport({ navigate, reportId }) {
               {ROLE_OPTIONS.map((ro) => <option key={ro} value={ro}>{ro}</option>)}
             </select>
           </div>
-          <div className="min-w-0 hidden sm:block" aria-hidden="true" />
+          <div className="min-w-0">
+            <label className="field-label">Liczba osób obecnych na serwisie</label>
+            <input type="number" inputMode="numeric" min="0" className="field-input"
+              placeholder="np. 3"
+              value={report.visit.attendees ?? ''}
+              onChange={(e) => updateVisit('attendees', e.target.value)} />
+          </div>
           <div className="min-w-0">
             <label className="field-label">Godzina przyjazdu</label>
             <input type="time" className="field-input"

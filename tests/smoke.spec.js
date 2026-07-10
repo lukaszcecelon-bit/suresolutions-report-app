@@ -34,7 +34,7 @@ test('raport serwisowy: PDF z natywnym, kopiowalnym tekstem + polskie znaki', as
   // Generowanie: raport niekompletny → modal walidacji → realny download.
   // „Pobierz PDF" daje sam plik PDF (od v0.33 osobno od paczki ZIP).
   const downloadPromise = page.waitForEvent('download', { timeout: 120_000 })
-  await page.getByRole('button', { name: /Pobierz PDF/ }).click()
+  await page.getByRole('button', { name: /Zapisz PDF/ }).click()
   await page.getByRole('button', { name: 'Pobierz mimo to' }).click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toMatch(/\.pdf$/)
@@ -83,7 +83,7 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
 
   // --- 1) „Pobierz PDF" → SAM plik .pdf (nie .zip) z załącznikiem zdjęć ---
   const dlPdf = page.waitForEvent('download', { timeout: 120_000 })
-  await page.getByRole('button', { name: /Pobierz PDF/ }).click()
+  await page.getByRole('button', { name: /Zapisz PDF/ }).click()
   const skip1 = page.getByRole('button', { name: 'Pobierz mimo to' })
   if (await skip1.isVisible().catch(() => false)) await skip1.click()
   const pdf = await dlPdf
@@ -101,7 +101,7 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
 
   // --- 2) „ZIP (PDF + zdjęcia)" → archiwum .zip ---
   const dlZip = page.waitForEvent('download', { timeout: 120_000 })
-  await page.getByRole('button', { name: /ZIP \(PDF/ }).click()
+  await page.getByRole('button', { name: /Zapisz ZIP/ }).click()
   const skip2 = page.getByRole('button', { name: 'Pobierz mimo to' })
   if (await skip2.isVisible().catch(() => false)) await skip2.click()
   const zip = await dlZip
