@@ -6,18 +6,10 @@ import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import NotesList from '../common/NotesList.jsx'
 import { getById, newId } from '../../utils/storage.js'
+import { getDefaultAuthor, getStopReasons } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildCommissioningPackage, buildCommissioningPdf } from '../../utils/pdfGenerator.js'
 import { deleteImage, deleteVideo, deleteOriginal } from '../../utils/imageStore.js'
-
-const STOP_REASONS = [
-  'Zacięcie detalu',
-  'Błąd programu',
-  'Alarm bezpieczeństwa',
-  'Regulacja',
-  'Awaria mechaniczna',
-  'Inne',
-]
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
@@ -75,7 +67,7 @@ function defaultReport() {
       projectName: '',
       machineName: '',
       date: todayISO(),
-      author: '',
+      author: getDefaultAuthor(),   // domyślny autor z Ustawień
     },
     phase: 'setup', // setup | running | stopped | finished
     sessionStartAt: null,
@@ -112,6 +104,9 @@ export default function CommissioningReport({ navigate, reportId }) {
   // pozostać dostępne także po zakończeniu sesji, a blokada odcięłaby te pola.
   const page = useReportPage({ report, setReport, buildPackage: buildCommissioningPackage, buildPdf: buildCommissioningPdf })
   const { toast, confirm } = page
+
+  // Powody zatrzymań z Ustawień (edytowalne) + zawsze „Inne" na końcu (custom).
+  const STOP_REASONS = useMemo(() => [...getStopReasons(), 'Inne'], [])
 
   // Numer raportu liczony automatycznie z numeru projektu + daty (jak w serwisie).
   // Gdy numer projektu pusty, zachowujemy ewentualny ręczny numer starszych

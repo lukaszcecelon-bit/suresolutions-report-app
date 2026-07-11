@@ -93,6 +93,33 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const sharePdf = () => runArtifact(buildPdf || buildPackage, { share: true, mime: 'application/pdf' })
   const sharePackage = () => runArtifact(buildPackage, { share: true, mime: 'application/zip' })
 
+  // Wyślij mailem (desktop) — pobiera PDF i otwiera domyślny klient poczty
+  // (Outlook) z tematem i treścią. Załącznik user przeciąga z Pobranych
+  // (mailto nie potrafi załączać plików). Na telefonie od tego jest „Udostępnij".
+  const emailReport = async () => {
+    const builder = buildPdf || buildPackage
+    if (!builder) return
+    if (!(await ensureValidOrConfirm(report, confirm))) return
+    setDownloading(true)
+    try {
+      const { blob, filename } = await builder(report)
+      downloadBlob(blob, filename)
+      const num = report.header?.reportNumber || 'raport'
+      const subject = `Raport ${num}`
+      const body = `Dzień dobry,\n\nw załączeniu raport ${num}.\n\n(Załącz pobrany plik „${filename}" z folderu Pobrane.)\n\nPozdrawiam`
+      const a = document.createElement('a')
+      a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      toast.success('Poczta otwarta — załącz pobrany PDF z folderu Pobrane')
+    } catch (e) {
+      toast.error('Błąd: ' + (e.message || e))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   // Podgląd PDF w aplikacji — BEZ bramki walidacji (można podejrzeć też szkic).
   // Buduje ten sam PDF co wysyłka i przekazuje go do <PdfPreview>.
   const openPreview = async () => {
@@ -115,6 +142,6 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
     downloading, sending, previewing, preview,
     locked, unlock,
     finishReport, sendToDevice, downloadPdf, downloadPackage, sharePdf, sharePackage,
-    openPreview, closePreview,
+    emailReport, openPreview, closePreview,
   }
 }

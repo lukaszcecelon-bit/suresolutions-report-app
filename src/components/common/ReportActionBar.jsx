@@ -71,6 +71,16 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
           >
             {page.downloading ? '⏳' : (canShare ? '📦 Udostępnij ZIP' : '📦 Zapisz ZIP')}
           </button>
+          {!canShare && (
+            <button
+              onClick={page.emailReport}
+              disabled={page.downloading}
+              className="btn-secondary flex-1"
+              title="Pobiera PDF i otwiera pocztę (Outlook) z tematem — załącz pobrany plik"
+            >
+              {page.downloading ? '⏳' : '✉️ Wyślij mailem'}
+            </button>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">

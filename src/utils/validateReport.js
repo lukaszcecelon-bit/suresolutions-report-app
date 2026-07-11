@@ -36,15 +36,11 @@ export function validateReport(report) {
     return { ok: missing.length === 0, missing }
   }
 
-  // Identyfikator raportu — serwis: numer projektu, pozostałe: numer raportu.
-  if (report.type === 'service') {
-    if (isEmpty(report.header?.projectNumber)) {
-      missing.push({ label: 'Numer projektu', sectionId: 'sec-header' })
-    }
-  } else {
-    if (isEmpty(report.header?.reportNumber)) {
-      missing.push({ label: 'Numer raportu', sectionId: 'sec-header' })
-    }
+  // Identyfikator raportu — serwis/uruchomienie/prototyp/SAT-FAT wpisują NUMER
+  // PROJEKTU, z którego auto-generuje się numer raportu. (Reklamacja obsłużona
+  // wyżej i już wróciła.)
+  if (isEmpty(report.header?.projectNumber)) {
+    missing.push({ label: 'Numer projektu', sectionId: 'sec-header' })
   }
 
   for (const r of COMMON_HEADER) {

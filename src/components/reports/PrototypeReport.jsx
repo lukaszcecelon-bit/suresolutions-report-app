@@ -8,8 +8,10 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
+import { MicTextarea } from '../common/VoiceMic.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildPrototypePackage, buildPrototypePdf } from '../../utils/pdfGenerator.js'
 
@@ -51,6 +53,13 @@ const MAX_PARAMS = 10
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
 
+// Numer raportu auto z numeru projektu + daty (jak w serwisie), prefiks PRT-.
+function computeReportNumber(projectNumber, date) {
+  const pn = (projectNumber || '').trim()
+  if (!pn) return ''
+  return `PRT-${pn}-${date || ''}`
+}
+
 function defaultReport() {
   return {
     id: newId(),
@@ -59,8 +68,8 @@ function defaultReport() {
     createdAt: nowISO(),
     updatedAt: nowISO(),
     header: {
-      reportNumber: '', projectName: '', machineName: '',
-      date: todayISO(), author: '',
+      projectNumber: '', reportNumber: '', projectName: '', machineName: '',
+      date: todayISO(), author: getDefaultAuthor(),
     },
     info: {
       component: '', iteration: 1,
@@ -95,7 +104,17 @@ export default function PrototypeReport({ navigate, reportId }) {
   // Memoizowane źródło autouzupełniania (raz na mount, nie co render).
   const componentSug = useMemo(() => suggestComponents(), [])
 
-  const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
+  // Numer raportu liczony automatycznie z numeru projektu + daty (jak w serwisie).
+  // Pusty numer projektu → zachowaj ewentualny ręczny numer starszych raportów.
+  const updateHeader = (h) => setReport((r) => ({
+    ...r,
+    header: {
+      ...h,
+      reportNumber: (h.projectNumber || '').trim()
+        ? computeReportNumber(h.projectNumber, h.date)
+        : h.reportNumber,
+    },
+  }))
   const setInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
   const setCondField = (k, v) => setReport((r) => ({ ...r, conditions: { ...r.conditions, [k]: v } }))
 
@@ -201,7 +220,7 @@ export default function PrototypeReport({ navigate, reportId }) {
         </div>
         <div className="mt-3">
           <label className="field-label">Cel testu</label>
-          <textarea className="field-textarea"
+          <MicTextarea
             value={report.info.goal}
             onChange={(e) => setInfo('goal', e.target.value)}
             placeholder="Co chcemy zweryfikować tą iteracją?" />
@@ -218,7 +237,7 @@ export default function PrototypeReport({ navigate, reportId }) {
         <h3 className="section-title">B. Warunki testu</h3>
         <div>
           <label className="field-label">Opis setupu testowego</label>
-          <textarea className="field-textarea"
+          <MicTextarea
             value={report.conditions.setup}
             onChange={(e) => setCondField('setup', e.target.value)}
             placeholder="Jak zorganizowano test, jakie warunki, jakie urządzenia pomiarowe…" />
@@ -347,7 +366,7 @@ export default function PrototypeReport({ navigate, reportId }) {
 
       <div id="sec-d" className="card">
         <h3 className="section-title">D. Obserwacje i wnioski</h3>
-        <textarea className="field-textarea"
+        <MicTextarea
           value={report.observations}
           onChange={(e) => setReport((r) => ({ ...r, observations: e.target.value }))}
           placeholder="Co zauważyłeś, jakie hipotezy potwierdziły się / zostały obalone…" />
@@ -367,7 +386,7 @@ export default function PrototypeReport({ navigate, reportId }) {
           onChange={(k) => setReport((r) => ({ ...r, decision: k }))}
         />
         <label className="field-label mt-3">Opis decyzji / kolejne kroki</label>
-        <textarea className="field-textarea"
+        <MicTextarea
           value={report.decisionNotes}
           onChange={(e) => setReport((r) => ({ ...r, decisionNotes: e.target.value }))}
           placeholder="Co dokładnie zostanie zmienione w kolejnej iteracji / jak wdrożyć…" />

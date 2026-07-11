@@ -55,7 +55,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.38</span>
+      <span>v0.39</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>

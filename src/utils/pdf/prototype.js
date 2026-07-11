@@ -1,7 +1,7 @@
 // Raport TESTÓW PROTOTYPU — natywny tekst.
 import {
   makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
-  slugify,
+  fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge,
   drawEmpty, drawPhotoAppendix,
@@ -127,10 +127,10 @@ function buildPdf(ctx, report, photos, videos) {
   drawVideosTable(ctx, videos)
 }
 
+// Numer raportu (PRT-…-data) + numer iteracji. Datę ma już numer — nie dublujemy.
 function baseName(r) {
   const iter = r.info?.iteration || 1
-  const baseNum = (r.header?.reportNumber || 'prototyp').replace(/[^\w\-]+/g, '_')
-  return `${baseNum}_test${iter}_${r.header?.date || 'data'}`
+  return `${fileBase(r, 'prototyp')}_test${iter}`
 }
 
 const gen = makeReportGenerators(collectMedia, buildPdf, baseName)

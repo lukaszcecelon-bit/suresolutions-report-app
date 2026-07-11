@@ -19,7 +19,7 @@ const PREFIX = 'suresolutions.report.v2:'
 // i dopisz krok w migrateReport() — zamiast rozsianych po komponentach
 // "if (Array.isArray(...))". Raporty migrują się przy odczycie, a trwale
 // przy najbliższym zapisie (upsert stempluje aktualną wersję).
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 let cache = null
 
@@ -35,6 +35,7 @@ function strToRecords(v) {
 //  v0→v1: service.observations string→lista; satfat.punchlist media:[]
 //  v1→v2: service.recommendations string→lista; commissioning.observations
 //         i .conclusions string→lista (te pola stały się listami rekordów).
+//  v2→v3: satfat.conclusions string→lista rekordów.
 function migrateReport(r) {
   if (!r || typeof r !== 'object') return r
   if ((r.schemaVersion || 0) >= SCHEMA_VERSION) return r
@@ -43,8 +44,9 @@ function migrateReport(r) {
     if (!Array.isArray(m.observations)) m.observations = strToRecords(m.observations)
     if (!Array.isArray(m.recommendations)) m.recommendations = strToRecords(m.recommendations)
   }
-  if (m.type === 'satfat' && Array.isArray(m.punchlist)) {
-    m.punchlist = m.punchlist.map((p) => ({ media: [], ...p }))
+  if (m.type === 'satfat') {
+    if (Array.isArray(m.punchlist)) m.punchlist = m.punchlist.map((p) => ({ media: [], ...p }))
+    if (!Array.isArray(m.conclusions)) m.conclusions = strToRecords(m.conclusions)
   }
   if (m.type === 'commissioning') {
     if (!Array.isArray(m.observations)) m.observations = strToRecords(m.observations)
@@ -250,9 +252,17 @@ export function cloneReport(source) {
   }
 
   if (source.type === 'satfat') {
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
+    const testType = source.testType || 'fat'
     return {
       ...base,
-      testType: source.testType || 'fat',                  // keep — repeat odbioru same type
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `${testType.toUpperCase()}-${projectNumber}-${date}` : '',
+      },
+      testType,                                            // keep — repeat odbioru same type
       info: {
         client: source.info?.client || '',                 // keep — same client
         location: source.info?.location || '',             // keep — same site
@@ -270,7 +280,7 @@ export function cloneReport(source) {
       tests: [],                                            // tests are per-session — never carry over
       punchlist: [],                                        // ditto
       finalStatus: 'accepted',
-      conclusions: '',
+      conclusions: [],                                      // lista rekordów (jak w serwisie)
       signatures: { clientName: '', clientDate: '', vendorName: '', vendorDate: '' },
       media: [],
     }
@@ -298,8 +308,15 @@ export function cloneReport(source) {
   }
 
   if (source.type === 'prototype') {
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
     return {
       ...base,
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `PRT-${projectNumber}-${date}` : '',
+      },
       info: {
         component: source.info?.component || '',                 // keep — same part
         iteration: (source.info?.iteration || 1) + 1,            // bump for next iteration

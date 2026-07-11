@@ -286,9 +286,13 @@ export function nowStamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// Nazwa pliku = sam numer raportu (zawiera już prefiks-projekt-datę, np.
+// RPT-25-104-2026-07-10). Doklejanie daty dawało podwójną datę w nazwie —
+// dlatego datę dokładamy TYLKO gdy numer jest pusty (stare/ręczne raporty).
 export function fileBase(report, fallback = 'raport') {
-  const num = (report.header?.reportNumber || fallback).replace(/[^\w\-]+/g, '_')
-  return `${num}_${report.header?.date || 'data'}`
+  const num = (report.header?.reportNumber || '').replace(/[^\w\-]+/g, '_')
+  if (num) return num
+  return `${fallback}_${report.header?.date || 'data'}`
 }
 
 // ============================== SILNIK RENDERU (natywny jsPDF) ==============================

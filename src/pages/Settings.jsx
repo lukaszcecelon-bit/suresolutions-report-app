@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { loadSettings, saveSettings, getBuyerEmail, setBuyerEmailGlobal } from '../utils/settings.js'
+import { loadSettings, saveSettings, getBuyerEmail, setBuyerEmailGlobal, ROLE_OPTIONS } from '../utils/settings.js'
 import { getStorageEstimate, isStoragePersisted, persistStorage } from '../utils/imageStore.js'
 
 function formatBytes(n) {
@@ -31,6 +31,9 @@ export default function Settings({ navigate }) {
   const updateSubfolder = (v) => {
     setSettings(saveSettings({ sharepointSubfolder: v }))
   }
+  const updateAuthor = (v) => setSettings(saveSettings({ defaultAuthor: v }))
+  const updateRole = (v) => setSettings(saveSettings({ defaultRole: v }))
+  const updateStopReasons = (arr) => setSettings(saveSettings({ stopReasons: arr }))
   const updateBuyerEmail = (v) => {
     setBuyerEmailState(v)
     setBuyerEmailGlobal(v)
@@ -48,6 +51,78 @@ export default function Settings({ navigate }) {
           Zmiany zapisują się automatycznie. Ustawienia są lokalne — dotyczą tego urządzenia.
         </p>
       </div>
+
+      {/* === Domyślny autor i rola === */}
+      <section className="card">
+        <h2 className="section-title">👤 Domyślny autor i rola</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
+          Podpowiadane automatycznie w <strong>nowych</strong> raportach na tym urządzeniu —
+          ustaw raz swoje dane i nie wpisuj ich w kółko. W konkretnym raporcie można je nadpisać.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="field-label">Autor (imię i nazwisko)</label>
+            <input
+              type="text"
+              className="field-input"
+              value={settings.defaultAuthor || ''}
+              onChange={(e) => updateAuthor(e.target.value)}
+              placeholder="np. Jan Kowalski"
+            />
+          </div>
+          <div>
+            <label className="field-label">Domyślna rola (serwis)</label>
+            <select
+              className="field-input"
+              value={settings.defaultRole || ''}
+              onChange={(e) => updateRole(e.target.value)}
+            >
+              <option value="">— brak —</option>
+              {ROLE_OPTIONS.map((ro) => <option key={ro} value={ro}>{ro}</option>)}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      {/* === Powody zatrzymań (raport uruchomienia) === */}
+      <section className="card">
+        <h2 className="section-title">⏸ Powody zatrzymań maszyny</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
+          Lista wyboru w raporcie uruchomienia (przy logowaniu zatrzymania). „Inne" (własny opis)
+          jest zawsze dostępne — nie trzeba go tu dodawać.
+        </p>
+        <div className="space-y-2">
+          {(settings.stopReasons || []).map((reason, i) => (
+            <div key={i} className="flex gap-2">
+              <span className="index-badge shrink-0">{i + 1}</span>
+              <input
+                type="text"
+                className="field-input flex-1 min-w-0"
+                value={reason}
+                onChange={(e) => {
+                  const next = [...settings.stopReasons]
+                  next[i] = e.target.value
+                  updateStopReasons(next)
+                }}
+                placeholder="np. Regulacja"
+              />
+              <button
+                type="button"
+                onClick={() => updateStopReasons(settings.stopReasons.filter((_, j) => j !== i))}
+                className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0"
+                aria-label="Usuń powód"
+              >✕</button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => updateStopReasons([...(settings.stopReasons || []), ''])}
+          className="mt-2 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full"
+        >
+          + Dodaj powód
+        </button>
+      </section>
 
       {/* === Integracja SharePoint === */}
       <section className="card">

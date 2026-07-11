@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
-import { buildCommissioningPackage, buildServicePackage, buildPrototypePackage, buildSatFatPackage, buildComplaintPackage } from '../utils/pdfGenerator.js'
+import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf } from '../utils/pdfGenerator.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -111,7 +111,7 @@ function getSearchableText(r) {
     for (const s of (r.stops || [])) { push(s.comment); push(s.customReason); push(s.reason) }
   } else if (r.type === 'satfat') {
     push(r.info?.client); push(r.info?.location); push(r.info?.referenceDoc)
-    push(r.conclusions)
+    pushList(r.conclusions)   // nowy model (lista rekordów)
     for (const t of (r.tests || [])) { push(t.description); push(t.criterion); push(t.notes) }
     for (const p of (r.punchlist || [])) { push(p.description); push(p.notes) }
     for (const pp of (r.participants?.client || [])) { push(pp.name); push(pp.role) }
@@ -198,27 +198,30 @@ export default function Home({ navigate }) {
     toast.success('Raport usunięty')
   }
 
-  const PACKAGE_BUILDERS = {
-    commissioning: buildCommissioningPackage,
-    service: buildServicePackage,
-    prototype: buildPrototypePackage,
-    satfat: buildSatFatPackage,
-    complaint: buildComplaintPackage,
+  // Szybka akcja z listy = sam PDF (lekki, odbiorca otwiera od razu — zgodnie
+  // z filozofią v0.33). Pełną paczkę ZIP z oryginałami zdjęć robi się z wnętrza
+  // raportu (pasek akcji).
+  const PDF_BUILDERS = {
+    commissioning: buildCommissioningPdf,
+    service: buildServicePdf,
+    prototype: buildPrototypePdf,
+    satfat: buildSatFatPdf,
+    complaint: buildComplaintPdf,
   }
 
   const handlePdf = async (r) => {
-    const build = PACKAGE_BUILDERS[r.type]
+    const build = PDF_BUILDERS[r.type]
     if (!build) { toast.info('Pobieranie dla tego typu raportu zostanie dodane w kolejnej fazie.'); return }
     setBusyId(r.id)
     try {
       const { blob, filename } = await build(r)
       // Telefon → systemowe okno (Teams/Mail), desktop → pobranie pliku.
       if (canShareFiles()) {
-        const ok = await shareFileOrDownload(blob, filename, 'application/zip')
+        const ok = await shareFileOrDownload(blob, filename, 'application/pdf')
         if (ok) toast.success('Udostępniono')
       } else {
         downloadBlob(blob, filename)
-        toast.success('Paczka pobrana')
+        toast.success('PDF pobrany')
       }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))
@@ -598,7 +601,7 @@ export default function Home({ navigate }) {
                       disabled={isBusy}
                       onClick={() => handlePdf(r)}
                     >
-                      {isBusy ? '⏳…' : '📦 Pobierz'}
+                      {isBusy ? '⏳…' : '📄 PDF'}
                     </button>
                     <button
                       className="btn-sm bg-red-600 text-white hover:bg-red-700"

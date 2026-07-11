@@ -15,6 +15,7 @@ import {
   suggestPartNames, suggestPartCatalogNos,
 } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { getDefaultAuthor, getDefaultRole } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
 
@@ -46,6 +47,10 @@ const SECTIONS = [
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
+const nowHHMM = () => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 // Łączny czas wizyty z godzin przyjazdu/odjazdu (HH:MM). Obsługuje przejście
 // przez północ (odjazd następnego dnia). Zwraca czytelną etykietę lub null.
@@ -75,10 +80,10 @@ function defaultReport() {
       projectName: '',
       machineName: '',
       date: todayISO(),
-      author: '',
+      author: getDefaultAuthor(),   // domyślny autor z Ustawień (per urządzenie)
     },
     visit: { client: '', location: '', arrival: '', departure: '', attendees: '' },
-    role: '',               // rola serwisanta (typ pracownika)
+    role: getDefaultRole(),         // domyślna rola z Ustawień
     actions: [],
     parts: [],
     observations: [],       // lista rekordów {id, text, media}
@@ -228,15 +233,25 @@ export default function ServiceReport({ navigate, reportId }) {
           </div>
           <div className="min-w-0">
             <label className="field-label">Godzina przyjazdu</label>
-            <input type="time" className="field-input"
-              value={report.visit.arrival}
-              onChange={(e) => updateVisit('arrival', e.target.value)} />
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.visit.arrival}
+                onChange={(e) => updateVisit('arrival', e.target.value)} />
+              <button type="button" onClick={() => updateVisit('arrival', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
           </div>
           <div className="min-w-0">
             <label className="field-label">Godzina odjazdu</label>
-            <input type="time" className="field-input"
-              value={report.visit.departure}
-              onChange={(e) => updateVisit('departure', e.target.value)} />
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.visit.departure}
+                onChange={(e) => updateVisit('departure', e.target.value)} />
+              <button type="button" onClick={() => updateVisit('departure', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
           </div>
         </div>
         {totalTime && (

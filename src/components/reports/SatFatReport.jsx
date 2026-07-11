@@ -8,9 +8,11 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
+import NotesList from '../common/NotesList.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildSatFatPackage, buildSatFatPdf } from '../../utils/pdfGenerator.js'
 
@@ -58,6 +60,14 @@ const SECTIONS = [
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
 
+// Numer raportu auto z numeru projektu + daty (jak w serwisie); prefiks zależy
+// od typu odbioru: FAT-… lub SAT-…
+function computeReportNumber(projectNumber, date, testType) {
+  const pn = (projectNumber || '').trim()
+  if (!pn) return ''
+  return `${(testType || 'fat').toUpperCase()}-${pn}-${date || ''}`
+}
+
 function defaultReport() {
   return {
     id: newId(),
@@ -66,11 +76,12 @@ function defaultReport() {
     createdAt: nowISO(),
     updatedAt: nowISO(),
     header: {
+      projectNumber: '',
       reportNumber: '',
       projectName: '',
       machineName: '',
       date: todayISO(),
-      author: '',
+      author: getDefaultAuthor(),
     },
     testType: 'fat',
     info: {
@@ -85,7 +96,7 @@ function defaultReport() {
     tests: [],
     punchlist: [],
     finalStatus: 'accepted',
-    conclusions: '',
+    conclusions: [],   // lista rekordów {id, text, media} (jak w serwisie)
     signatures: {
       clientName: '',
       clientDate: '',
@@ -113,7 +124,17 @@ export default function SatFatReport({ navigate, reportId }) {
   const clientSug = useMemo(() => suggestClients(), [])
   const locationSug = useMemo(() => suggestLocations(report.info.client), [report.info.client])
 
-  const updateHeader = (h) => setReport((r) => ({ ...r, header: h }))
+  // Numer raportu auto z numeru projektu + daty; prefiks zależny od FAT/SAT.
+  // Pusty numer projektu → zachowaj ręczny numer starszych raportów.
+  const updateHeader = (h) => setReport((r) => ({
+    ...r,
+    header: {
+      ...h,
+      reportNumber: (h.projectNumber || '').trim()
+        ? computeReportNumber(h.projectNumber, h.date, r.testType)
+        : h.reportNumber,
+    },
+  }))
   const updateInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
   const updateSignature = (k, v) => setReport((r) => ({ ...r, signatures: { ...r.signatures, [k]: v } }))
 
@@ -226,7 +247,16 @@ export default function SatFatReport({ navigate, reportId }) {
         <ToggleGroup
           items={TEST_TYPE_ITEMS}
           value={report.testType}
-          onChange={(k) => setReport((r) => ({ ...r, testType: k }))}
+          onChange={(k) => setReport((r) => ({
+            ...r,
+            testType: k,
+            header: {
+              ...r.header,
+              reportNumber: (r.header.projectNumber || '').trim()
+                ? computeReportNumber(r.header.projectNumber, r.header.date, k)
+                : r.header.reportNumber,
+            },
+          }))}
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
           <div className="min-w-0">
@@ -458,11 +488,21 @@ export default function SatFatReport({ navigate, reportId }) {
       </div>
 
       <div id="sec-f" className="card">
-        <h3 className="section-title">F. Wnioski i komentarze ogólne</h3>
-        <MicTextarea
-          value={report.conclusions}
-          onChange={(e) => setReport((r) => ({ ...r, conclusions: e.target.value }))}
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-sure-dark dark:text-gray-100 mb-0">F. Wnioski i komentarze ogólne</h3>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{(report.conclusions || []).length}</span>
+        </div>
+        <NotesList
+          items={report.conclusions}
+          onChange={(v) => setReport((r) => ({ ...r, conclusions: v }))}
+          confirm={confirm}
+          addLabel="+ Dodaj wniosek / komentarz"
           placeholder="Podsumowanie odbioru — kluczowe ustalenia, dalsze kroki, harmonogram…"
+          emptyIcon="💡"
+          emptyTitle="Brak wniosków"
+          emptyHint={'Kliknij „+ Dodaj wniosek / komentarz" poniżej. Każdy wpis jest osobny.'}
+          removeConfirm="Usunąć ten wpis?"
+          newItemLabel="Nowy wniosek"
         />
       </div>
 

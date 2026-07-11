@@ -56,14 +56,14 @@ const HOW_IT_WORKS = [
     body: 'Listy (czynności, testy, usterki, punkty kontrolne…) przeciągasz za uchwyt ≡, żeby zmienić ich kolejność. Na telefonie przytrzymaj chwilę uchwyt, zanim zaczniesz przeciągać.',
   },
   {
-    icon: '📦',
-    title: 'Pobierz paczkę (PDF + media)',
-    body: 'Generuje gotowy raport PDF razem ze zdjęciami w oryginalnej rozdzielczości — wszystko w jednym pliku ZIP. Na komputerze miniaturki w PDF są klikalne i otwierają pełne zdjęcie po rozpakowaniu paczki.',
+    icon: '👁',
+    title: 'Podgląd, PDF i paczka ZIP',
+    body: '„👁 Podgląd” pokazuje gotowy raport w aplikacji (bez pobierania). „💾 Zapisz PDF na urządzenie” zapisuje sam raport (lekki, otwierany od razu — najlepszy do wysyłki). „📦 ZIP” dokłada wszystkie zdjęcia w oryginalnej rozdzielczości. Na telefonie zamiast „Zapisz” pojawia się „📲 Udostępnij” — wysyła plik wprost przez systemowe okno (Teams / Mail / Pliki).',
   },
   {
     icon: '🔁',
-    title: 'Przenoszenie między urządzeniami',
-    body: 'Bez chmury — Ty decydujesz, gdzie trafia plik. „📤 Wyślij” udostępnia paczkę przez systemowe menu (AirDrop / Mail / OneDrive). „💾 Pobierz plik” zapisuje lokalnie. Na stronie głównej: „📥 Importuj raport” wczytuje paczkę z innego urządzenia, a „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
+    title: 'Wysyłka i przenoszenie',
+    body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” tworzy paczkę do przeniesienia całego raportu (z edycją po imporcie) — na stronie głównej „📥 Importuj raport” ją wczytuje, a „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
   },
   {
     icon: '🌗',
@@ -131,6 +131,29 @@ export default function Help({ navigate }) {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="card border-sky-300 dark:border-sky-500/40 bg-sky-50/60 dark:bg-sky-900/20">
+        <h2 className="section-title">📨 Wysyłka do Teams — znane problemy</h2>
+        <div className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed space-y-2">
+          <p>
+            Jeśli przy wysyłaniu pliku do Teams na iPhone widzisz błąd
+            <strong> „Nie można przekazać pliku”</strong> — to problem po stronie
+            <strong> Teams / Microsoft 365</strong>, nie aplikacji. Teams wrzuca pliki z czatu
+            do Twojego <strong>OneDrive</strong>; jeśli OneDrive nie działa lub nie masz licencji,
+            wgrywanie się nie powiedzie.
+          </p>
+          <p className="font-medium">Co zrobić:</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Sprawdź OneDrive (onedrive.com) — czy działa i nie jest pełny.</li>
+            <li>Spróbuj wysłać ten sam plik na <strong>kanał</strong> zespołu (pliki kanału idą do SharePointa) — jeśli tam działa, problemem jest OneDrive.</li>
+            <li>Alternatywa, która działa zawsze: <strong>wyślij PDF mailem</strong> (Outlook) albo wrzuć na OneDrive i wklej link w Teams.</li>
+            <li>Teams bywa też ukryty w oknie udostępniania iOS — przewiń ikony i dotknij „Więcej”.</li>
+          </ul>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            W razie wątpliwości zgłoś adminowi M365 sprawdzenie licencji OneDrive i polityki plików w Teams.
+          </p>
         </div>
       </section>
 

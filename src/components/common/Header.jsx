@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import SuggestInput from './SuggestInput.jsx'
-import { suggestAuthors, suggestProjectNames, suggestMachineNames } from '../../utils/suggestions.js'
+import { suggestAuthors, suggestProjectNames, suggestProjectNumbers, suggestMachineNames } from '../../utils/suggestions.js'
 
 const TYPE_TITLES = {
   commissioning: 'Raport uruchomienia / obserwacji maszyny',
@@ -34,6 +34,7 @@ export default function Header({
   // Memoizujemy, żeby NIE przeliczać ich przy każdym renderze (czyli przy każdym
   // wciśnięciu klawisza w formularzu) — tylko raz na mount / przy zmianie projektu.
   const projectNameSug = useMemo(() => suggestProjectNames(), [])
+  const projectNumberSug = useMemo(() => suggestProjectNumbers(), [])
   const machineNameSug = useMemo(() => suggestMachineNames(header.projectName), [header.projectName])
   const authorSug = useMemo(() => suggestAuthors(), [])
 
@@ -41,7 +42,10 @@ export default function Header({
   // projektu, a numer raportu generuje się automatycznie (RPT-/URU-{nr}-{data}).
   // Wartość auto jest liczona w updateHeader danej strony i trzymana w
   // header.reportNumber — tu tylko ją pokazujemy jako podgląd.
-  const autoNumber = reportType === 'service' || reportType === 'commissioning'
+  // Wszystkie typy używające Header (serwis/uruchomienie/prototyp/SAT-FAT)
+  // wpisują numer projektu → numer raportu liczony automatycznie (RPT-/URU-/
+  // PRT-/FAT-/SAT-). Reklamacja ma własny formularz i nie korzysta z Header.
+  const autoNumber = ['service', 'commissioning', 'prototype', 'satfat'].includes(reportType)
 
   return (
     <div className="space-y-3">
@@ -62,10 +66,11 @@ export default function Header({
           {autoNumber ? (
             <div className="min-w-0">
               <label className="field-label field-required">Numer projektu</label>
-              <input
+              <SuggestInput
                 type="text"
                 className="field-input"
                 placeholder="np. 2025-104"
+                suggestions={projectNumberSug}
                 value={header.projectNumber || ''}
                 onChange={(e) => set('projectNumber', e.target.value)}
               />

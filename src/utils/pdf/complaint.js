@@ -3,7 +3,7 @@
 // główny dowód dla dostawcy — nie małe miniaturki.
 import {
   makeReportGenerators, mediaCollector, buildLinkMaps, evidenceDescriptors,
-  slugify,
+  fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTextBlock,
   drawEvidencePhotos, drawBlockerBanner, drawEmpty,
 } from './core.js'
@@ -44,14 +44,10 @@ function buildPdf(ctx, report, photos) {
   }
 }
 
-function baseName(r) {
-  const baseNum = (r.header?.reportNumber || 'reklamacja').replace(/[^\w\-]+/g, '_')
-  return `${baseNum}_${r.header?.date || 'data'}`
-}
-
+// Numer reklamacji (REK-…-data) używany wprost jako nazwa pliku (bez podwójnej daty).
 // Buildery { blob, filename } (bez pobierania). PDF ma duże zdjęcia-dowody
 // osadzone w treści (odbiorca otwiera jeden plik); ZIP dokłada zdjęcia w pełnej
 // rozdzielczości. Używane przez useReportPage ORAZ wysyłkę do zakupowca.
-const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
+const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r, 'reklamacja'))
 export const buildComplaintPdf = gen.pdf
 export const buildComplaintPackage = gen.pkg

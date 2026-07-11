@@ -1,7 +1,7 @@
 // Raport ODBIORU SAT / FAT — natywny tekst (najbogatszy typ).
 import {
   makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
-  slugify,
+  fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawSubLabel, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge,
   drawVideosTable, drawEmpty, drawPhotoAppendix,
@@ -44,8 +44,25 @@ function collectMedia(report) {
     const descSlug = p.description ? '_' + slugify(p.description) : ''
     push(p.media, ctxLabel, `Usterka-${idx + 1}_${PUNCH_SLUGS[p.priority] || 'X'}${descSlug}`)
   })
+  ;(Array.isArray(report.conclusions) ? report.conclusions : []).forEach((o, idx) => {
+    push(o.media, `Wniosek #${idx + 1}`, `Wniosek-${idx + 1}`)
+  })
   push(report.media, 'Dokumentacja ogólna', 'Dokumentacja-ogolna')
   return finalize()
+}
+
+// Sekcja wniosków jako lista rekordów {text, media} — spójnie z serwisem/uruchomieniem.
+function notesSection(ctx, records, photoMap) {
+  const list = Array.isArray(records) ? records : []
+  if (!list.length) { drawEmpty(ctx, 'Brak wpisów.'); return }
+  drawTable(ctx, {
+    columns: [
+      { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
+      { header: 'Wniosek / komentarz', dataKey: 'text', width: ctx.contentW - 12 },
+    ],
+    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+    thumbsCol: 'text', thumbsKey: '_thumbs',
+  })
 }
 
 function participantsTable(ctx, list) {
@@ -148,8 +165,9 @@ function buildPdf(ctx, report, photos, videos) {
   drawSectionHeader(ctx, 'E. Status końcowy odbioru')
   drawBadge(ctx, finalBadge.text, finalBadge.kind, true)
 
-  drawSectionHeader(ctx, 'F. Wnioski i komentarze')
-  drawTextBlock(ctx, report.conclusions)
+  const conclusions = Array.isArray(report.conclusions) ? report.conclusions : []
+  drawSectionHeader(ctx, `F. Wnioski i komentarze (${conclusions.length})`)
+  notesSection(ctx, conclusions, photoMap)
 
   drawSectionHeader(ctx, 'G. Podpisy stron', 32)
   drawSignatures(ctx,
@@ -168,12 +186,7 @@ function buildPdf(ctx, report, photos, videos) {
   drawVideosTable(ctx, videos)
 }
 
-function baseName(r) {
-  const typeTag = (r.testType || 'fat').toUpperCase()
-  const baseNum = (r.header?.reportNumber || 'odbior').replace(/[^\w\-]+/g, '_')
-  return `${baseNum}_${typeTag}_${r.header?.date || 'data'}`
-}
-
-const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
+// Numer raportu zawiera już prefiks FAT-/SAT- i datę → używamy go wprost.
+const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r, 'odbior'))
 export const buildSatFatPdf = gen.pdf
 export const buildSatFatPackage = gen.pkg
