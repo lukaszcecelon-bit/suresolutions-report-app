@@ -342,5 +342,28 @@ export function cloneReport(source) {
     }
   }
 
+  if (source.type === 'lesson') {
+    // Lekcja projektowa: zachowujemy projekt/maszynę/etap/kategorię (zwykle ten
+    // sam kontekst), czyścimy sam opis błędu, skutek i wnioski.
+    const projectNumber = source.header?.projectNumber || ''
+    const date = todayISO()
+    return {
+      ...base,
+      header: {
+        ...base.header,
+        projectNumber,
+        reportNumber: projectNumber ? `LL-${projectNumber}-${date}` : '',
+      },
+      drawingNo: source.drawingNo || '',   // keep — zwykle ten sam rysunek/DTR
+      stage: source.stage || '',           // keep — ten sam etap wykrycia
+      category: source.category || '',     // keep — zwykle ta sama kategoria
+      severity: '',                        // reset — nowa lekcja
+      problem: '',
+      problemMedia: [],
+      impact: '',
+      lessons: [],                         // rekordy {id,text,media}
+    }
+  }
+
   return base
 }

@@ -36,6 +36,13 @@ const TYPES = [
     desc: 'Szybkie zgłoszenie wadliwej części — zdjęcie + dane, PDF do zakupowca.',
     path: 'complaint',
   },
+  {
+    key: 'lesson',
+    icon: '🎓',
+    title: 'Lekcja projektowa (feedback do konstrukcji)',
+    desc: 'Błąd projektowy z terenu → wniosek dla konstrukcji. Rejestr Lessons Learned z eksportem do Excela.',
+    path: 'lesson',
+  },
 ]
 
 export default function NewReport({ navigate }) {

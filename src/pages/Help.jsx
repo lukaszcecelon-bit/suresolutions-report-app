@@ -31,6 +31,11 @@ const REPORT_TYPES = [
     name: 'Reklamacja / zgłoszenie wady',
     desc: 'Szybkie zgłoszenie wady części do dostawcy: zdjęcie wady, kategoria, opis, znacznik „blokuje montaż". Appka przygotowuje paczkę i gotowy mail do zakupowca.',
   },
+  {
+    icon: '🎓',
+    name: 'Lekcja projektowa (feedback do konstrukcji)',
+    desc: 'Błąd projektowy wykryty w terenie → wniosek dla konstrukcji (Lessons Learned): opis błędu, kategoria, istotność, skutek i rekomendacja na przyszłość. Wszystkie lekcje eksportujesz jednym kliknięciem do arkusza Excel — to filtrowalny rejestr.',
+  },
 ]
 
 // Sekcje „jak to działa" — krótkie, skanowalne.

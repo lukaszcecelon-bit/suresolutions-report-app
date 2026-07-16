@@ -7,6 +7,7 @@
 //   prototype.js     — raport testów prototypu
 //   satfat.js        — raport odbioru SAT / FAT
 //   complaint.js     — zgłoszenie wady / reklamacja
+//   lesson.js        — lekcja projektowa (feedback do konstrukcji / Lessons Learned)
 // Importerzy (strony raportów, Home, App-warmup) używają wyłącznie tego pliku.
 // Buildery zwracają { blob, filename } (bez pobierania). useReportPage decyduje:
 // pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
@@ -16,3 +17,4 @@ export { buildServicePackage, buildServicePdf } from './pdf/service.js'
 export { buildPrototypePackage, buildPrototypePdf } from './pdf/prototype.js'
 export { buildSatFatPackage, buildSatFatPdf } from './pdf/satfat.js'
 export { buildComplaintPackage, buildComplaintPdf } from './pdf/complaint.js'
+export { buildLessonPackage, buildLessonPdf } from './pdf/lesson.js'

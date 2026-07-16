@@ -34,6 +34,7 @@ export default function Settings({ navigate }) {
   const updateAuthor = (v) => setSettings(saveSettings({ defaultAuthor: v }))
   const updateRole = (v) => setSettings(saveSettings({ defaultRole: v }))
   const updateStopReasons = (arr) => setSettings(saveSettings({ stopReasons: arr }))
+  const updateLessonCategories = (arr) => setSettings(saveSettings({ lessonCategories: arr }))
   const updateBuyerEmail = (v) => {
     setBuyerEmailState(v)
     setBuyerEmailGlobal(v)
@@ -121,6 +122,46 @@ export default function Settings({ navigate }) {
           className="mt-2 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full"
         >
           + Dodaj powód
+        </button>
+      </section>
+
+      {/* === Kategorie błędu (lekcja projektowa) === */}
+      <section className="card">
+        <h2 className="section-title">🎓 Kategorie błędu (lekcja projektowa)</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
+          Lista wyboru w raporcie „Lekcja projektowa". To po niej (obok istotności)
+          filtrujesz rejestr lekcji w Excelu. „Inne" jest zawsze dostępne — nie trzeba go dodawać.
+        </p>
+        <div className="space-y-2">
+          {(settings.lessonCategories || []).map((cat, i) => (
+            <div key={i} className="flex gap-2">
+              <span className="index-badge shrink-0">{i + 1}</span>
+              <input
+                type="text"
+                className="field-input flex-1 min-w-0"
+                value={cat}
+                onChange={(e) => {
+                  const next = [...settings.lessonCategories]
+                  next[i] = e.target.value
+                  updateLessonCategories(next)
+                }}
+                placeholder="np. Dobór komponentu"
+              />
+              <button
+                type="button"
+                onClick={() => updateLessonCategories(settings.lessonCategories.filter((_, j) => j !== i))}
+                className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0"
+                aria-label="Usuń kategorię"
+              >✕</button>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => updateLessonCategories([...(settings.lessonCategories || []), ''])}
+          className="mt-2 btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-full"
+        >
+          + Dodaj kategorię
         </button>
       </section>
 

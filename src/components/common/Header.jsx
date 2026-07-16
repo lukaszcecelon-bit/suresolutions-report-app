@@ -7,6 +7,7 @@ const TYPE_TITLES = {
   service: 'Raport serwisu na obiekcie',
   prototype: 'Raport testów prototypu',
   satfat: 'Raport odbioru SAT / FAT',
+  lesson: 'Lekcja projektowa — feedback do konstrukcji',
 }
 
 const TYPE_ICONS = {
@@ -14,6 +15,7 @@ const TYPE_ICONS = {
   service: '🔧',
   prototype: '🧪',
   satfat: '📋',
+  lesson: '🎓',
 }
 
 // `requiredFields` (default: all) — which header fields are validated as required.
@@ -45,7 +47,7 @@ export default function Header({
   // Wszystkie typy używające Header (serwis/uruchomienie/prototyp/SAT-FAT)
   // wpisują numer projektu → numer raportu liczony automatycznie (RPT-/URU-/
   // PRT-/FAT-/SAT-). Reklamacja ma własny formularz i nie korzysta z Header.
-  const autoNumber = ['service', 'commissioning', 'prototype', 'satfat'].includes(reportType)
+  const autoNumber = ['service', 'commissioning', 'prototype', 'satfat', 'lesson'].includes(reportType)
 
   return (
     <div className="space-y-3">

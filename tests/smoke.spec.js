@@ -108,6 +108,51 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
   expect(zip.suggestedFilename()).toMatch(/\.zip$/)
 })
 
+test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({ page }) => {
+  // Lekcja z kompletem wymaganych pól (opis + kategoria + ≥1 wniosek) — bez
+  // modala walidacji. Seed przez localStorage; brak mediów = brak IndexedDB.
+  const report = {
+    id: 'r_lesson_test', type: 'lesson', status: 'draft', schemaVersion: 3,
+    createdAt: '2026-06-19T08:00:00.000Z', updatedAt: '2026-06-19T08:00:00.000Z',
+    header: { reportNumber: 'LL-99-990-2026-06-19', projectNumber: '99-990', projectName: 'Projekt', machineName: 'Podajnik', date: '2026-06-19', author: 'Jan' },
+    drawingNo: 'RYS-1', stage: 'Uruchomienie', category: 'Dobór komponentu', severity: 'critical',
+    problem: 'Zbyt mały prześwit prowadnicy — detal się blokuje.', problemMedia: [],
+    impact: 'Przestój 2h, przeróbka.',
+    lessons: [{ id: 'l1', text: 'Zwiększyć prześwit o 0,5 mm.', media: [] }],
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, report)
+
+  // --- 1) Karta PDF lekcji: natywny tekst + polskie znaki ---
+  await page.goto('/#/lesson/r_lesson_test')
+  await page.waitForTimeout(400)
+  const dlPdf = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: /Zapisz PDF/ }).click()
+  const skip = page.getByRole('button', { name: 'Pobierz mimo to' })
+  if (await skip.isVisible().catch(() => false)) await skip.click()
+  const pdf = await dlPdf
+  expect(pdf.suggestedFilename()).toMatch(/LL-99-990.*\.pdf$/)
+
+  const pdfBuf = await fs.readFile(await pdf.path())
+  const parser = new PDFParse({ data: new Uint8Array(pdfBuf) })
+  const pdfData = await parser.getText()
+  await parser.destroy()
+  expect(pdfData.text).toContain('LL-99-990')
+  expect(pdfData.text).toContain('KONSTRUKCJI')     // tytuł/sekcja jako tekst
+  expect(pdfData.text).toMatch(/[ĄĆĘŁŃÓŚŻŹ]/)        // polskie znaki (BŁĘDU)
+
+  // --- 2) Eksport REJESTRU lekcji do XLSX z Home ---
+  await page.goto('/#/')
+  const dlXlsx = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: /Rejestr lekcji/ }).click()
+  const xlsx = await dlXlsx
+  expect(xlsx.suggestedFilename()).toMatch(/rejestr-lekcji.*\.xlsx$/)
+  // XLSX to archiwum ZIP — sygnatura „PK" na starcie pliku.
+  const xlsxBuf = await fs.readFile(await xlsx.path())
+  expect(xlsxBuf.subarray(0, 2).toString('latin1')).toBe('PK')
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()

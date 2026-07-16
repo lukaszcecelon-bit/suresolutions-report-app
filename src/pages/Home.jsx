@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
-import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf } from '../utils/pdfGenerator.js'
+import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf, buildLessonPdf } from '../utils/pdfGenerator.js'
+import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -11,6 +12,7 @@ const TYPE_LABELS = {
   prototype: 'Testy prototypu / podzespołu',
   satfat: 'SAT / FAT — odbiór maszyny',
   complaint: 'Reklamacja / zgłoszenie wady',
+  lesson: 'Lekcja projektowa (feedback do konstrukcji)',
 }
 
 const TYPE_ICONS = {
@@ -19,6 +21,7 @@ const TYPE_ICONS = {
   prototype: '🧪',
   satfat: '📋',
   complaint: '🚩',
+  lesson: '🎓',
 }
 
 const TYPE_FILTER_ITEMS = [
@@ -27,6 +30,7 @@ const TYPE_FILTER_ITEMS = [
   { key: 'prototype',     label: '🧪 Prototyp' },
   { key: 'satfat',        label: '📋 SAT/FAT' },
   { key: 'complaint',     label: '🚩 Reklamacja' },
+  { key: 'lesson',        label: '🎓 Lekcja' },
 ]
 
 const STATUS_FILTER_ITEMS = [
@@ -116,6 +120,9 @@ function getSearchableText(r) {
     for (const p of (r.punchlist || [])) { push(p.description); push(p.notes) }
     for (const pp of (r.participants?.client || [])) { push(pp.name); push(pp.role) }
     for (const pp of (r.participants?.vendor || [])) { push(pp.name); push(pp.role) }
+  } else if (r.type === 'lesson') {
+    push(r.stage); push(r.category); push(r.drawingNo); push(r.problem); push(r.impact)
+    pushList(r.lessons)       // wnioski (lista rekordów)
   }
   return normalize(parts.join(' '))
 }
@@ -133,6 +140,7 @@ export default function Home({ navigate }) {
   const [statusFilter, setStatusFilter] = useState(new Set())
   const [importFile, setImportFile] = useState(null)        // wybrany .suresync do importu (modal)
   const [backupBusy, setBackupBusy] = useState(false)
+  const [xlsxBusy, setXlsxBusy] = useState(false)           // eksport rejestru lekcji do XLSX
   // Tryb zaznaczania (multi-select): checkboxy na kartach + pasek akcji
   // zbiorczych (eksport zaznaczonych / usuń zaznaczone) na dole.
   const [selectMode, setSelectMode] = useState(false)
@@ -188,6 +196,22 @@ export default function Home({ navigate }) {
     }
   }
 
+  // Eksport REJESTRU lekcji projektowych do XLSX (jeden wiersz = jedna lekcja).
+  // To jest filtrowalna „baza" — sortowanie/filtry/tabela przestawna w Excelu.
+  const handleExportRegister = async () => {
+    setXlsxBusy(true)
+    try {
+      const { blob, filename, count } = await buildLessonRegisterXlsx(reports)
+      await shareOrDownload(blob, filename, `Rejestr lekcji projektowych (${count})`)
+      toast.success(`Rejestr gotowy — ${count} ${count === 1 ? 'lekcja' : count < 5 ? 'lekcje' : 'lekcji'}`)
+    } catch (e) {
+      if (e.code === 'EMPTY') toast.info('Brak lekcji projektowych do eksportu')
+      else toast.error('Błąd eksportu: ' + (e.message || e))
+    } finally {
+      setXlsxBusy(false)
+    }
+  }
+
   const handleDelete = async (r) => {
     const ok = await confirm(`Usunąć raport „${r.header?.reportNumber || 'bez numeru'}"? Tej operacji nie można cofnąć.`, {
       title: 'Usunięcie raportu', variant: 'danger', confirmLabel: 'Usuń'
@@ -207,6 +231,7 @@ export default function Home({ navigate }) {
     prototype: buildPrototypePdf,
     satfat: buildSatFatPdf,
     complaint: buildComplaintPdf,
+    lesson: buildLessonPdf,
   }
 
   const handlePdf = async (r) => {
@@ -236,6 +261,7 @@ export default function Home({ navigate }) {
     else if (r.type === 'prototype') navigate(`prototype/${r.id}`)
     else if (r.type === 'satfat') navigate(`satfat/${r.id}`)
     else if (r.type === 'complaint') navigate(`complaint/${r.id}`)
+    else if (r.type === 'lesson') navigate(`lesson/${r.id}`)
     else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
   }
 
@@ -297,6 +323,7 @@ export default function Home({ navigate }) {
     else if (fresh.type === 'prototype') navigate(`prototype/${fresh.id}`)
     else if (fresh.type === 'satfat') navigate(`satfat/${fresh.id}`)
     else if (fresh.type === 'complaint') navigate(`complaint/${fresh.id}`)
+    else if (fresh.type === 'lesson') navigate(`lesson/${fresh.id}`)
   }
 
   // STAŁA kolejność: wg daty UTWORZENIA (najnowsze na górze), NIE wg updatedAt.
@@ -393,6 +420,16 @@ export default function Home({ navigate }) {
           onChange={handleImportFileChange}
           className="hidden"
         />
+        {reports.some((r) => r.type === 'lesson') && (
+          <button
+            onClick={handleExportRegister}
+            disabled={xlsxBusy}
+            className="w-full btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+            title="Eksportuj wszystkie lekcje projektowe do arkusza Excel (filtrowalny rejestr)"
+          >
+            {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr lekcji → Excel (XLSX)'}
+          </button>
+        )}
       </section>
 
       {/* Statystyki bieżącego miesiąca — kompaktowy pasek nad listą */}

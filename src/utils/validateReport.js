@@ -78,6 +78,12 @@ export function validateReport(report) {
     if (isEmpty(report.tests))          missing.push({ label: 'Co najmniej 1 test (sekcja C)', sectionId: 'sec-c' })
   }
 
+  if (report.type === 'lesson') {
+    if (isEmpty(report.problem))  missing.push({ label: 'Opis błędu (sekcja B)',         sectionId: 'sec-b' })
+    if (isEmpty(report.category)) missing.push({ label: 'Kategoria błędu (sekcja C)',    sectionId: 'sec-c' })
+    if (isEmpty(report.lessons))  missing.push({ label: 'Co najmniej 1 wniosek (sekcja E)', sectionId: 'sec-e' })
+  }
+
   return { ok: missing.length === 0, missing }
 }
 

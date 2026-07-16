@@ -24,6 +24,40 @@ export const DEFAULT_STOP_REASONS = [
   'Awaria mechaniczna',
 ]
 
+// Lekcja projektowa (feedback do konstrukcji). Kategoria błędu klasyfikuje wpis
+// w rejestrze — to ona (obok istotności) czyni bazę filtrowalną. Konfigurowalna
+// w Ustawieniach; „Inne" NIE jest tu trzymane (komponent zawsze je dokleja).
+export const DEFAULT_LESSON_CATEGORIES = [
+  'Mechanika',
+  'Elektryka',
+  'Pneumatyka / hydraulika',
+  'Sterowanie / PLC',
+  'Dobór komponentu',
+  'Tolerancje / pasowania',
+  'Ergonomia serwisu',
+  'Dokumentacja',
+  'Bezpieczeństwo',
+]
+
+// Istotność błędu (klucz → etykieta). Klucz zapisujemy w danych, etykietę
+// pokazujemy i eksportujemy do XLSX.
+export const LESSON_SEVERITIES = [
+  { key: 'critical', label: 'Krytyczny' },
+  { key: 'major', label: 'Poważny' },
+  { key: 'minor', label: 'Drobny' },
+]
+
+// Etap, na którym wykryto błąd — spina lekcję z resztą typów raportów.
+export const LESSON_STAGES = [
+  'Projekt',
+  'Prototyp',
+  'Montaż',
+  'Uruchomienie',
+  'Serwis',
+  'SAT / FAT',
+  'U klienta',
+]
+
 const DEFAULTS = {
   // Podfolder w KAŻDYM folderze projektu, do którego trafią raporty z aplikacji
   // po podłączeniu SharePointa. Decyzja użytkownika: na razie „08. Notesy"
@@ -35,6 +69,8 @@ const DEFAULTS = {
   defaultRole: '',
   // Konfigurowalne powody zatrzymania (raport uruchomienia).
   stopReasons: DEFAULT_STOP_REASONS,
+  // Konfigurowalne kategorie błędu (lekcja projektowa).
+  lessonCategories: DEFAULT_LESSON_CATEGORIES,
 }
 
 // Autor/rola do prefilla nowych raportów.
@@ -45,6 +81,12 @@ export function getDefaultRole() { return loadSettings().defaultRole || '' }
 export function getStopReasons() {
   const s = loadSettings().stopReasons
   return Array.isArray(s) && s.length ? s.filter((x) => (x || '').trim()) : DEFAULT_STOP_REASONS
+}
+
+// Lista kategorii błędu dla lekcji projektowej (bez „Inne"); pusta → domyślna.
+export function getLessonCategories() {
+  const s = loadSettings().lessonCategories
+  return Array.isArray(s) && s.length ? s.filter((x) => (x || '').trim()) : DEFAULT_LESSON_CATEGORIES
 }
 
 export function loadSettings() {
