@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
 import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf, buildLessonPdf } from '../utils/pdfGenerator.js'
 import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
+import { LESSON_SEVERITIES } from '../utils/settings.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -138,6 +139,10 @@ export default function Home({ navigate }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState(new Set())
   const [statusFilter, setStatusFilter] = useState(new Set())
+  // Podfiltry rejestru lekcji (kategoria + istotność) — widoczne tylko gdy
+  // aktywny filtr typu „Lekcja"; pozwalają przeglądać rejestr wprost w apce.
+  const [categoryFilter, setCategoryFilter] = useState(new Set())
+  const [severityFilter, setSeverityFilter] = useState(new Set())
   const [importFile, setImportFile] = useState(null)        // wybrany .suresync do importu (modal)
   const [backupBusy, setBackupBusy] = useState(false)
   const [xlsxBusy, setXlsxBusy] = useState(false)           // eksport rejestru lekcji do XLSX
@@ -198,14 +203,16 @@ export default function Home({ navigate }) {
 
   // Eksport REJESTRU lekcji projektowych do XLSX (jeden wiersz = jedna lekcja).
   // To jest filtrowalna „baza" — sortowanie/filtry/tabela przestawna w Excelu.
-  const handleExportRegister = async () => {
+  // `subset` (opcjonalny) — eksport tylko z zaznaczonych raportów (multi-select);
+  // brak = wszystkie raporty. buildLessonRegisterXlsx i tak bierze same lekcje.
+  const handleExportRegister = async (subset) => {
     setXlsxBusy(true)
     try {
-      const { blob, filename, count } = await buildLessonRegisterXlsx(reports)
+      const { blob, filename, count } = await buildLessonRegisterXlsx(subset || reports)
       await shareOrDownload(blob, filename, `Rejestr lekcji projektowych (${count})`)
       toast.success(`Rejestr gotowy — ${count} ${count === 1 ? 'lekcja' : count < 5 ? 'lekcje' : 'lekcji'}`)
     } catch (e) {
-      if (e.code === 'EMPTY') toast.info('Brak lekcji projektowych do eksportu')
+      if (e.code === 'EMPTY') toast.info(subset ? 'Wśród zaznaczonych nie ma lekcji projektowych' : 'Brak lekcji projektowych do eksportu')
       else toast.error('Błąd eksportu: ' + (e.message || e))
     } finally {
       setXlsxBusy(false)
@@ -351,6 +358,24 @@ export default function Home({ navigate }) {
     return id
   }, [reports])
 
+  // Kategorie faktycznie występujące w lekcjach (do chipów rejestru) — zwykle
+  // kilka, więc chipy zamiast długiej listy wszystkich możliwych kategorii.
+  const lessonFilterActive = typeFilter.has('lesson')
+  const presentCategories = useMemo(() => {
+    const set = new Set()
+    for (const r of reports) if (r.type === 'lesson' && r.category) set.add(r.category)
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pl'))
+  }, [reports])
+
+  // Gdy wyłączysz filtr „Lekcja", wyczyść podfiltry rejestru — żeby nie zostały
+  // „ukryte" aktywne filtry (kategoria/istotność) bez widocznych chipów.
+  useEffect(() => {
+    if (!lessonFilterActive) {
+      setCategoryFilter((s) => (s.size ? new Set() : s))
+      setSeverityFilter((s) => (s.size ? new Set() : s))
+    }
+  }, [lessonFilterActive])
+
   // Apply search + filters
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
@@ -359,10 +384,13 @@ export default function Home({ navigate }) {
       const isCompleted = r.status === 'completed'
       const statusKey = isCompleted ? 'completed' : 'draft'
       if (statusFilter.size > 0 && !statusFilter.has(statusKey)) return false
+      // Podfiltry rejestru — zawężają WYŁĄCZNIE do pasujących lekcji.
+      if (categoryFilter.size > 0 && !(r.type === 'lesson' && categoryFilter.has(r.category))) return false
+      if (severityFilter.size > 0 && !(r.type === 'lesson' && severityFilter.has(r.severity))) return false
       if (q && !getSearchableText(r).includes(q)) return false
       return true
     })
-  }, [sorted, query, typeFilter, statusFilter])
+  }, [sorted, query, typeFilter, statusFilter, categoryFilter, severityFilter])
 
   // Statystyki bieżącego miesiąca (F3) — przeliczane tylko przy zmianie listy.
   const stats = useMemo(() => monthStats(reports), [reports])
@@ -371,6 +399,13 @@ export default function Home({ navigate }) {
     const next = new Set(set)
     if (next.has(key)) next.delete(key); else next.add(key)
     setter(next)
+  }
+
+  // Reset wszystkich filtrów (wyszukiwarka + typ + status + podfiltry rejestru).
+  const clearAllFilters = () => {
+    setQueryInput(''); setQuery('')
+    setTypeFilter(new Set()); setStatusFilter(new Set())
+    setCategoryFilter(new Set()); setSeverityFilter(new Set())
   }
 
   const fmtUpdated = (iso) => {
@@ -382,7 +417,7 @@ export default function Home({ navigate }) {
     return d.toISOString().slice(0, 10)
   }
 
-  const hasFiltersActive = query.trim() || typeFilter.size > 0 || statusFilter.size > 0
+  const hasFiltersActive = query.trim() || typeFilter.size > 0 || statusFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0
 
   return (
     <div className="space-y-6">
@@ -422,7 +457,7 @@ export default function Home({ navigate }) {
         />
         {reports.some((r) => r.type === 'lesson') && (
           <button
-            onClick={handleExportRegister}
+            onClick={() => handleExportRegister()}
             disabled={xlsxBusy}
             className="w-full btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
             title="Eksportuj wszystkie lekcje projektowe do arkusza Excel (filtrowalny rejestr)"
@@ -535,13 +570,63 @@ export default function Home({ navigate }) {
               })}
               {hasFiltersActive && (
                 <button
-                  onClick={() => { setQueryInput(''); setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+                  onClick={clearAllFilters}
                   className="ml-auto text-xs text-sure-blue px-2 py-1.5 hover:underline"
                 >
                   Wyczyść filtry
                 </button>
               )}
             </div>
+
+            {/* Podfiltry rejestru lekcji — widoczne tylko przy aktywnym filtrze
+                „Lekcja". Zamieniają Home w przeglądarkę rejestru: kategoria +
+                istotność. Kategorie brane z danych (te faktycznie użyte). */}
+            {lessonFilterActive && (
+              <div className="flex flex-wrap gap-1.5 items-center pl-1 border-l-2 border-sure-blue/30">
+                <span className="text-xs text-gray-500 dark:text-gray-400 pl-1.5">🎓 Rejestr:</span>
+                {presentCategories.map((cat) => {
+                  const active = categoryFilter.has(cat)
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => toggleFilter(categoryFilter, setCategoryFilter, cat)}
+                      className={
+                        'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                        (active
+                          ? 'bg-sure-blue text-white border-transparent'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
+                      }
+                    >
+                      {cat}
+                    </button>
+                  )
+                })}
+                {presentCategories.length > 0 && <span className="w-px self-stretch bg-gray-200 dark:bg-gray-700 mx-1" />}
+                {LESSON_SEVERITIES.map((s) => {
+                  const active = severityFilter.has(s.key)
+                  const activeCls = s.key === 'critical'
+                    ? 'bg-red-600 text-white border-transparent'
+                    : s.key === 'major'
+                      ? 'bg-amber-500 text-white border-transparent'
+                      : 'bg-gray-500 text-white border-transparent'
+                  return (
+                    <button
+                      key={s.key}
+                      onClick={() => toggleFilter(severityFilter, setSeverityFilter, s.key)}
+                      className={
+                        'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                        (active
+                          ? activeCls
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
+                      }
+                    >
+                      {s.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <div className="text-xs text-gray-500 dark:text-gray-400">
               {filtered.length === sorted.length
                 ? `${sorted.length} ${sorted.length === 1 ? 'raport' : sorted.length < 5 ? 'raporty' : 'raportów'}`
@@ -558,7 +643,7 @@ export default function Home({ navigate }) {
         ) : filtered.length === 0 ? (
           <div className="card text-center text-gray-500 dark:text-gray-400">
             Nic nie pasuje do bieżących filtrów. Zmień zapytanie lub
-            <button onClick={() => { setQueryInput(''); setQuery(''); setTypeFilter(new Set()); setStatusFilter(new Set()) }}
+            <button onClick={clearAllFilters}
               className="ml-1 text-sure-blue underline">wyczyść filtry</button>.
           </div>
         ) : (
@@ -675,6 +760,14 @@ export default function Home({ navigate }) {
                   title="Eksportuj zaznaczone raporty do jednej paczki"
                 >
                   {backupBusy ? '⏳ Pakowanie…' : '📦 Eksportuj'}
+                </button>
+                <button
+                  onClick={() => handleExportRegister(filtered.filter((r) => selectedIds.has(r.id)))}
+                  disabled={selectedIds.size === 0 || xlsxBusy}
+                  className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 disabled:opacity-40"
+                  title="Eksportuj rejestr XLSX tylko z zaznaczonych lekcji"
+                >
+                  {xlsxBusy ? '⏳ Arkusz…' : '📊 Rejestr'}
                 </button>
                 <button
                   onClick={handleBulkDelete}
