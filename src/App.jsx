@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import Home from './pages/Home.jsx'
+import Start from './pages/Start.jsx'
+import Reports from './pages/Reports.jsx'
 import NewReport from './pages/NewReport.jsx'
 import Help from './pages/Help.jsx'
 import Settings from './pages/Settings.jsx'
@@ -10,6 +11,7 @@ import SatFatReport from './components/reports/SatFatReport.jsx'
 import ComplaintReport from './components/reports/ComplaintReport.jsx'
 import LessonReport from './components/reports/LessonReport.jsx'
 import InstallPrompt from './components/common/InstallPrompt.jsx'
+import TabBar, { TAB_ROUTES } from './components/common/TabBar.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import OnboardingTour from './components/common/OnboardingTour.jsx'
 import { ToastProvider, useToast } from './components/common/Toast.jsx'
@@ -56,7 +58,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.41</span>
+      <span>v0.42</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
@@ -102,7 +104,8 @@ function AppShell() {
   const navigate = (path) => { window.location.hash = path }
 
   let page
-  if (route.name === 'home') page = <Home navigate={navigate} />
+  if (route.name === 'home') page = <Start navigate={navigate} />
+  else if (route.name === 'reports') page = <Reports navigate={navigate} />
   else if (route.name === 'new') page = <NewReport navigate={navigate} />
   else if (route.name === 'commissioning') page = <CommissioningReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'service') page = <ServiceReport navigate={navigate} reportId={route.id} />
@@ -112,10 +115,17 @@ function AppShell() {
   else if (route.name === 'lesson') page = <LessonReport navigate={navigate} reportId={route.id} />
   else if (route.name === 'help') page = <Help navigate={navigate} />
   else if (route.name === 'settings') page = <Settings navigate={navigate} />
-  else page = <Home navigate={navigate} />
+  else page = <Start navigate={navigate} />
+
+  // Dolny pasek tylko na ekranach najwyższego poziomu — formularze raportów
+  // go chowają (drill-down; klawiatura + pasek akcji potrzebują miejsca).
+  const showTabs = TAB_ROUTES.includes(route.name)
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div
+      className="min-h-full flex flex-col"
+      style={{ paddingBottom: showTabs ? 'calc(3.75rem + env(safe-area-inset-bottom))' : undefined }}
+    >
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-30">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <button
@@ -135,14 +145,7 @@ function AppShell() {
             >
               ⚙️
             </button>
-            <button
-              onClick={() => navigate('help')}
-              className="text-gray-500 dark:text-gray-300 hover:text-sure-blue hover:bg-gray-100 dark:hover:bg-gray-700 w-8 h-8 rounded-full transition flex items-center justify-center text-sm font-bold border border-gray-300 dark:border-gray-600"
-              title="Pomoc — jak działa aplikacja"
-              aria-label="Pomoc"
-            >
-              ?
-            </button>
+            {/* „?" (Pomoc) przeniesione z nagłówka do dolnego paska (TabBar) */}
             <ThemeToggle />
             <VersionBadge />
           </div>
@@ -164,6 +167,7 @@ function AppShell() {
       <UpdatePrompt />
       <InstallPrompt />
       <OnboardingTour />
+      {showTabs && <TabBar routeName={route.name} navigate={navigate} />}
     </div>
   )
 }

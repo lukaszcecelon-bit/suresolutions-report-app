@@ -19,8 +19,8 @@ const STEPS = [
   },
   {
     icon: '📋',
-    title: 'Pięć typów raportów',
-    body: 'Kliknij „+ Nowy raport" i wybierz typ — uruchomienie, serwis, testy prototypu, odbiór SAT/FAT lub reklamacja. Każdy ma własny scenariusz dopasowany do branży.',
+    title: 'Sześć typów w dwóch strefach',
+    body: 'Kliknij „+ Nowy raport" — typy są podzielone na 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie) i 🔒 Wewnętrzne (prototyp, lekcja projektowa, reklamacja). Pełna lista raportów czeka w zakładce 🗂 Raporty na dolnym pasku.',
   },
   {
     icon: '📷',

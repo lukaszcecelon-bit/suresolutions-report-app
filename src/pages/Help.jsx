@@ -41,9 +41,14 @@ const REPORT_TYPES = [
 // Sekcje „jak to działa" — krótkie, skanowalne.
 const HOW_IT_WORKS = [
   {
+    icon: '🧭',
+    title: 'Nawigacja i strefy',
+    body: 'Dolny pasek: Start (szybkie akcje i „kontynuuj ostatni”), 🗂 Raporty (pełna lista z wyszukiwarką i filtrami), Pomoc. Typy raportów dzielą się na dwie strefy: 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie — niebieski akcent) i 🔒 Wewnętrzne (prototyp, lekcja projektowa, reklamacja — fioletowy).',
+  },
+  {
     icon: '✍️',
     title: 'Tworzenie raportu',
-    body: 'Kliknij „+ Nowy raport" i wybierz typ. Wypełniaj sekcje po kolei — wszystko zapisuje się automatycznie (widzisz „Zapisano”). Możesz wyjść i wrócić: raport czeka na liście na stronie głównej.',
+    body: 'Kliknij „+ Nowy raport" i wybierz typ. Wypełniaj sekcje po kolei — wszystko zapisuje się automatycznie (widzisz „Zapisano”). Możesz wyjść i wrócić: raport czeka w zakładce 🗂 Raporty na dolnym pasku.',
   },
   {
     icon: '📷',
@@ -68,7 +73,7 @@ const HOW_IT_WORKS = [
   {
     icon: '🔁',
     title: 'Wysyłka i przenoszenie',
-    body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” tworzy paczkę do przeniesienia całego raportu (z edycją po imporcie) — na stronie głównej „📥 Importuj raport” ją wczytuje, a „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
+    body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” tworzy paczkę do przeniesienia całego raportu (z edycją po imporcie) — w zakładce 🗂 Raporty „📥 Importuj raport” ją wczytuje, a „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
   },
   {
     icon: '🌗',

@@ -3,35 +3,24 @@ import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
 import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf, buildLessonPdf } from '../utils/pdfGenerator.js'
 import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
 import { LESSON_SEVERITIES } from '../utils/settings.js'
+import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
 
-const TYPE_LABELS = {
-  commissioning: 'Uruchomienie / obserwacja maszyny',
-  service: 'Serwis na obiekcie',
-  prototype: 'Testy prototypu / podzespołu',
-  satfat: 'SAT / FAT — odbiór maszyny',
-  complaint: 'Reklamacja / zgłoszenie wady',
-  lesson: 'Lekcja projektowa (feedback do konstrukcji)',
-}
-
-const TYPE_ICONS = {
-  commissioning: '▶',
-  service: '🔧',
-  prototype: '🧪',
-  satfat: '📋',
-  complaint: '🚩',
-  lesson: '🎓',
-}
+// Zakładka 🗂 RAPORTY (v0.42) — pełna lista przeniesiona ze strony głównej
+// (Start został lekkim pulpitem). Tu mieszka wszystko „archiwalne":
+// wyszukiwarka, segment stref (Wszystkie | Dla klienta | Wewnętrzne),
+// filtry typu/statusu, podfiltry rejestru lekcji, multi-select z akcjami
+// zbiorczymi, import paczek .suresync, backup i eksport rejestru do XLSX.
 
 const TYPE_FILTER_ITEMS = [
   { key: 'commissioning', label: '▶ Uruchomienie' },
   { key: 'service',       label: '🔧 Serwis' },
-  { key: 'prototype',     label: '🧪 Prototyp' },
   { key: 'satfat',        label: '📋 SAT/FAT' },
-  { key: 'complaint',     label: '🚩 Reklamacja' },
+  { key: 'prototype',     label: '🧪 Prototyp' },
   { key: 'lesson',        label: '🎓 Lekcja' },
+  { key: 'complaint',     label: '🚩 Reklamacja' },
 ]
 
 const STATUS_FILTER_ITEMS = [
@@ -39,46 +28,12 @@ const STATUS_FILTER_ITEMS = [
   { key: 'completed', label: 'Ukończone' },
 ]
 
-// (v1 inline onboarding card zastąpiony przez OnboardingTour w App.jsx)
-
-// Czas wizyty serwisowej w minutach (HH:MM, z przejściem przez północ).
-function visitMinutes(arrival, departure) {
-  if (!arrival || !departure) return 0
-  const [ah, am] = String(arrival).split(':').map(Number)
-  const [dh, dm] = String(departure).split(':').map(Number)
-  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return 0
-  let mins = (dh * 60 + dm) - (ah * 60 + am)
-  if (mins < 0) mins += 24 * 60
-  return mins
-}
-
-// Statystyki bieżącego miesiąca: liczba raportów, czas u klientów
-// (wizyty serwisowe + sesje uruchomień), najczęstszy klient.
-function monthStats(reports) {
-  const now = new Date()
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const inMonth = reports.filter((r) =>
-    (r.header?.date || (r.createdAt || '').slice(0, 10)).startsWith(ym)
-  )
-  let minutes = 0
-  const clientCount = new Map()
-  for (const r of inMonth) {
-    if (r.type === 'service') {
-      minutes += visitMinutes(r.visit?.arrival, r.visit?.departure)
-    } else if (r.type === 'commissioning' && r.sessionStartAt && r.sessionEndAt) {
-      minutes += Math.max(0, (new Date(r.sessionEndAt) - new Date(r.sessionStartAt)) / 60000)
-    }
-    const client = (r.visit?.client || r.info?.client || '').trim()
-    if (client) clientCount.set(client, (clientCount.get(client) || 0) + 1)
-  }
-  let topClient = null
-  let top = 0
-  for (const [c, n] of clientCount) {
-    if (n > top) { top = n; topClient = c }
-  }
-  const hours = minutes / 60
-  return { count: inMonth.length, hours, topClient }
-}
+// Segment stref — nadrzędny podział listy (kolory jak w wyborze typu).
+const SEGMENTS = [
+  { key: 'all',      label: 'Wszystkie' },
+  { key: 'client',   label: '🏢 Dla klienta' },
+  { key: 'internal', label: '🔒 Wewnętrzne' },
+]
 
 // Polish-aware case-insensitive substring match (strips diacritics on both sides)
 function normalize(s) {
@@ -128,15 +83,14 @@ function getSearchableText(r) {
   return normalize(parts.join(' '))
 }
 
-export default function Home({ navigate }) {
+export default function Reports({ navigate }) {
   const [reports, setReports] = useState([])
   const [busyId, setBusyId] = useState(null)
   // `queryInput` = co user właśnie pisze (controlled input bez opóźnienia)
   // `query` = wartość użyta do filtrowania (debounced 150ms)
-  // Dzięki temu typing w search nie triggeruje re-filter przy każdej literze
-  // — przy dużej liście raportów (100+) to redukuje typing lag.
   const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
+  const [segment, setSegment] = useState('all')
   const [typeFilter, setTypeFilter] = useState(new Set())
   const [statusFilter, setStatusFilter] = useState(new Set())
   // Podfiltry rejestru lekcji (kategoria + istotność) — widoczne tylko gdy
@@ -202,7 +156,6 @@ export default function Home({ navigate }) {
   }
 
   // Eksport REJESTRU lekcji projektowych do XLSX (jeden wiersz = jedna lekcja).
-  // To jest filtrowalna „baza" — sortowanie/filtry/tabela przestawna w Excelu.
   // `subset` (opcjonalny) — eksport tylko z zaznaczonych raportów (multi-select);
   // brak = wszystkie raporty. buildLessonRegisterXlsx i tak bierze same lekcje.
   const handleExportRegister = async (subset) => {
@@ -262,15 +215,8 @@ export default function Home({ navigate }) {
     }
   }
 
-  const handleOpen = (r) => {
-    if (r.type === 'commissioning') navigate(`commissioning/${r.id}`)
-    else if (r.type === 'service') navigate(`service/${r.id}`)
-    else if (r.type === 'prototype') navigate(`prototype/${r.id}`)
-    else if (r.type === 'satfat') navigate(`satfat/${r.id}`)
-    else if (r.type === 'complaint') navigate(`complaint/${r.id}`)
-    else if (r.type === 'lesson') navigate(`lesson/${r.id}`)
-    else toast.error('Ten typ raportu zostanie dodany w kolejnej fazie.')
-  }
+  // Nazwy tras == klucze typów (tak zarejestrowane w App.jsx).
+  const handleOpen = (r) => navigate(`${r.type}/${r.id}`)
 
   // ---- Multi-select: akcje zbiorcze ----
   const toggleSelectMode = () => {
@@ -325,18 +271,11 @@ export default function Home({ navigate }) {
     upsert(fresh)
     refresh()
     toast.success('Utworzono kopię — rozpocznij edycję nowego raportu')
-    if (fresh.type === 'commissioning') navigate(`commissioning/${fresh.id}`)
-    else if (fresh.type === 'service') navigate(`service/${fresh.id}`)
-    else if (fresh.type === 'prototype') navigate(`prototype/${fresh.id}`)
-    else if (fresh.type === 'satfat') navigate(`satfat/${fresh.id}`)
-    else if (fresh.type === 'complaint') navigate(`complaint/${fresh.id}`)
-    else if (fresh.type === 'lesson') navigate(`lesson/${fresh.id}`)
+    navigate(`${fresh.type}/${fresh.id}`)
   }
 
-  // STAŁA kolejność: wg daty UTWORZENIA (najnowsze na górze), NIE wg updatedAt.
-  // Wcześniej sortowanie po updatedAt powodowało, że otwarcie/edycja raportu
-  // wybijały go na górę listy — dezorientujące przy żonglowaniu kilkoma roboczymi
-  // raportami. Teraz pozycja każdego raportu jest stała przez całe jego życie.
+  // STAŁA kolejność: wg daty UTWORZENIA (najnowsze na górze), NIE wg updatedAt —
+  // pozycja raportu nie skacze po edycji (decyzja z v0.27).
   const sorted = useMemo(() => [...reports].sort((a, b) => {
     const ta = new Date(a.createdAt || 0).getTime()
     const tb = new Date(b.createdAt || 0).getTime()
@@ -345,21 +284,25 @@ export default function Home({ navigate }) {
     return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
   }), [reports])
 
-  // „Ostatnio" = ostatnio EDYTOWANY (max updatedAt), podświetlany niezależnie od
-  // pozycji na liście. Dzięki temu kolejność zostaje stała, ale user wciąż widzi
-  // „tu skończyłem" — bez przesuwania karty.
-  const mostRecentId = useMemo(() => {
-    let id = null
-    let best = -Infinity
-    for (const r of reports) {
-      const t = new Date(r.updatedAt || r.createdAt || 0).getTime()
-      if (t > best) { best = t; id = r.id }
-    }
-    return id
+  // Liczniki segmentów (do etykiet w przełączniku).
+  const segCounts = useMemo(() => {
+    let client = 0
+    let internal = 0
+    for (const r of reports) (typeCategory(r.type) === 'client' ? client++ : internal++)
+    return { all: reports.length, client, internal }
   }, [reports])
 
-  // Kategorie faktycznie występujące w lekcjach (do chipów rejestru) — zwykle
-  // kilka, więc chipy zamiast długiej listy wszystkich możliwych kategorii.
+  // Zmiana segmentu odfiltrowuje chipy typów spoza strefy — usuń też ich
+  // zaznaczenia, żeby nie zostały „ukryte" aktywne filtry.
+  useEffect(() => {
+    if (segment === 'all') return
+    setTypeFilter((prev) => {
+      const next = new Set([...prev].filter((k) => typeCategory(k) === segment))
+      return next.size === prev.size ? prev : next
+    })
+  }, [segment])
+
+  // Kategorie faktycznie występujące w lekcjach (do chipów rejestru).
   const lessonFilterActive = typeFilter.has('lesson')
   const presentCategories = useMemo(() => {
     const set = new Set()
@@ -367,8 +310,7 @@ export default function Home({ navigate }) {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'pl'))
   }, [reports])
 
-  // Gdy wyłączysz filtr „Lekcja", wyczyść podfiltry rejestru — żeby nie zostały
-  // „ukryte" aktywne filtry (kategoria/istotność) bez widocznych chipów.
+  // Gdy wyłączysz filtr „Lekcja", wyczyść podfiltry rejestru.
   useEffect(() => {
     if (!lessonFilterActive) {
       setCategoryFilter((s) => (s.size ? new Set() : s))
@@ -376,10 +318,16 @@ export default function Home({ navigate }) {
     }
   }, [lessonFilterActive])
 
-  // Apply search + filters
+  // Chipy typów zawężone do aktywnej strefy.
+  const visibleTypeItems = useMemo(() => (
+    segment === 'all' ? TYPE_FILTER_ITEMS : TYPE_FILTER_ITEMS.filter((t) => typeCategory(t.key) === segment)
+  ), [segment])
+
+  // Apply segment + search + filters
   const filtered = useMemo(() => {
     const q = normalize(query.trim())
     return sorted.filter((r) => {
+      if (segment !== 'all' && typeCategory(r.type) !== segment) return false
       if (typeFilter.size > 0 && !typeFilter.has(r.type)) return false
       const isCompleted = r.status === 'completed'
       const statusKey = isCompleted ? 'completed' : 'draft'
@@ -390,10 +338,7 @@ export default function Home({ navigate }) {
       if (q && !getSearchableText(r).includes(q)) return false
       return true
     })
-  }, [sorted, query, typeFilter, statusFilter, categoryFilter, severityFilter])
-
-  // Statystyki bieżącego miesiąca (F3) — przeliczane tylko przy zmianie listy.
-  const stats = useMemo(() => monthStats(reports), [reports])
+  }, [sorted, segment, query, typeFilter, statusFilter, categoryFilter, severityFilter])
 
   const toggleFilter = (set, setter, key) => {
     const next = new Set(set)
@@ -401,8 +346,9 @@ export default function Home({ navigate }) {
     setter(next)
   }
 
-  // Reset wszystkich filtrów (wyszukiwarka + typ + status + podfiltry rejestru).
+  // Reset wszystkich filtrów (segment + wyszukiwarka + typ + status + rejestr).
   const clearAllFilters = () => {
+    setSegment('all')
     setQueryInput(''); setQuery('')
     setTypeFilter(new Set()); setStatusFilter(new Set())
     setCategoryFilter(new Set()); setSeverityFilter(new Set())
@@ -413,24 +359,26 @@ export default function Home({ navigate }) {
     const d = new Date(iso)
     const today = new Date()
     const isToday = d.toDateString() === today.toDateString()
-    if (isToday) return `dziś ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+    if (isToday) return `dziś ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
     return d.toISOString().slice(0, 10)
   }
 
-  const hasFiltersActive = query.trim() || typeFilter.size > 0 || statusFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0
+  const hasFiltersActive = query.trim() || segment !== 'all' || typeFilter.size > 0 || statusFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-2">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-sure-dark dark:text-gray-100">Raporty</h1>
         <button
           onClick={() => navigate('new')}
-          className="w-full btn-primary text-lg py-6 shadow-sm"
+          className="btn-sm bg-sure-blue text-white hover:bg-sure-blue/90 shrink-0"
         >
-          + Nowy raport
+          + Nowy
         </button>
-        {/* Synchronizacja między urządzeniami — eksport pojedynczego raportu jest
-            w sticky bar wewnątrz raportu. Tu na Home: import nowego raportu z paczki
-            i backup wszystkich naraz. */}
+      </div>
+
+      {/* Narzędzia archiwum: import / backup / rejestr lekcji */}
+      <section className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={handleImportClick}
@@ -467,33 +415,34 @@ export default function Home({ navigate }) {
         )}
       </section>
 
-      {/* Statystyki bieżącego miesiąca — kompaktowy pasek nad listą */}
-      {sorted.length > 0 && stats.count > 0 && (
-        <section className="grid grid-cols-3 gap-2">
-          <div className="card !p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Ten miesiąc</div>
-            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">{stats.count}</div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">{stats.count === 1 ? 'raport' : stats.count < 5 ? 'raporty' : 'raportów'}</div>
-          </div>
-          <div className="card !p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">U klientów</div>
-            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">
-              {stats.hours >= 1 ? `${Math.round(stats.hours * 10) / 10} h` : stats.hours > 0 ? `${Math.round(stats.hours * 60)} min` : '—'}
-            </div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">czas wizyt/sesji</div>
-          </div>
-          <div className="card !p-3 text-center min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Top klient</div>
-            <div className="text-sm font-bold text-sure-dark dark:text-gray-100 mt-1.5 truncate" title={stats.topClient || ''}>
-              {stats.topClient || '—'}
-            </div>
-          </div>
-        </section>
-      )}
-
       <section>
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <h2 className="section-title no-rule mb-0">Zapisane raporty</h2>
+        {/* Segment stref — nadrzędny podział listy */}
+        {sorted.length > 0 && (
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 mb-3">
+            {SEGMENTS.map((s) => {
+              const active = segment === s.key
+              const activeCls = s.key === 'client'
+                ? 'bg-sure-blue text-white shadow-sm'
+                : s.key === 'internal'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'bg-white dark:bg-gray-600 text-sure-dark dark:text-gray-100 shadow-sm'
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => setSegment(s.key)}
+                  className={
+                    'py-2 px-1 rounded-lg text-xs sm:text-sm font-medium transition ' +
+                    (active ? activeCls : 'text-gray-600 dark:text-gray-300 hover:text-sure-dark dark:hover:text-gray-100')
+                  }
+                >
+                  {s.label} <span className="opacity-70 tabular-nums">· {segCounts[s.key]}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="flex items-center justify-end gap-2 mb-3">
           {sorted.length > 0 && (
             <button
               onClick={toggleSelectMode}
@@ -531,8 +480,12 @@ export default function Home({ navigate }) {
               )}
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {TYPE_FILTER_ITEMS.map((t) => {
+              {visibleTypeItems.map((t) => {
                 const active = typeFilter.has(t.key)
+                const cat = typeCategory(t.key)
+                const activeCls = cat === 'client'
+                  ? 'bg-sure-blue text-white border-transparent'
+                  : 'bg-violet-600 text-white border-transparent'
                 return (
                   <button
                     key={t.key}
@@ -540,7 +493,7 @@ export default function Home({ navigate }) {
                     className={
                       'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
                       (active
-                        ? 'bg-sure-blue text-white border-transparent'
+                        ? activeCls
                         : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
                     }
                   >
@@ -579,7 +532,7 @@ export default function Home({ navigate }) {
             </div>
 
             {/* Podfiltry rejestru lekcji — widoczne tylko przy aktywnym filtrze
-                „Lekcja". Zamieniają Home w przeglądarkę rejestru: kategoria +
+                „Lekcja". Zamieniają listę w przeglądarkę rejestru: kategoria +
                 istotność. Kategorie brane z danych (te faktycznie użyte). */}
             {lessonFilterActive && (
               <div className="flex flex-wrap gap-1.5 items-center pl-1 border-l-2 border-sure-blue/30">
@@ -637,7 +590,7 @@ export default function Home({ navigate }) {
 
         {sorted.length === 0 ? (
           <div className="card text-center text-gray-500 dark:text-gray-400">
-            Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy raport"</span> aby zacząć,
+            Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy"</span> powyżej aby zacząć,
             albo <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz jak to działa</button>.
           </div>
         ) : filtered.length === 0 ? (
@@ -649,18 +602,18 @@ export default function Home({ navigate }) {
         ) : (
           <div className="space-y-3">
             {filtered.map((r) => {
-              const isRecent = r.id === mostRecentId && !hasFiltersActive
               const completed = r.status === 'completed'
               const isBusy = busyId === r.id
               const isSelected = selectedIds.has(r.id)
+              const accent = CATEGORY_ACCENT[typeCategory(r.type)] || ''
               return (
                 <div
                   key={r.id}
                   onClick={selectMode ? () => toggleSelected(r.id) : undefined}
                   className={
-                    'card flex flex-col sm:flex-row sm:items-center gap-3 transition ' +
+                    'card flex flex-col sm:flex-row sm:items-center gap-3 transition ' + accent + ' ' +
                     (selectMode ? 'cursor-pointer select-none ' : '') +
-                    (isSelected ? 'ring-2 ring-sure-blue ' : isRecent && !selectMode ? 'ring-2 ring-sure-blue/30 ' : '')
+                    (isSelected ? 'ring-2 ring-sure-blue ' : '')
                   }
                 >
                   {selectMode && (
@@ -677,11 +630,6 @@ export default function Home({ navigate }) {
                     <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 flex-wrap">
                       <span className="text-lg leading-none">{TYPE_ICONS[r.type] || '📄'}</span>
                       <span className="truncate">{TYPE_LABELS[r.type] || r.type}</span>
-                      {isRecent && (
-                        <span className="text-[10px] uppercase tracking-wider bg-sure-blue/10 text-sure-blue px-1.5 py-0.5 rounded">
-                          Ostatnio
-                        </span>
-                      )}
                       <span className={
                         'ml-auto text-xs px-2 py-0.5 rounded-full border ' +
                         (completed
@@ -739,9 +687,9 @@ export default function Home({ navigate }) {
           </div>
         )}
 
-        {/* Pasek akcji zbiorczych (multi-select) */}
+        {/* Pasek akcji zbiorczych (multi-select) — bottom-14 = NAD dolnym TabBarem */}
         {selectMode && filtered.length > 0 && (
-          <div className="sticky bottom-0 z-20 mt-4 -mx-4 px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700">
+          <div className="sticky bottom-14 z-20 mt-4 -mx-4 px-4 py-3 bg-white/95 dark:bg-gray-900/95 backdrop-blur border-t border-gray-200 dark:border-gray-700">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm text-gray-700 dark:text-gray-200 tabular-nums">
                 <strong>{selectedIds.size}</strong> zazn.

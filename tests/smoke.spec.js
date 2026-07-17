@@ -142,8 +142,8 @@ test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({
   expect(pdfData.text).toContain('KONSTRUKCJI')     // tytuł/sekcja jako tekst
   expect(pdfData.text).toMatch(/[ĄĆĘŁŃÓŚŻŹ]/)        // polskie znaki (BŁĘDU)
 
-  // --- 2) Eksport REJESTRU lekcji do XLSX z Home ---
-  await page.goto('/#/')
+  // --- 2) Eksport REJESTRU lekcji do XLSX z zakładki Raporty (v0.42) ---
+  await page.goto('/#/reports')
   const dlXlsx = page.waitForEvent('download', { timeout: 120_000 })
   await page.getByRole('button', { name: /Rejestr lekcji/ }).click()
   const xlsx = await dlXlsx
