@@ -8,8 +8,11 @@
 // dopiero przy realnym "Pobierz paczkę". warmupLibs() pre-fetchuje w tle.
 import logoUrl from '../../assets/logo.png'
 import { getImages, getVideos, getOriginals, getMediums, putMedium } from '../imageStore.js'
+import { slugify } from '../text.js'
 
 export { logoUrl }
+// Re-eksport wspólnego slugify — moduły pdf/* importują go z core.js.
+export { slugify }
 
 export async function warmupLibs() {
   await Promise.all([
@@ -47,18 +50,6 @@ const BODY_FS = 8.5
 const BODY_LH = 3.7 // przybliżona wysokość linii dla BODY_FS (autotable ~ fontSize*1.15)
 
 // ============================== WARSTWA DANYCH (bez zmian merytorycznych) ==============================
-export function slugify(s) {
-  return (s || '')
-    .replace(/[ąĄ]/g, 'a').replace(/[ćĆ]/g, 'c').replace(/[ęĘ]/g, 'e')
-    .replace(/[łŁ]/g, 'l').replace(/[ńŃ]/g, 'n').replace(/[óÓ]/g, 'o')
-    .replace(/[śŚ]/g, 's').replace(/[źŹżŻ]/g, 'z')
-    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '')
-    .slice(0, 80)
-}
-
 function makeFilename(idx, ctxSlug, description, ext) {
   const num = String(idx + 1).padStart(2, '0')
   const desc = description ? '__' + slugify(description) : ''
@@ -231,28 +222,19 @@ export function mediaCollector() {
   return { push, finalize }
 }
 
-// Mapa photoId → ścieżka pliku w paczce ZIP (np. zdjecia/01_xxx.jpg).
-export function buildLinkMaps(photos) {
-  const photoMap = new Map()
-  for (const p of photos || []) {
-    if (p.photoId && p._zipFilename) photoMap.set(p.photoId, p._zipFilename)
-  }
-  return { photoMap }
-}
-
-// Deskryptory miniaturek (do drawTable thumbs / drawThumbsRow): tekst+proporcje+link.
-export function thumbDescriptors(media, photoMap) {
+// Deskryptory miniaturek (do drawTable thumbs / drawThumbsRow): tekst+proporcje.
+// Zdjęcia w PDF NIE są klikalne (świadoma decyzja) — dawne pole `target`/mapa
+// `photoMap` były martwe (nikt ich nie czytał), więc zostały usunięte.
+export function thumbDescriptors(media) {
   return (media || []).filter((m) => m.kind === 'image' && m.dataUrl).map((m) => ({
     dataUrl: m.dataUrl, w: m._w, h: m._h,
-    target: m.photoId && photoMap.get(m.photoId) ? 'zdjecia/' + photoMap.get(m.photoId) : null,
   }))
 }
 
 // Deskryptory dużych zdjęć-dowodów (reklamacja) — z podpisem.
-export function evidenceDescriptors(media, photoMap) {
+export function evidenceDescriptors(media) {
   return (media || []).filter((m) => m.kind === 'image' && m.dataUrl).map((m) => ({
     dataUrl: m.dataUrl, w: m._w, h: m._h, description: m.description || '',
-    target: m.photoId && photoMap.get(m.photoId) ? 'zdjecia/' + photoMap.get(m.photoId) : null,
   }))
 }
 

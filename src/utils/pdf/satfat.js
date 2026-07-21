@@ -1,6 +1,6 @@
 // Raport ODBIORU SAT / FAT — natywny tekst (najbogatszy typ).
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  makeReportGenerators, mediaCollector, thumbDescriptors,
   fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawSubLabel, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge,
@@ -52,7 +52,7 @@ function collectMedia(report) {
 }
 
 // Sekcja wniosków jako lista rekordów {text, media} — spójnie z serwisem/uruchomieniem.
-function notesSection(ctx, records, photoMap) {
+function notesSection(ctx, records) {
   const list = Array.isArray(records) ? records : []
   if (!list.length) { drawEmpty(ctx, 'Brak wpisów.'); return }
   drawTable(ctx, {
@@ -60,7 +60,7 @@ function notesSection(ctx, records, photoMap) {
       { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
       { header: 'Wniosek / komentarz', dataKey: 'text', width: ctx.contentW - 12 },
     ],
-    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media) })),
     thumbsCol: 'text', thumbsKey: '_thumbs',
   })
 }
@@ -81,7 +81,6 @@ function buildPdf(ctx, report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const sigs = report.signatures || {}
-  const { photoMap } = buildLinkMaps(photos)
   const W = ctx.contentW
   const title = TITLES[report.testType === 'sat' ? 'sat' : 'fat']
   const finalBadge = FINAL_BADGE[report.finalStatus] || { text: '—', kind: 'neutral' }
@@ -135,7 +134,7 @@ function buildPdf(ctx, report, photos, videos) {
       ],
       rows: report.tests.map((t, i) => ({
         nr: i + 1, opis: t.description || '—', krit: t.criterion || '—',
-        wynik: '', _wynik: t.status, uwagi: t.notes || '', _thumbs: thumbDescriptors(t.media, photoMap),
+        wynik: '', _wynik: t.status, uwagi: t.notes || '', _thumbs: thumbDescriptors(t.media),
       })),
       badge: { col: 'wynik', resolve: (r) => TEST_BADGE[r._wynik] },
       thumbsCol: 'uwagi', thumbsKey: '_thumbs',
@@ -155,7 +154,7 @@ function buildPdf(ctx, report, photos, videos) {
       ],
       rows: report.punchlist.map((p, i) => ({
         nr: i + 1, prio: '', _prio: p.priority, opis: p.description || '—',
-        uwagi: p.notes || '', _thumbs: thumbDescriptors(p.media, photoMap),
+        uwagi: p.notes || '', _thumbs: thumbDescriptors(p.media),
       })),
       badge: { col: 'prio', resolve: (r) => PUNCH_BADGE[r._prio] },
       thumbsCol: 'uwagi', thumbsKey: '_thumbs',
@@ -167,7 +166,7 @@ function buildPdf(ctx, report, photos, videos) {
 
   const conclusions = Array.isArray(report.conclusions) ? report.conclusions : []
   drawSectionHeader(ctx, `F. Wnioski i komentarze (${conclusions.length})`)
-  notesSection(ctx, conclusions, photoMap)
+  notesSection(ctx, conclusions)
 
   drawSectionHeader(ctx, 'G. Podpisy stron', 32)
   drawSignatures(ctx,
@@ -175,7 +174,7 @@ function buildPdf(ctx, report, photos, videos) {
     { label: 'Strona wykonawcy', name: sigs.vendorName, date: sigs.vendorDate },
   )
 
-  const generalThumbs = thumbDescriptors(report.media, photoMap)
+  const generalThumbs = thumbDescriptors(report.media)
   if (generalThumbs.length) {
     drawSectionHeader(ctx, 'H. Dokumentacja fotograficzna (ogólna)')
     drawThumbsRow(ctx, generalThumbs)

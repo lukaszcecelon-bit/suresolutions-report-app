@@ -22,6 +22,7 @@ import {
   replaceImage, replaceOriginal, replaceVideo,
 } from './imageStore.js'
 import { collectMediaIds, loadAll, upsert, newId } from './storage.js'
+import { slugify } from './text.js'
 
 const FORMAT = 'suresync-v1'
 
@@ -53,17 +54,6 @@ function extFromVideoBlob(blob) {
   if (/3gpp/i.test(blob.type)) return '3gp'
   if (/ogg/i.test(blob.type)) return 'ogv'
   return 'mp4'
-}
-
-function slugForFilename(s) {
-  return (s || '')
-    .replace(/[ąĄ]/g, 'a').replace(/[ćĆ]/g, 'c').replace(/[ęĘ]/g, 'e')
-    .replace(/[łŁ]/g, 'l').replace(/[ńŃ]/g, 'n').replace(/[óÓ]/g, 'o')
-    .replace(/[śŚ]/g, 's').replace(/[źŹżŻ]/g, 'z')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[-_]+|[-_]+$/g, '')
-    .slice(0, 60)
 }
 
 // ---------- Adding media to ZIP ----------
@@ -400,7 +390,7 @@ export async function shareOrDownload(blob, filename /* , title — usunięte */
 // `.zip` ma znany UTI `public.zip-archive` → każda apka akceptuje.
 // Weryfikacja "czy to nasza paczka" idzie przez manifest.json wewnątrz ZIP.
 export function makePackageFilename(report) {
-  const num = slugForFilename(report.header?.reportNumber || 'raport')
+  const num = slugify(report.header?.reportNumber || 'raport')
   const date = report.header?.date || new Date().toISOString().slice(0, 10)
   return `sync_${num}_${date}.zip`
 }

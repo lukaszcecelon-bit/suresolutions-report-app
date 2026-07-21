@@ -23,7 +23,7 @@ export default function LoadingOverlay({ visible, title = 'Generowanie raportuâ€
   if (!visible) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[120] flex items-center justify-center p-4" role="status" aria-live="polite" aria-busy="true">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 max-w-xs w-full text-center fade-in">
         <div className="mb-4 flex justify-center">
           <div className="w-12 h-12 border-4 border-sure-blue/20 border-t-sure-blue rounded-full animate-spin" />

@@ -13,6 +13,7 @@ export default function ToggleGroup({ items, value, onChange, size = 'md' }) {
           <button
             key={it.key}
             type="button"
+            aria-pressed={active}
             onClick={() => onChange(it.key)}
             className={
               'flex-1 rounded-lg border-2 font-medium transition select-none active:scale-[0.98] ' +

@@ -1,4 +1,5 @@
 import { deleteImages, deleteVideos, deleteOriginals } from './imageStore.js'
+import { computeReportNumber } from './reportNumber.js'
 
 // === Format przechowywania ===
 // v2: KAŻDY raport pod własnym kluczem `suresolutions.report.v2:<id>`.
@@ -116,11 +117,6 @@ export function collectMediaIds(value, out) {
   return out
 }
 
-// Backwards-compat helper (used by pdfGenerator legacy path)
-export function collectPhotoIds(value) {
-  return collectMediaIds(value).photos
-}
-
 // Zwracana tablica jest współdzielona (cache) — traktuj jako read-only;
 // przed sortowaniem zrób kopię ([...]). Wszyscy obecni konsumenci tak robią.
 export function loadAll() {
@@ -210,7 +206,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `URU-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber('URU', projectNumber, date),
       },
       phase: 'setup',
       sessionStartAt: null,
@@ -233,7 +229,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `RPT-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber('RPT', projectNumber, date),
       },
       visit: {
         client: source.visit?.client || '',     // keep — recurring client
@@ -260,7 +256,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `${testType.toUpperCase()}-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber(testType.toUpperCase(), projectNumber, date),
       },
       testType,                                            // keep — repeat odbioru same type
       info: {
@@ -296,7 +292,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `REK-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber('REK', projectNumber, date),
       },
       partNo: source.partNo || '',
       defectCategory: '',
@@ -315,7 +311,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `PRT-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber('PRT', projectNumber, date),
       },
       info: {
         component: source.info?.component || '',                 // keep — same part
@@ -352,7 +348,7 @@ export function cloneReport(source) {
       header: {
         ...base.header,
         projectNumber,
-        reportNumber: projectNumber ? `LL-${projectNumber}-${date}` : '',
+        reportNumber: computeReportNumber('LL', projectNumber, date),
       },
       drawingNo: source.drawingNo || '',   // keep — zwykle ten sam rysunek/DTR
       stage: source.stage || '',           // keep — ten sam etap wykrycia

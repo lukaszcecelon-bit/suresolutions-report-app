@@ -8,11 +8,12 @@ import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildComplaintPackage, buildComplaintPdf } from '../../utils/pdfGenerator.js'
 import { ensureValidOrConfirm } from '../../utils/validateReport.js'
 import { shareFileOrDownload, downloadBlob, canShareFiles } from '../../utils/syncPackage.js'
-import { BUYER_EMAIL_KEY } from '../../utils/settings.js'
+import { BUYER_EMAIL_KEY, getDefaultAuthor } from '../../utils/settings.js'
 
 // Zapisany e-mail zakupowca — jeden, globalny (ustawienia globalne #/settings).
 // Pamiętany między zgłoszeniami w localStorage, edytowalny też w formularzu.
@@ -32,12 +33,6 @@ const BLOCKER_ITEMS = [
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
 
-function computeReportNumber(projectNumber, date) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `REK-${pn}-${date || ''}`
-}
-
 function defaultReport() {
   return {
     id: newId(),
@@ -49,7 +44,7 @@ function defaultReport() {
       projectNumber: '',
       reportNumber: '',   // auto: REK-{projectNumber}-{date}
       date: todayISO(),
-      author: '',
+      author: getDefaultAuthor(),
     },
     partNo: '',
     defectCategory: '',
@@ -123,7 +118,7 @@ export default function ComplaintReport({ navigate, reportId }) {
   const setHeaderField = (k, v) => {
     setReport((r) => {
       const header = { ...r.header, [k]: v }
-      header.reportNumber = computeReportNumber(header.projectNumber, header.date)
+      header.reportNumber = computeReportNumber('REK', header.projectNumber, header.date, r.header.reportNumber)
       return { ...r, header }
     })
   }

@@ -56,20 +56,6 @@ export function suggestLocations(currentClient) {
   return [...sameClient, ...all.filter((m) => !seen.has(m))]
 }
 
-export function suggestActionDescriptions() {
-  const all = loadAll().filter((r) => r.type === 'service')
-  const seen = new Map()
-  for (const r of all) {
-    for (const a of (r.actions || [])) {
-      const t = (a.description || '').trim()
-      if (!t) continue
-      const ts = new Date(r.updatedAt || r.createdAt || 0).getTime()
-      if (!seen.has(t) || seen.get(t) < ts) seen.set(t, ts)
-    }
-  }
-  return Array.from(seen.entries()).sort((a, b) => b[1] - a[1]).map(([v]) => v)
-}
-
 export function suggestPartNames() {
   const out = new Map()
   for (const r of loadAll().filter((r) => r.type === 'service')) {

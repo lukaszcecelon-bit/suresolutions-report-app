@@ -1,6 +1,6 @@
 // Raport TESTÓW PROTOTYPU — natywny tekst.
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  makeReportGenerators, mediaCollector, thumbDescriptors,
   fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge,
@@ -39,7 +39,6 @@ function buildPdf(ctx, report, photos, videos) {
   const h = report.header || {}
   const info = report.info || {}
   const cond = report.conditions || {}
-  const { photoMap } = buildLinkMaps(photos)
   const W = ctx.contentW
   const iter = info.iteration || 1
   const sampleMethod = info.sampleMethod === 'other'
@@ -60,7 +59,7 @@ function buildPdf(ctx, report, photos, videos) {
     { label: 'Metoda próbki', value: sampleMethod },
   ]])
   drawTextBlock(ctx, info.goal, { label: 'Cel testu:' })
-  drawThumbsRow(ctx, thumbDescriptors(info.media, photoMap))
+  drawThumbsRow(ctx, thumbDescriptors(info.media))
 
   drawSectionHeader(ctx, 'B. Warunki testu')
   drawTextBlock(ctx, cond.setup, { label: 'Setup:' })
@@ -100,23 +99,23 @@ function buildPdf(ctx, report, photos, videos) {
       ],
       rows: report.points.map((p, i) => ({
         nr: i + 1, punkt: p.description || '—', wynik: '', _wynik: p.result,
-        comment: p.comment || '', _thumbs: thumbDescriptors(p.media, photoMap),
+        comment: p.comment || '', _thumbs: thumbDescriptors(p.media),
       })),
       badge: { col: 'wynik', resolve: (r) => POINT_BADGE[r._wynik] },
       thumbsCol: 'comment', thumbsKey: '_thumbs',
     })
   }
-  drawThumbsRow(ctx, thumbDescriptors(report.resultsMedia, photoMap))
+  drawThumbsRow(ctx, thumbDescriptors(report.resultsMedia))
 
   drawSectionHeader(ctx, 'D. Obserwacje i wnioski')
   drawTextBlock(ctx, report.observations)
-  drawThumbsRow(ctx, thumbDescriptors(report.observationsMedia, photoMap))
+  drawThumbsRow(ctx, thumbDescriptors(report.observationsMedia))
 
   drawSectionHeader(ctx, 'E. Decyzja')
   if (DECISION_BADGE[report.decision]) drawBadge(ctx, DECISION_BADGE[report.decision].text, DECISION_BADGE[report.decision].kind)
   drawTextBlock(ctx, report.decisionNotes)
 
-  const generalThumbs = thumbDescriptors(report.media, photoMap)
+  const generalThumbs = thumbDescriptors(report.media)
   if (generalThumbs.length) {
     drawSectionHeader(ctx, 'Dokumentacja ogólna')
     drawThumbsRow(ctx, generalThumbs)

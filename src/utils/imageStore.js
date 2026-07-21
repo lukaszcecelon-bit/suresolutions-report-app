@@ -22,8 +22,18 @@ function openDb() {
       if (!db.objectStoreNames.contains(STORE_ORIGINALS)) db.createObjectStore(STORE_ORIGINALS)
       if (!db.objectStoreNames.contains(STORE_MEDIUM)) db.createObjectStore(STORE_MEDIUM)
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error || new Error('IndexedDB open failed'))
+    req.onsuccess = () => {
+      const db = req.result
+      // Inna karta podbija wersję DB → zamknij to połączenie (żeby jej nie
+      // blokować) i wyzeruj cache; kolejna operacja otworzy świeże połączenie.
+      db.onversionchange = () => { try { db.close() } catch {} dbPromise = null }
+      resolve(db)
+    }
+    // Błąd otwarcia — NIE cache'uj odrzuconej obietnicy (kolejna próba może się udać).
+    req.onerror = () => { dbPromise = null; reject(req.error || new Error('IndexedDB open failed')) }
+    // Inna karta trzyma starą wersję otwartą → open zawisłby w ciszy. Zamiast
+    // wiecznie wiszącej obietnicy — odrzuć z czytelnym komunikatem.
+    req.onblocked = () => { dbPromise = null; reject(new Error('Baza zablokowana przez inną otwartą kartę aplikacji — zamknij pozostałe karty i spróbuj ponownie')) }
   })
   return dbPromise
 }
@@ -89,7 +99,6 @@ function deleteManyGeneric(store, ids) {
 
 // ---- Images (dataURL strings) ----
 export const putImage = (dataUrl) => putGeneric(STORE_IMAGES, dataUrl, 'p')
-export const getImage = (id) => getGeneric(STORE_IMAGES, id)
 export const getImages = (ids) => getManyGeneric(STORE_IMAGES, ids)
 export const deleteImage = (id) => deleteManyGeneric(STORE_IMAGES, [id])
 export const deleteImages = (ids) => deleteManyGeneric(STORE_IMAGES, ids)
@@ -107,7 +116,6 @@ export async function replaceImage(id, dataUrl) {
 
 // ---- Videos (Blob/File) ----
 export const putVideo = (blob) => putGeneric(STORE_VIDEOS, blob, 'v')
-export const getVideo = (id) => getGeneric(STORE_VIDEOS, id)
 export const getVideos = (ids) => getManyGeneric(STORE_VIDEOS, ids)
 export const deleteVideo = (id) => deleteManyGeneric(STORE_VIDEOS, [id])
 export const deleteVideos = (ids) => deleteManyGeneric(STORE_VIDEOS, ids)

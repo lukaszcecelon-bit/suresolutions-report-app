@@ -2,12 +2,25 @@ import { useEffect, useState } from 'react'
 import { readPackage, importPackage } from '../../utils/syncPackage.js'
 import { useToast } from './Toast.jsx'
 import ToggleGroup from './ToggleGroup.jsx'
+import { TYPE_LABELS, TYPE_ICONS } from '../../utils/reportMeta.js'
 
-const REPORT_TYPE_LABELS = {
-  commissioning: '▶ Uruchomienie',
-  service: '🔧 Serwis',
-  prototype: '🧪 Prototyp',
-  satfat: '📋 SAT/FAT',
+// Etykieta typu z jednego źródła (reportMeta) — wcześniej lokalna mapa gubiła
+// typy „lesson" i „complaint" (import backupu z lekcją/reklamacją pokazywał
+// surowy klucz zamiast nazwy).
+const typeLabel = (t) => `${TYPE_ICONS[t] || '📄'} ${TYPE_LABELS[t] || t}`
+
+// Powłoka modala — DEFINIOWANA W MODULE, nie w komponencie. Wcześniej `const
+// Wrap` żył wewnątrz komponentu → przy każdym renderze był nowym typem, więc
+// React remontował całą treść (reset scrolla listy konfliktów i utrata focusu
+// przy każdym tapnięciu w toggle rozwiązania konfliktu).
+function Wrap({ children }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[110] flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg p-5 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto fade-in">
+        {children}
+      </div>
+    </div>
+  )
 }
 
 const CONFLICT_ITEMS = [
@@ -27,13 +40,6 @@ function fmtDateTime(iso) {
   } catch {
     return iso
   }
-}
-
-function fmtSize(bytes) {
-  if (!bytes) return ''
-  const mb = bytes / (1024 * 1024)
-  if (mb < 0.1) return `${Math.round(bytes / 1024)} KB`
-  return `${mb.toFixed(1)} MB`
 }
 
 // Modal z preview paczki, conflict resolution per raport i akcją importu.
@@ -105,15 +111,6 @@ export default function PackageImportDialog({ file, onClose, onImported }) {
     onClose?.()
   }
 
-  // ---- Wrapper modal ----
-  const Wrap = ({ children }) => (
-    <div className="fixed inset-0 bg-black/60 z-[110] flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg p-5 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto fade-in">
-        {children}
-      </div>
-    </div>
-  )
-
   if (state === 'reading' || state === 'importing') {
     return (
       <Wrap>
@@ -173,7 +170,7 @@ export default function PackageImportDialog({ file, onClose, onImported }) {
           {isSingle ? (
             <>
               <strong>{payload.report.header?.reportNumber || '(bez numeru)'}</strong>
-              {' '}— {REPORT_TYPE_LABELS[payload.report.type] || payload.report.type}
+              {' '}— {typeLabel(payload.report.type)}
             </>
           ) : (
             <>Paczka z <strong>{totalCount}</strong> raportami</>
@@ -221,7 +218,7 @@ export default function PackageImportDialog({ file, onClose, onImported }) {
                     <div className="font-medium text-sm text-sure-dark dark:text-gray-100">
                       {c.incoming.header?.reportNumber || '(bez numeru)'}
                       <span className="text-xs text-gray-500 dark:text-gray-400 font-normal ml-2">
-                        {REPORT_TYPE_LABELS[c.incoming.type] || c.incoming.type}
+                        {typeLabel(c.incoming.type)}
                       </span>
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">

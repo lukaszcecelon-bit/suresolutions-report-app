@@ -2,7 +2,7 @@
 // Natywny tekst (jsPDF + autotable + Roboto). Kontekst i klasyfikacja lądują
 // w meta-tabeli; opis błędu, skutek i wnioski to bloki/tabela z miniaturkami.
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  makeReportGenerators, mediaCollector, thumbDescriptors,
   fileBase,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawTextBlock, drawThumbsRow, drawEmpty, drawPhotoAppendix,
@@ -26,7 +26,6 @@ function collectMedia(report) {
 
 function buildPdf(ctx, report, photos) {
   const h = report.header || {}
-  const { photoMap } = buildLinkMaps(photos)
   const lessons = Array.isArray(report.lessons) ? report.lessons : []
   const W = ctx.contentW
 
@@ -44,7 +43,7 @@ function buildPdf(ctx, report, photos) {
 
   drawSectionHeader(ctx, 'Opis błędu projektowego')
   drawTextBlock(ctx, report.problem)
-  const problemThumbs = thumbDescriptors(report.problemMedia, photoMap)
+  const problemThumbs = thumbDescriptors(report.problemMedia)
   if (problemThumbs.length) drawThumbsRow(ctx, problemThumbs)
 
   drawSectionHeader(ctx, 'Skutek / wpływ')
@@ -59,7 +58,7 @@ function buildPdf(ctx, report, photos) {
         { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
         { header: 'Wniosek', dataKey: 'text', width: W - 12 },
       ],
-      rows: lessons.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+      rows: lessons.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media) })),
       thumbsCol: 'text', thumbsKey: '_thumbs',
     })
   }

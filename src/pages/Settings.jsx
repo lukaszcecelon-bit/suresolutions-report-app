@@ -1,13 +1,7 @@
 import { useEffect, useState } from 'react'
 import { loadSettings, saveSettings, getBuyerEmail, setBuyerEmailGlobal, ROLE_OPTIONS } from '../utils/settings.js'
 import { getStorageEstimate, isStoragePersisted, persistStorage } from '../utils/imageStore.js'
-
-function formatBytes(n) {
-  if (n === null || n === undefined) return '—'
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
-  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
-  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`
-}
+import { formatBytes } from '../utils/text.js'
 
 // Globalne ustawienia aplikacji (route #/settings, wejście przez ⚙️ w nagłówku).
 // Wszystko zapisuje się automatycznie do localStorage przy każdej zmianie —

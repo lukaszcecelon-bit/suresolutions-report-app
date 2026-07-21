@@ -11,6 +11,7 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildPrototypePackage, buildPrototypePdf } from '../../utils/pdfGenerator.js'
@@ -52,13 +53,6 @@ const SECTIONS = [
 const MAX_PARAMS = 10
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
-
-// Numer raportu auto z numeru projektu + daty (jak w serwisie), prefiks PRT-.
-function computeReportNumber(projectNumber, date) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `PRT-${pn}-${date || ''}`
-}
 
 function defaultReport() {
   return {
@@ -108,12 +102,7 @@ export default function PrototypeReport({ navigate, reportId }) {
   // Pusty numer projektu → zachowaj ewentualny ręczny numer starszych raportów.
   const updateHeader = (h) => setReport((r) => ({
     ...r,
-    header: {
-      ...h,
-      reportNumber: (h.projectNumber || '').trim()
-        ? computeReportNumber(h.projectNumber, h.date)
-        : h.reportNumber,
-    },
+    header: { ...h, reportNumber: computeReportNumber('PRT', h.projectNumber, h.date, h.reportNumber) },
   }))
   const setInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
   const setCondField = (k, v) => setReport((r) => ({ ...r, conditions: { ...r.conditions, [k]: v } }))
@@ -160,9 +149,11 @@ export default function PrototypeReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, points: r.points.filter((p) => p.id !== id) }))
   }
 
-  const okCount = report.points.filter((p) => p.result === 'ok').length
-  const nokCount = report.points.filter((p) => p.result === 'nok').length
-  const condCount = report.points.filter((p) => p.result === 'cond').length
+  const { okCount, nokCount, condCount } = useMemo(() => ({
+    okCount: report.points.filter((p) => p.result === 'ok').length,
+    nokCount: report.points.filter((p) => p.result === 'nok').length,
+    condCount: report.points.filter((p) => p.result === 'cond').length,
+  }), [report.points])
 
   return (
     <div className="space-y-4 pb-4">

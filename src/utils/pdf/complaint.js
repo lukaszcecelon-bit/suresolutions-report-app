@@ -2,7 +2,7 @@
 // Inne podejście do zdjęć: DUŻE zdjęcia-dowody (contain), bo zdjęcie wady to
 // główny dowód dla dostawcy — nie małe miniaturki.
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, evidenceDescriptors,
+  makeReportGenerators, mediaCollector, evidenceDescriptors,
   fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTextBlock,
   drawEvidencePhotos, drawBlockerBanner, drawEmpty,
@@ -17,7 +17,6 @@ function collectMedia(report) {
 
 function buildPdf(ctx, report, photos) {
   const h = report.header || {}
-  const { photoMap } = buildLinkMaps(photos)
   const blocks = !!report.blocksAssembly
 
   drawReportHeader(ctx, { title: 'ZGŁOSZENIE WADY / REKLAMACJA', number: h.reportNumber })
@@ -34,7 +33,7 @@ function buildPdf(ctx, report, photos) {
   drawSectionHeader(ctx, 'Opis wady')
   drawTextBlock(ctx, report.description)
 
-  const evidence = evidenceDescriptors(report.media, photoMap)
+  const evidence = evidenceDescriptors(report.media)
   if (evidence.length === 0) {
     drawSectionHeader(ctx, 'Dokumentacja zdjęciowa')
     drawEmpty(ctx, 'Brak zdjęć — dołącz zdjęcie wady.')

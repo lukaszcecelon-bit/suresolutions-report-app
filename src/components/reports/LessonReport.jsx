@@ -8,6 +8,7 @@ import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import NotesList from '../common/NotesList.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import { getById, newId } from '../../utils/storage.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor, getLessonCategories, LESSON_STAGES } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildLessonPackage, buildLessonPdf } from '../../utils/pdfGenerator.js'
@@ -57,13 +58,6 @@ function defaultReport() {
   }
 }
 
-// Numer raportu z numeru projektu + daty. Pusty projekt → pusty numer.
-function computeReportNumber(projectNumber, date) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `LL-${pn}-${date || ''}`
-}
-
 export default function LessonReport({ navigate, reportId }) {
   const [report, setReport] = useState(() => {
     if (reportId) {
@@ -82,7 +76,7 @@ export default function LessonReport({ navigate, reportId }) {
   const updateHeader = (h) => {
     setReport((r) => ({
       ...r,
-      header: { ...h, reportNumber: computeReportNumber(h.projectNumber, h.date) },
+      header: { ...h, reportNumber: computeReportNumber('LL', h.projectNumber, h.date, h.reportNumber) },
     }))
   }
   const setField = (k, v) => setReport((r) => ({ ...r, [k]: v }))

@@ -15,12 +15,10 @@ import {
   suggestPartNames, suggestPartCatalogNos,
 } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
-import { getDefaultAuthor, getDefaultRole } from '../../utils/settings.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
+import { getDefaultAuthor, getDefaultRole, ROLE_OPTIONS } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
-
-// Rola serwisanta — typ pracownika wykonującego serwis.
-const ROLE_OPTIONS = ['Technik serwisu', 'Konstruktor', 'Automatyk']
 
 const PRIORITY_ITEMS = [
   { key: 'urgent',  label: 'Pilne',      icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold' },
@@ -93,34 +91,14 @@ function defaultReport() {
   }
 }
 
-// Auto-generacja numeru raportu z numeru projektu i daty.
-// Pusty numer projektu → pusty numer raportu (żeby walidacja działała).
-function computeReportNumber(projectNumber, date) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `RPT-${pn}-${date || ''}`
-}
-
 export default function ServiceReport({ navigate, reportId }) {
+  // Migracja string→lista dla observations/recommendations jest centralna
+  // (storage.migrateReport, SCHEMA_VERSION 2) — getById zwraca już zmigrowany
+  // rekord, więc lokalna kopia była martwa (i mutowała referencję z cache).
   const [report, setReport] = useState(() => {
     if (reportId) {
       const existing = getById(reportId)
-      if (existing) {
-        // Migracja starych raportów: obserwacje/rekomendacje jako string → lista rekordów
-        if (typeof existing.observations === 'string') {
-          existing.observations = existing.observations.trim()
-            ? [{ id: newId(), text: existing.observations, media: [] }]
-            : []
-        }
-        if (!Array.isArray(existing.observations)) existing.observations = []
-        if (typeof existing.recommendations === 'string') {
-          existing.recommendations = existing.recommendations.trim()
-            ? [{ id: newId(), text: existing.recommendations, media: [] }]
-            : []
-        }
-        if (!Array.isArray(existing.recommendations)) existing.recommendations = []
-        return existing
-      }
+      if (existing) return existing
     }
     return defaultReport()
   })
@@ -140,7 +118,7 @@ export default function ServiceReport({ navigate, reportId }) {
   const updateHeader = (h) => {
     setReport((r) => ({
       ...r,
-      header: { ...h, reportNumber: computeReportNumber(h.projectNumber, h.date) },
+      header: { ...h, reportNumber: computeReportNumber('RPT', h.projectNumber, h.date, h.reportNumber) },
     }))
   }
   const updateVisit = (k, v) => setReport((r) => ({ ...r, visit: { ...r.visit, [k]: v } }))

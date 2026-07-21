@@ -6,6 +6,7 @@ import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import NotesList from '../common/NotesList.jsx'
 import { getById, newId } from '../../utils/storage.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor, getStopReasons } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildCommissioningPackage, buildCommissioningPdf } from '../../utils/pdfGenerator.js'
@@ -43,15 +44,6 @@ function formatDurationShort(ms) {
   const s = totalSec % 60
   if (m === 0) return `${s} s`
   return `${m} min ${s} s`
-}
-
-// Auto-generacja numeru raportu z numeru projektu i daty — jak w raporcie
-// serwisowym (tam prefiks RPT-). Uruchomienie ma własny prefiks URU-, żeby
-// nie mylić dokumentów. Pusty numer projektu → pusty numer raportu.
-function computeReportNumber(projectNumber, date) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `URU-${pn}-${date || ''}`
 }
 
 function defaultReport() {
@@ -113,12 +105,7 @@ export default function CommissioningReport({ navigate, reportId }) {
   // raportów (sprzed tej zmiany), by ich nie skasować.
   const updateHeader = (h) => setReport((r) => ({
     ...r,
-    header: {
-      ...h,
-      reportNumber: (h.projectNumber || '').trim()
-        ? computeReportNumber(h.projectNumber, h.date)
-        : h.reportNumber,
-    },
+    header: { ...h, reportNumber: computeReportNumber('URU', h.projectNumber, h.date, h.reportNumber) },
   }))
 
   // ==== PHASE 1: START ====

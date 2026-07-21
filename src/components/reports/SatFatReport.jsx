@@ -12,6 +12,7 @@ import NotesList from '../common/NotesList.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
+import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildSatFatPackage, buildSatFatPdf } from '../../utils/pdfGenerator.js'
@@ -60,13 +61,8 @@ const SECTIONS = [
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
 
-// Numer raportu auto z numeru projektu + daty (jak w serwisie); prefiks zależy
-// od typu odbioru: FAT-… lub SAT-…
-function computeReportNumber(projectNumber, date, testType) {
-  const pn = (projectNumber || '').trim()
-  if (!pn) return ''
-  return `${(testType || 'fat').toUpperCase()}-${pn}-${date || ''}`
-}
+// Prefiks numeru zależny od typu odbioru: FAT-… lub SAT-…
+const satfatPrefix = (testType) => (testType || 'fat').toUpperCase()
 
 function defaultReport() {
   return {
@@ -128,12 +124,7 @@ export default function SatFatReport({ navigate, reportId }) {
   // Pusty numer projektu → zachowaj ręczny numer starszych raportów.
   const updateHeader = (h) => setReport((r) => ({
     ...r,
-    header: {
-      ...h,
-      reportNumber: (h.projectNumber || '').trim()
-        ? computeReportNumber(h.projectNumber, h.date, r.testType)
-        : h.reportNumber,
-    },
+    header: { ...h, reportNumber: computeReportNumber(satfatPrefix(r.testType), h.projectNumber, h.date, h.reportNumber) },
   }))
   const updateInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
   const updateSignature = (k, v) => setReport((r) => ({ ...r, signatures: { ...r.signatures, [k]: v } }))
@@ -153,7 +144,7 @@ export default function SatFatReport({ navigate, reportId }) {
       ...r,
       participants: {
         ...r.participants,
-        [side]: r.participants[side].map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        [side]: (r.participants?.[side] || []).map((p) => (p.id === id ? { ...p, ...patch } : p)),
       },
     }))
   }
@@ -163,7 +154,7 @@ export default function SatFatReport({ navigate, reportId }) {
       ...r,
       participants: {
         ...r.participants,
-        [side]: r.participants[side].filter((p) => p.id !== id),
+        [side]: (r.participants?.[side] || []).filter((p) => p.id !== id),
       },
     }))
   }
@@ -211,10 +202,12 @@ export default function SatFatReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, punchlist: r.punchlist.filter((p) => p.id !== id) }))
   }
 
-  // Quick stats for the C section header
-  const passCount = report.tests.filter((t) => t.status === 'pass').length
-  const failCount = report.tests.filter((t) => t.status === 'fail').length
-  const condCount = report.tests.filter((t) => t.status === 'conditional').length
+  // Quick stats for the C section header (memo — nie licz przy każdym klawiszu)
+  const { passCount, failCount, condCount } = useMemo(() => ({
+    passCount: report.tests.filter((t) => t.status === 'pass').length,
+    failCount: report.tests.filter((t) => t.status === 'fail').length,
+    condCount: report.tests.filter((t) => t.status === 'conditional').length,
+  }), [report.tests])
 
   const typeBadge = report.testType === 'fat'
     ? <span className="text-xs px-2 py-0.5 rounded-full bg-sure-blue/10 text-sure-blue dark:bg-sure-blue/30 dark:text-sky-200 font-semibold">FAT</span>
@@ -250,12 +243,7 @@ export default function SatFatReport({ navigate, reportId }) {
           onChange={(k) => setReport((r) => ({
             ...r,
             testType: k,
-            header: {
-              ...r.header,
-              reportNumber: (r.header.projectNumber || '').trim()
-                ? computeReportNumber(r.header.projectNumber, r.header.date, k)
-                : r.header.reportNumber,
-            },
+            header: { ...r.header, reportNumber: computeReportNumber(satfatPrefix(k), r.header.projectNumber, r.header.date, r.header.reportNumber) },
           }))}
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">

@@ -2,7 +2,7 @@
 // WZORZEC podejścia: nagłówek → meta-tabele → tabele z miniaturkami pod tekstem
 // (klikalne do pełnego pliku w ZIP) + badge priorytetu → blok tekstu.
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  makeReportGenerators, mediaCollector, thumbDescriptors,
   fileBase, slugify,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawEmpty, drawPhotoAppendix,
@@ -54,7 +54,6 @@ function collectMedia(report) {
 function buildPdf(ctx, report, photos) {
   const h = report.header || {}
   const v = report.visit || {}
-  const { photoMap } = buildLinkMaps(photos)
   const observations = Array.isArray(report.observations) ? report.observations : []
   const recommendations = Array.isArray(report.recommendations) ? report.recommendations : []
   const totalTime = serviceVisitDuration(v.arrival, v.departure)
@@ -83,7 +82,7 @@ function buildPdf(ctx, report, photos) {
         { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
         { header: 'Opis czynności', dataKey: 'opis', width: W - 12 },
       ],
-      rows: report.actions.map((a, i) => ({ nr: i + 1, opis: a.description || '', _thumbs: thumbDescriptors(a.media, photoMap) })),
+      rows: report.actions.map((a, i) => ({ nr: i + 1, opis: a.description || '', _thumbs: thumbDescriptors(a.media) })),
       thumbsCol: 'opis', thumbsKey: '_thumbs',
     })
   }
@@ -103,7 +102,7 @@ function buildPdf(ctx, report, photos) {
       rows: report.parts.map((p, i) => ({
         nr: i + 1, name: p.name || '—', cat: p.catalogNo || '—',
         prio: '', _prio: p.priority,
-        comment: p.comment || '', _thumbs: thumbDescriptors(p.media, photoMap),
+        comment: p.comment || '', _thumbs: thumbDescriptors(p.media),
       })),
       badge: { col: 'prio', resolve: (r) => PRIORITY_BADGE[r._prio] },
       thumbsCol: 'comment', thumbsKey: '_thumbs',
@@ -119,7 +118,7 @@ function buildPdf(ctx, report, photos) {
         { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
         { header: 'Obserwacja', dataKey: 'text', width: W - 12 },
       ],
-      rows: observations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+      rows: observations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media) })),
       thumbsCol: 'text', thumbsKey: '_thumbs',
     })
   }
@@ -133,7 +132,7 @@ function buildPdf(ctx, report, photos) {
         { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
         { header: 'Rekomendacja', dataKey: 'text', width: W - 12 },
       ],
-      rows: recommendations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+      rows: recommendations.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media) })),
       thumbsCol: 'text', thumbsKey: '_thumbs',
     })
   }

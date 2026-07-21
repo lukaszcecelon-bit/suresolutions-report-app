@@ -1,6 +1,6 @@
 // Raport URUCHOMIENIA / OBSERWACJI MASZYNY — natywny tekst.
 import {
-  makeReportGenerators, mediaCollector, buildLinkMaps, thumbDescriptors,
+  makeReportGenerators, mediaCollector, thumbDescriptors,
   fileBase, slugify,
   timeHHMM, formatDurationFull, formatDurationShort,
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
@@ -24,7 +24,7 @@ function collectMedia(report) {
 }
 
 // Sekcja z listą powtarzalnych wpisów {text, media} — jak obserwacje w serwisie.
-function notesSection(ctx, title, colHeader, records, photoMap) {
+function notesSection(ctx, title, colHeader, records) {
   const list = Array.isArray(records) ? records : []
   drawSectionHeader(ctx, `${title} (${list.length})`)
   if (!list.length) { drawEmpty(ctx, 'Brak wpisów.'); return }
@@ -33,14 +33,13 @@ function notesSection(ctx, title, colHeader, records, photoMap) {
       { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
       { header: colHeader, dataKey: 'text', width: ctx.contentW - 12 },
     ],
-    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media, photoMap) })),
+    rows: list.map((o, i) => ({ nr: i + 1, text: o.text || '', _thumbs: thumbDescriptors(o.media) })),
     thumbsCol: 'text', thumbsKey: '_thumbs',
   })
 }
 
 function buildPdf(ctx, report, photos, videos) {
   const h = report.header || {}
-  const { photoMap } = buildLinkMaps(photos)
   const W = ctx.contentW
   const totalRunMs = report.sessionStartAt && report.sessionEndAt
     ? new Date(report.sessionEndAt) - new Date(report.sessionStartAt) : 0
@@ -80,16 +79,16 @@ function buildPdf(ctx, report, photos, videos) {
         czas: formatDurationShort(s.durationMs),
         powod: s.reason === 'Inne' && s.customReason ? s.customReason : (s.reason || '—'),
         komentarz: s.comment || '',
-        _thumbs: thumbDescriptors(s.media, photoMap),
+        _thumbs: thumbDescriptors(s.media),
       })),
       thumbsCol: 'komentarz', thumbsKey: '_thumbs',
     })
   }
 
-  notesSection(ctx, 'Obserwacje', 'Obserwacja', report.observations, photoMap)
-  notesSection(ctx, 'Wnioski i rekomendacje', 'Wniosek / rekomendacja', report.conclusions, photoMap)
+  notesSection(ctx, 'Obserwacje', 'Obserwacja', report.observations)
+  notesSection(ctx, 'Wnioski i rekomendacje', 'Wniosek / rekomendacja', report.conclusions)
 
-  const generalThumbs = thumbDescriptors(report.generalMedia, photoMap)
+  const generalThumbs = thumbDescriptors(report.generalMedia)
   if (generalThumbs.length) {
     drawSectionHeader(ctx, 'Dokumentacja ogólna')
     drawThumbsRow(ctx, generalThumbs)

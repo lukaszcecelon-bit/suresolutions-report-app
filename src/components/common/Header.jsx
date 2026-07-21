@@ -1,21 +1,16 @@
 import { useMemo } from 'react'
 import SuggestInput from './SuggestInput.jsx'
 import { suggestAuthors, suggestProjectNames, suggestProjectNumbers, suggestMachineNames } from '../../utils/suggestions.js'
+import { TYPE_ICONS } from '../../utils/reportMeta.js'
 
+// Tytuł w pasku kontekstu nad formularzem — dłuższe „Raport …" niż krótkie
+// etykiety listy (reportMeta.TYPE_LABELS), więc trzymane osobno. Ikony wspólne.
 const TYPE_TITLES = {
   commissioning: 'Raport uruchomienia / obserwacji maszyny',
   service: 'Raport serwisu na obiekcie',
   prototype: 'Raport testów prototypu',
   satfat: 'Raport odbioru SAT / FAT',
   lesson: 'Lekcja projektowa — feedback do konstrukcji',
-}
-
-const TYPE_ICONS = {
-  commissioning: '▶',
-  service: '🔧',
-  prototype: '🧪',
-  satfat: '📋',
-  lesson: '🎓',
 }
 
 // `requiredFields` (default: all) — which header fields are validated as required.
