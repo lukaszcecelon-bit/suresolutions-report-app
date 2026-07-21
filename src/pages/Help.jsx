@@ -83,7 +83,7 @@ const HOW_IT_WORKS = [
   {
     icon: '🔄',
     title: 'Aktualizacje aplikacji',
-    body: 'Numer wersji widzisz w prawym górnym rogu. Kliknij go, żeby ręcznie sprawdzić aktualizację. Gdy jest nowa wersja, pojawi się baner „Nowa wersja” — kliknij „Odśwież”, żeby ją zainstalować.',
+    body: 'Numer wersji widzisz w prawym górnym rogu. Kliknij go, żeby ręcznie sprawdzić aktualizację — gdy jest nowa, pojawi się baner „Nowa wersja”, kliknij „Odśwież”. Jeśli na telefonie (iPhone) numer się nie zmienia mimo sprawdzania: po kliknięciu wersji potwierdź „Wymuś odświeżenie” — to pobierze świeżą wersję z sieci (raporty zostają). Gdy i to nie pomoże, zamknij aplikację całkowicie (przesuń w górę z przełącznika aplikacji) i otwórz ponownie — iOS potrafi trzymać starą wersję, dopóki appka działa w tle.',
   },
   {
     icon: '📲',

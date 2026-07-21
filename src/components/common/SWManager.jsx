@@ -5,8 +5,9 @@ import { useRegisterSW } from 'virtual:pwa-register/react'
 //   - needRefresh / offlineReady — banner state, consumed by <UpdatePrompt>
 //   - updateNow()                 — activates pending SW and reloads the page
 //   - checkForUpdate()            — manually triggers an update check, returns
-//                                   true when a new version is waiting after
-//                                   the call (useful for "tap version to refresh")
+//                                   true when a new version is installing/waiting
+//   - forceUpdate()               — escape hatch dla upartego iOS: czyści cache
+//                                   i przeładowuje (pobiera świeży kod z sieci)
 //
 // Also adds:
 //   - visibility-change auto-check (when the app comes back to the foreground)
@@ -16,7 +17,21 @@ const SWContext = createContext({
   setNeedRefresh: () => {}, setOfflineReady: () => {},
   updateNow: () => {},
   checkForUpdate: async () => false,
+  forceUpdate: async () => {},
 })
+
+// Pobierz rejestrację SW — z ref (szybka ścieżka) albo z API (gdy ref pusty,
+// np. tuż po starcie lub po przywróceniu z tła na telefonie).
+async function getRegistration(regRef) {
+  if (regRef.current) return regRef.current
+  try {
+    const r = await navigator.serviceWorker?.getRegistration?.()
+    if (r) regRef.current = r
+    return r || null
+  } catch {
+    return null
+  }
+}
 
 export function SWProvider({ children }) {
   const regRef = useRef(null)
@@ -59,19 +74,62 @@ export function SWProvider({ children }) {
     }
   }, [])
 
-  const updateNow = () => updateServiceWorker(true)
+  // Aktywuj oczekujący SW i przeładuj. updateServiceWorker(true) sam przeładowuje
+  // na zdarzenie controllerchange — ale na iOS w trybie standalone to zdarzenie
+  // bywa POMIJANE, więc dokładamy zapasowy reload po 2,5 s (jeśli strona wciąż
+  // żyje = pierwszy reload nie zaszedł).
+  const updateNow = async () => {
+    try { await updateServiceWorker(true) } catch (e) { console.warn('updateNow failed', e) }
+    setTimeout(() => { try { window.location.reload() } catch {} }, 2500)
+  }
 
+  // Sprawdzenie aktualizacji odporne na wolny telefon: po r.update() czekamy aż
+  // NOWY worker faktycznie przejdzie w stan 'installed' (=> 'waiting' => banner),
+  // a nie tylko przez sztywne 1,2 s (na mobile instalacja precache trwa dłużej,
+  // przez co stara wersja zwracała fałszywe „brak aktualizacji").
   const checkForUpdate = async () => {
-    const r = regRef.current
+    const r = await getRegistration(regRef)
     if (!r) return false
     try {
       await r.update()
-      // Give the browser a moment to install the new SW if one is available.
-      await new Promise((res) => setTimeout(res, 1200))
-      return !!r.waiting
+      if (r.waiting) return true
+      const installing = r.installing
+      if (!installing) return false
+      return await new Promise((resolve) => {
+        let settled = false
+        const finish = (v) => { if (!settled) { settled = true; resolve(v) } }
+        installing.addEventListener('statechange', () => {
+          if (installing.state === 'installed' || installing.state === 'activated') finish(true)
+          else if (installing.state === 'redundant') finish(false)
+        })
+        // Zabezpieczenie czasowe — na wypadek gdyby statechange nie doszło.
+        setTimeout(() => finish(!!r.waiting), 15000)
+      })
     } catch (e) {
       console.warn('SW update check failed', e)
       return false
+    }
+  }
+
+  // Escape hatch: gdy zwykły check nic nie daje (uparta zainstalowana PWA na
+  // iOS), czyścimy WSZYSTKIE cache Workboxa i przeładowujemy. Po reloadzie stary
+  // SW nie ma już z czego serwować → index.html i JS lecą z sieci (świeże).
+  // Dane użytkownika są w IndexedDB (nie w Cache API), więc NIE giną.
+  const forceUpdate = async () => {
+    try {
+      const r = await getRegistration(regRef)
+      if (r) {
+        await r.update().catch(() => {})
+        if (r.waiting) { try { r.waiting.postMessage({ type: 'SKIP_WAITING' }) } catch {} }
+      }
+      if (typeof caches !== 'undefined') {
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+      }
+    } catch (e) {
+      console.warn('forceUpdate failed', e)
+    } finally {
+      window.location.reload()
     }
   }
 
@@ -79,7 +137,7 @@ export function SWProvider({ children }) {
     <SWContext.Provider value={{
       needRefresh, offlineReady,
       setNeedRefresh, setOfflineReady,
-      updateNow, checkForUpdate,
+      updateNow, checkForUpdate, forceUpdate,
     }}>
       {children}
     </SWContext.Provider>

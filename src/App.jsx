@@ -14,11 +14,15 @@ import InstallPrompt from './components/common/InstallPrompt.jsx'
 import TabBar, { TAB_ROUTES } from './components/common/TabBar.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import OnboardingTour from './components/common/OnboardingTour.jsx'
-import { ToastProvider, useToast } from './components/common/Toast.jsx'
+import { ToastProvider, useToast, useConfirm } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
 import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
 import ErrorBoundary from './components/common/ErrorBoundary.jsx'
 import logo from './assets/logo.png'
+
+// Jedno źródło numeru wersji (badge + komunikaty). Zgodnie z regułą
+// wersjonowania: bump TUTAJ + w package.json przy każdej zmianie kodu.
+const APP_VERSION = 'v0.43'
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '')
@@ -28,12 +32,15 @@ function parseHash() {
 }
 
 // Clickable version badge in the top-right of the header. Tap → manually triggers
-// a service-worker update check. Toast feedback either way:
+// a service-worker update check:
 //   - update found → the existing UpdatePrompt banner shows itself
-//   - app already current → quick "Apka jest aktualna" toast
+//   - nothing found → confirm z opcją „Wymuś odświeżenie" (twarde pobranie z
+//     sieci) — ratunek dla upartej, zainstalowanej PWA na iPhone, gdzie zwykły
+//     check bywa ignorowany.
 function VersionBadge() {
   const toast = useToast()
-  const { checkForUpdate } = useSW()
+  const confirm = useConfirm()
+  const { checkForUpdate, forceUpdate } = useSW()
   const [checking, setChecking] = useState(false)
 
   const onClick = async () => {
@@ -41,8 +48,16 @@ function VersionBadge() {
     setChecking(true)
     try {
       const found = await checkForUpdate()
-      if (!found) toast.success('Apka jest aktualna')
-      // If found, the banner from <UpdatePrompt> shows automatically — no extra toast.
+      if (found) return // banner z <UpdatePrompt> pokaże się sam
+      const force = await confirm(
+        `Masz najnowszą wersję (${APP_VERSION}).\n\nJeśli na telefonie wciąż widzisz starą — wymuś pełne pobranie z sieci (wyczyści pamięć podręczną i przeładuje). Twoje raporty zostają nienaruszone.`,
+        {
+          title: 'Sprawdzanie aktualizacji',
+          confirmLabel: 'Wymuś odświeżenie',
+          cancelLabel: 'OK',
+        }
+      )
+      if (force) await forceUpdate()
     } catch (e) {
       toast.error('Nie udało się sprawdzić aktualizacji')
     } finally {
@@ -58,7 +73,7 @@ function VersionBadge() {
       title="Sprawdź aktualizacje"
       aria-label="Sprawdź aktualizacje"
     >
-      <span>v0.42</span>
+      <span>{APP_VERSION}</span>
       <span className={checking ? 'animate-spin inline-block' : 'inline-block'}>
         {checking ? '⟳' : '🔄'}
       </span>
