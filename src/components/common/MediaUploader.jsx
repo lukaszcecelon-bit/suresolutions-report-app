@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { compressImageBlob } from '../../utils/imageCompressor.js'
 import { newId } from '../../utils/storage.js'
+import { useToast } from './Toast.jsx'
 import {
   putImage, getImages, deleteImage, replaceImage,
   putVideo, deleteVideo,
@@ -21,6 +22,7 @@ function fmtSize(bytes) {
 }
 
 export default function MediaUploader({ media = [], onChange, photoOnly = false }) {
+  const toast = useToast()
   const photoCamInput = useRef(null)
   const videoCamInput = useRef(null)
   const galleryInput = useRef(null)
@@ -95,7 +97,7 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
         setResolved((prev) => ({ ...prev, [item.photoId]: thumb.dataUrl }))
       }
     } catch (e) {
-      alert('Błąd zapisu zdjęcia: ' + (e.message || e))
+      toast.error('Błąd zapisu zdjęcia: ' + (e.message || e))
     } finally {
       closeAnnotator()
     }
@@ -318,6 +320,7 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
         }>
           <PhotoAnnotator
             source={annotatorSrc}
+            mimeType={editingItem?.mimeType}
             onCancel={closeAnnotator}
             onSave={onAnnotationSave}
           />

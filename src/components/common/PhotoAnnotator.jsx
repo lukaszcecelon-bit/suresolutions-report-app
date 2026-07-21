@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import { useToast, useConfirm } from './Toast.jsx'
 
 const COLORS = [
   { key: 'red',    value: '#EF4444' },
@@ -9,9 +10,9 @@ const COLORS = [
   { key: 'white',  value: '#FFFFFF' },
 ]
 
-// Width values are in *screen CSS pixels* — the actual canvas lineWidth is
-// these × display-scale (see drawShape). Bumped from 3/6/10 because on mobile
-// even 6 screen-px arrows were near-invisible against busy photo backgrounds.
+// Preset thickness in *screen CSS pixels at fit-zoom*. On draw we convert to
+// absolute image-space px (÷ fitScale) and store that on the shape, so an
+// annotation keeps a fixed real thickness on the photo regardless of zoom.
 const WIDTHS = [
   { key: 'thin',   px: 6,  label: 'Cienka' },
   { key: 'medium', px: 12, label: 'Średnia' },
@@ -24,118 +25,231 @@ const TOOLS = [
   { key: 'rect',     label: 'Prostokąt', icon: '▭' },
   { key: 'freehand', label: 'Rysuj',     icon: '✎' },
   { key: 'text',     label: 'Tekst',     icon: 'A' },
+  { key: 'pan',      label: 'Przesuń',   icon: '🖐' },
 ]
 
 const newShapeId = () => Math.random().toString(36).slice(2, 11)
 const SELECTION_BLUE = '#3D70B2'
+const MAX_ZOOM_MULT = 8      // max zoom = 8× fit
+const HISTORY_LIMIT = 60
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
-// `source` can be either a dataURL (string starting with "data:") or an object URL
-// for a Blob/File. The annotator draws on a canvas at the image's native resolution
-// so the saved Blob preserves the full quality of the original.
+// ---------- Undo/redo history reducer ----------
+// State: { shapes, past[], future[] }. Snapshots are plain shape arrays — a
+// report rarely has more than a handful, so full-array snapshots are cheap and
+// far more robust than diffing. Structural edits (crop/rotate) use RESET, which
+// clears history so undo never crosses a base-image transform (would misalign).
+const initHist = { shapes: [], past: [], future: [] }
+function histReducer(state, a) {
+  switch (a.type) {
+    case 'LIVE': // in-progress drag/draw — update shapes WITHOUT touching history
+      return { ...state, shapes: a.shapes }
+    case 'COMMIT': // record current shapes into past, apply new array
+      return { shapes: a.shapes, past: [...state.past, state.shapes].slice(-HISTORY_LIMIT), future: [] }
+    case 'COMMIT_FROM': // shapes already mutated live; record the pre-op array
+      return { shapes: state.shapes, past: [...state.past, a.origin].slice(-HISTORY_LIMIT), future: [] }
+    case 'UNDO':
+      if (!state.past.length) return state
+      return {
+        shapes: state.past[state.past.length - 1],
+        past: state.past.slice(0, -1),
+        future: [state.shapes, ...state.future],
+      }
+    case 'REDO':
+      if (!state.future.length) return state
+      return {
+        shapes: state.future[0],
+        past: [...state.past, state.shapes],
+        future: state.future.slice(1),
+      }
+    case 'RESET':
+      return { shapes: a.shapes, past: [], future: [] }
+    default:
+      return state
+  }
+}
+
+// `source` — dataURL or object URL for the full-resolution image.
+// `mimeType` — original mime (e.g. "image/png"); PNG is re-saved losslessly,
+//   everything else as high-quality JPEG (0.92). Avoids generational JPEG loss.
 //
-// EDITING MODEL (v0.4): tap an existing shape to select it — drag to move,
-// drag a handle (white dot) to resize, pick a color/width to restyle, hit
-// "Usuń zaznaczony" to delete just that shape. Tap empty area = deselect AND
-// start drawing a new shape with the active tool (auto-detect).
-export default function PhotoAnnotator({ source, onSave, onCancel }) {
+// EDITING MODEL:
+//   • Coordinates are stored in IMAGE space; a view transform (scale/tx/ty)
+//     maps image → screen so the user can pinch/scroll to zoom & pan and place
+//     annotations precisely on high-res phone photos.
+//   • Tap a shape to select → drag to move, drag a handle to resize, restyle
+//     via color/width, "Usuń" to delete. Every action is undoable (↶/↷).
+//   • ✂ Kadruj / ⟳ Obróć transform the base image itself (and existing shapes).
+export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = '' }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+
+  const wrapRef = useRef(null)      // positioned container (canvas + overlays)
   const canvasRef = useRef(null)
-  const imgRef = useRef(null)
+  const baseRef = useRef(null)      // current base: ImageBitmap or offscreen canvas
+  const measureRef = useRef(null)   // 1×1 ctx for text metrics (transform-free)
+
+  // Layout refs (not state — updated by ResizeObserver, read during draw).
+  const cssRef = useRef({ w: 0, h: 0 })
+  const dprRef = useRef(1)
+
+  const [baseSize, setBaseSize] = useState({ w: 0, h: 0 })
+  const [ready, setReady] = useState(false)
+  const [resizeTick, setResizeTick] = useState(0)
+
   const [tool, setTool] = useState('arrow')
   const [color, setColor] = useState(COLORS[0].value)
   const [width, setWidth] = useState(WIDTHS[1].px)
-  const [shapes, setShapes] = useState([])
-  const [drawing, setDrawing] = useState(null) // shape currently being drawn
+
+  const [hist, dispatch] = useReducer(histReducer, initHist)
+  const shapes = hist.shapes
+
+  const [drawing, setDrawing] = useState(null)
   const [selectedId, setSelectedId] = useState(null)
-  const [drag, setDrag] = useState(null) // { kind: 'move'|'handle', startP, originalShape, handleRole? }
+  const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 })
+  const [mode, setMode] = useState('draw') // 'draw' | 'crop'
+  const [cropRect, setCropRect] = useState(null) // image coords {x,y,w,h}
+  const [textEditor, setTextEditor] = useState(null) // {id|null, ix, iy, value}
 
   const selectedShape = selectedId ? shapes.find((s) => s.id === selectedId) : null
 
-  // Load source image, set canvas size to native res
+  // Transient interaction refs (avoid re-render churn during a gesture/drag).
+  const pointersRef = useRef(new Map())   // pointerId → {x,y} (CSS px in canvas)
+  const gestureRef = useRef(null)         // active 2-finger pinch/pan
+  const dragRef = useRef(null)            // active 1-finger draw/move/resize
+  const suppressDrawRef = useRef(false)   // after a gesture, ignore stray draws
+
+  // ---------- Fit / coordinate helpers ----------
+
+  const fitScale = useCallback(() => {
+    const { w: cw, h: ch } = cssRef.current
+    const { w, h } = baseSize
+    if (!w || !h || !cw || !ch) return 1
+    return Math.min(cw / w, ch / h)
+  }, [baseSize])
+
+  // Fit for explicit dimensions — used after crop/rotate, where `baseSize` state
+  // hasn't re-rendered yet so the memoized computeFit() would use stale dims.
+  const computeFitFor = useCallback((w, h) => {
+    const { w: cw, h: ch } = cssRef.current
+    if (!w || !h || !cw || !ch) return { scale: 1, tx: 0, ty: 0 }
+    const s = Math.min(cw / w, ch / h)
+    return { scale: s, tx: (cw - w * s) / 2, ty: (ch - h * s) / 2 }
+  }, [])
+
+  const computeFit = useCallback(() => computeFitFor(baseSize.w, baseSize.h), [baseSize, computeFitFor])
+
+  // Keep the image covering the viewport (or centered when smaller than it).
+  const clampView = useCallback((v) => {
+    const { w: cw, h: ch } = cssRef.current
+    const iw = baseSize.w * v.scale
+    const ih = baseSize.h * v.scale
+    let { tx, ty } = v
+    tx = iw <= cw ? (cw - iw) / 2 : clamp(tx, cw - iw, 0)
+    ty = ih <= ch ? (ch - ih) / 2 : clamp(ty, ch - ih, 0)
+    return { scale: v.scale, tx, ty }
+  }, [baseSize])
+
+  // CSS-in-canvas point → image coords, using a specific view.
+  const toImage = (cx, cy, v = view) => ({ x: (cx - v.tx) / v.scale, y: (cy - v.ty) / v.scale })
+  const toScreen = (ix, iy, v = view) => ({ x: ix * v.scale + v.tx, y: iy * v.scale + v.ty })
+
+  const canvasPoint = (e) => {
+    const r = canvasRef.current.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+
+  // ---------- Base image load ----------
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
-      imgRef.current = img
-      const canvas = canvasRef.current
-      if (!canvas) return
-      canvas.width = img.naturalWidth || 400
-      canvas.height = img.naturalHeight || 300
-      redraw([])
+      baseRef.current = img
+      setBaseSize({ w: img.naturalWidth || 400, h: img.naturalHeight || 300 })
+      setReady(true)
     }
     img.src = source
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source])
 
-  // Redraw on every shape / drawing / selection change. selectedId is in deps
-  // so the dashed bbox + handles repaint when selection changes (even if
-  // shapes themselves didn't move).
+  // ---------- Canvas sizing (DPR-aware) via ResizeObserver ----------
   useEffect(() => {
-    redraw(drawing ? [...shapes, drawing] : shapes)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shapes, drawing, selectedId])
-
-  // Re-render on resize so widths stay visually consistent if user rotates phone.
-  useEffect(() => {
-    const onResize = () => redraw(drawing ? [...shapes, drawing] : shapes)
-    window.addEventListener('resize', onResize)
-    window.addEventListener('orientationchange', onResize)
-    return () => {
-      window.removeEventListener('resize', onResize)
-      window.removeEventListener('orientationchange', onResize)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shapes, drawing, selectedId])
-
-  // ---------- Drawing scaffolding ----------
-
-  // Scale factor: canvas is at image's native res (e.g. 3024px) but displayed
-  // at e.g. 360px on phone. Without scaling, a 6px line is invisible on mobile.
-  // We treat WIDTHS values as "visible screen pixels" and multiply by this ratio
-  // when drawing so a "medium" line always looks the same thickness on any device.
-  function getDisplayScale() {
+    const wrap = wrapRef.current
     const canvas = canvasRef.current
-    if (!canvas) return 1
-    const rect = canvas.getBoundingClientRect()
-    if (rect.width <= 0) return 1
-    return canvas.width / rect.width
+    if (!wrap || !canvas) return
+    const sync = () => {
+      const rect = wrap.getBoundingClientRect()
+      const dpr = window.devicePixelRatio || 1
+      dprRef.current = dpr
+      cssRef.current = { w: rect.width, h: rect.height }
+      canvas.width = Math.max(1, Math.round(rect.width * dpr))
+      canvas.height = Math.max(1, Math.round(rect.height * dpr))
+      setResizeTick((t) => t + 1)
+    }
+    sync()
+    const ro = new ResizeObserver(sync)
+    ro.observe(wrap)
+    return () => ro.disconnect()
+  }, [])
+
+  // First good layout after the image is ready → fit to screen.
+  const didFitRef = useRef(false)
+  useEffect(() => {
+    if (!ready || !cssRef.current.w) return
+    if (didFitRef.current) return
+    didFitRef.current = true
+    setView(computeFit())
+  }, [ready, resizeTick, computeFit])
+
+  // On viewport resize (e.g. phone rotate): re-fit if we were fitted, else clamp.
+  const prevFitRef = useRef(null)
+  useEffect(() => {
+    if (!ready) return
+    const f = computeFit()
+    const wasFitted = prevFitRef.current == null ||
+      Math.abs(view.scale - prevFitRef.current) < 0.005
+    prevFitRef.current = f.scale
+    setView((v) => (wasFitted ? f : clampView(v)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resizeTick])
+
+  // ---------- Text metrics (image space) ----------
+  function measureCtx() {
+    if (!measureRef.current) {
+      const c = document.createElement('canvas')
+      measureRef.current = c.getContext('2d')
+    }
+    return measureRef.current
+  }
+  function textFontPx(s) {
+    return Math.max(16 / (fitScale() || 1), (s.w || 12) * 3)
+  }
+  function textFontStr(px) {
+    return `bold ${px}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`
+  }
+  function measureTextShape(s) {
+    const fp = textFontPx(s)
+    const ctx = measureCtx()
+    ctx.font = textFontStr(fp)
+    const lines = String(s.text || '').split('\n')
+    let w = 0
+    for (const ln of lines) w = Math.max(w, ctx.measureText(ln).width)
+    return { w, h: fp * 1.25 * lines.length, lineH: fp * 1.25, fontPx: fp }
   }
 
-  function redraw(list) {
-    const canvas = canvasRef.current
-    const img = imgRef.current
-    if (!canvas || !img) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    const scale = getDisplayScale()
-    for (const s of list) drawShape(ctx, s, scale)
-    // Selection overlay last so it's on top
-    if (selectedId) {
-      const sel = list.find((s) => s.id === selectedId)
-      if (sel) drawSelectionOverlay(ctx, sel, scale)
-    }
-  }
-
-  function drawShape(ctx, s, scale = 1) {
+  // ---------- Shape drawing (pure image space) ----------
+  function drawShape(ctx, s) {
     ctx.save()
-    const w = s.width * scale
     ctx.strokeStyle = s.color
     ctx.fillStyle = s.color
-    ctx.lineWidth = w
+    ctx.lineWidth = s.w
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     if (s.type === 'arrow') {
-      drawArrow(ctx, s.x1, s.y1, s.x2, s.y2, w)
+      drawArrow(ctx, s.x1, s.y1, s.x2, s.y2, s.w)
     } else if (s.type === 'rect') {
-      const x = Math.min(s.x1, s.x2)
-      const y = Math.min(s.y1, s.y2)
-      const rw = Math.abs(s.x2 - s.x1)
-      const rh = Math.abs(s.y2 - s.y1)
-      ctx.strokeRect(x, y, rw, rh)
+      ctx.strokeRect(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1))
     } else if (s.type === 'circle') {
-      const cx = (s.x1 + s.x2) / 2
-      const cy = (s.y1 + s.y2) / 2
-      const rx = Math.abs(s.x2 - s.x1) / 2
-      const ry = Math.abs(s.y2 - s.y1) / 2
+      const cx = (s.x1 + s.x2) / 2, cy = (s.y1 + s.y2) / 2
+      const rx = Math.abs(s.x2 - s.x1) / 2, ry = Math.abs(s.y2 - s.y1) / 2
       ctx.beginPath()
       ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
       ctx.stroke()
@@ -147,37 +261,31 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
       ctx.stroke()
     } else if (s.type === 'text') {
-      const fontPx = textFontPx(s, scale)
-      ctx.font = textFont(fontPx)
+      const { fontPx, lineH } = measureTextShape(s)
+      ctx.font = textFontStr(fontPx)
       ctx.textBaseline = 'top'
-      // outline for legibility on any background
-      ctx.lineWidth = Math.max(2 * scale, w / 2)
+      ctx.lineWidth = Math.max(fontPx * 0.14, 2)
       ctx.strokeStyle = s.color === '#FFFFFF' ? '#111827' : '#FFFFFF'
-      ctx.strokeText(s.text || '', s.x1, s.y1)
-      ctx.fillStyle = s.color
-      ctx.fillText(s.text || '', s.x1, s.y1)
+      const lines = String(s.text || '').split('\n')
+      lines.forEach((ln, i) => {
+        ctx.strokeText(ln, s.x1, s.y1 + i * lineH)
+        ctx.fillStyle = s.color
+        ctx.fillText(ln, s.x1, s.y1 + i * lineH)
+      })
     }
     ctx.restore()
   }
 
   function drawArrow(ctx, x1, y1, x2, y2, w) {
-    const dx = x2 - x1
-    const dy = y2 - y1
+    const dx = x2 - x1, dy = y2 - y1
     const len = Math.hypot(dx, dy)
     if (len < 1) return
-    // headLen scales with line width — w is already display-scaled by caller,
-    // so the head ends up the same visible size on any device.
     const headLen = w * 3.5
-    const ux = dx / len
-    const uy = dy / len
-    const baseX = x2 - ux * headLen
-    const baseY = y2 - uy * headLen
-    // shaft
+    const ux = dx / len, uy = dy / len
     ctx.beginPath()
     ctx.moveTo(x1, y1)
-    ctx.lineTo(baseX, baseY)
+    ctx.lineTo(x2 - ux * headLen, y2 - uy * headLen)
     ctx.stroke()
-    // head
     const ang = Math.atan2(dy, dx)
     const wing = headLen * 0.6
     ctx.beginPath()
@@ -189,202 +297,91 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
     ctx.fill()
   }
 
-  // ---------- Text metrics helpers ----------
-
-  function textFontPx(s, scale) {
-    const w = s.width * scale
-    return Math.max(14 * scale, w * 4)
-  }
-  function textFont(fontPx) {
-    return `bold ${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif`
-  }
-  function measureText(s, scale) {
-    const canvas = canvasRef.current
-    if (!canvas) return { w: 0, h: 0 }
-    const ctx = canvas.getContext('2d')
-    const fontPx = textFontPx(s, scale)
-    ctx.font = textFont(fontPx)
-    const m = ctx.measureText(s.text || '')
-    return { w: m.width, h: fontPx * 1.2 }
-  }
-
-  // ---------- Coordinates ----------
-
-  function ptFromEvent(e) {
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
-    const sx = canvas.width / rect.width
-    const sy = canvas.height / rect.height
-    return {
-      x: (e.clientX - rect.left) * sx,
-      y: (e.clientY - rect.top) * sy,
-    }
-  }
-
-  // ---------- Hit testing ----------
-
-  function distToSegment(p, a, b) {
-    const dx = b.x - a.x
-    const dy = b.y - a.y
-    const len2 = dx * dx + dy * dy
-    if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
-    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
-    t = Math.max(0, Math.min(1, t))
-    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
-  }
-
-  function hitShape(s, p, tolerance, scale) {
-    if (s.type === 'arrow') {
-      // shaft proximity OR inside the head
-      const shaft = distToSegment(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 })
-      if (shaft <= tolerance) return true
-      // head ~= w*3.5 wide cone at (x2,y2)
-      return Math.hypot(p.x - s.x2, p.y - s.y2) <= s.width * scale * 3.5
-    }
-    if (s.type === 'rect') {
-      // Hit if anywhere within the rect (incl. interior) — mobile-friendly.
-      const minX = Math.min(s.x1, s.x2) - tolerance
-      const maxX = Math.max(s.x1, s.x2) + tolerance
-      const minY = Math.min(s.y1, s.y2) - tolerance
-      const maxY = Math.max(s.y1, s.y2) + tolerance
-      return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY
-    }
-    if (s.type === 'circle') {
-      const cx = (s.x1 + s.x2) / 2
-      const cy = (s.y1 + s.y2) / 2
-      const rx = Math.abs(s.x2 - s.x1) / 2 + tolerance
-      const ry = Math.abs(s.y2 - s.y1) / 2 + tolerance
-      if (rx <= 0 || ry <= 0) return false
-      const ndx = (p.x - cx) / rx
-      const ndy = (p.y - cy) / ry
-      return ndx * ndx + ndy * ndy <= 1
-    }
-    if (s.type === 'freehand') {
-      const pts = s.points || []
-      for (let i = 1; i < pts.length; i++) {
-        if (distToSegment(p, pts[i - 1], pts[i]) <= tolerance) return true
-      }
-      return false
-    }
-    if (s.type === 'text') {
-      const { w, h } = measureText(s, scale)
-      return (
-        p.x >= s.x1 - tolerance &&
-        p.x <= s.x1 + w + tolerance &&
-        p.y >= s.y1 - tolerance &&
-        p.y <= s.y1 + h + tolerance
-      )
-    }
-    return false
-  }
-
-  // ---------- Handles ----------
-
-  function getHandles(s, scale) {
-    if (s.type === 'arrow') {
-      return [
-        { x: s.x1, y: s.y1, role: 'p1' },
-        { x: s.x2, y: s.y2, role: 'p2' },
-      ]
-    }
-    if (s.type === 'rect' || s.type === 'circle') {
-      return [
-        { x: s.x1, y: s.y1, role: 'tl' },
-        { x: s.x2, y: s.y1, role: 'tr' },
-        { x: s.x2, y: s.y2, role: 'br' },
-        { x: s.x1, y: s.y2, role: 'bl' },
-      ]
-    }
-    if (s.type === 'text') {
-      const { w, h } = measureText(s, scale)
-      return [{ x: s.x1 + w, y: s.y1 + h, role: 'fontsize' }]
-    }
-    // freehand: no resize handles — too messy to redo points individually
-    return []
-  }
-
-  function hitHandle(s, p, scale) {
-    const handles = getHandles(s, scale)
-    // Larger hit area than the visual handle (24 CSS px radius vs 10 visual)
-    const r = 24 * scale
-    for (const h of handles) {
-      if (Math.hypot(p.x - h.x, p.y - h.y) <= r) return h
-    }
-    return null
-  }
-
-  // ---------- Selection overlay (dashed bbox + handles) ----------
-
-  function drawSelectionOverlay(ctx, s, scale) {
-    const bbox = getBbox(s, scale)
-    if (!bbox) return
-    ctx.save()
-    ctx.strokeStyle = SELECTION_BLUE
-    ctx.lineWidth = 2 * scale
-    ctx.setLineDash([8 * scale, 4 * scale])
-    const pad = 6 * scale
-    ctx.strokeRect(bbox.minX - pad, bbox.minY - pad, bbox.maxX - bbox.minX + 2 * pad, bbox.maxY - bbox.minY + 2 * pad)
-    ctx.setLineDash([])
-
-    // Handles
-    const handles = getHandles(s, scale)
-    const r = 10 * scale
-    for (const h of handles) {
-      ctx.beginPath()
-      ctx.arc(h.x, h.y, r, 0, Math.PI * 2)
-      ctx.fillStyle = '#FFFFFF'
-      ctx.fill()
-      ctx.strokeStyle = SELECTION_BLUE
-      ctx.lineWidth = 2 * scale
-      ctx.stroke()
-    }
-    ctx.restore()
-  }
-
-  function getBbox(s, scale) {
+  // ---------- Bounding boxes / handles ----------
+  function getBbox(s) {
     if (s.type === 'arrow' || s.type === 'rect' || s.type === 'circle') {
-      return {
-        minX: Math.min(s.x1, s.x2),
-        maxX: Math.max(s.x1, s.x2),
-        minY: Math.min(s.y1, s.y2),
-        maxY: Math.max(s.y1, s.y2),
-      }
+      return { minX: Math.min(s.x1, s.x2), maxX: Math.max(s.x1, s.x2), minY: Math.min(s.y1, s.y2), maxY: Math.max(s.y1, s.y2) }
     }
     if (s.type === 'freehand') {
       const pts = s.points || []
-      if (pts.length === 0) return null
+      if (!pts.length) return null
       let minX = pts[0].x, maxX = pts[0].x, minY = pts[0].y, maxY = pts[0].y
-      for (const pt of pts) {
-        if (pt.x < minX) minX = pt.x
-        if (pt.x > maxX) maxX = pt.x
-        if (pt.y < minY) minY = pt.y
-        if (pt.y > maxY) maxY = pt.y
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
       }
       return { minX, minY, maxX, maxY }
     }
     if (s.type === 'text') {
-      const { w, h } = measureText(s, scale)
+      const { w, h } = measureTextShape(s)
       return { minX: s.x1, minY: s.y1, maxX: s.x1 + w, maxY: s.y1 + h }
     }
     return null
   }
 
-  // ---------- Mutation helpers ----------
-
-  function moveShape(s, dx, dy) {
-    if (s.type === 'arrow' || s.type === 'rect' || s.type === 'circle') {
-      return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+  function getHandles(s) {
+    if (s.type === 'arrow') return [{ x: s.x1, y: s.y1, role: 'p1' }, { x: s.x2, y: s.y2, role: 'p2' }]
+    if (s.type === 'rect' || s.type === 'circle') {
+      return [
+        { x: s.x1, y: s.y1, role: 'tl' }, { x: s.x2, y: s.y1, role: 'tr' },
+        { x: s.x2, y: s.y2, role: 'br' }, { x: s.x1, y: s.y2, role: 'bl' },
+      ]
     }
     if (s.type === 'text') {
-      return { ...s, x1: s.x1 + dx, y1: s.y1 + dy }
+      const { w, h } = measureTextShape(s)
+      return [{ x: s.x1 + w, y: s.y1 + h, role: 'fontsize' }]
     }
-    if (s.type === 'freehand') {
-      return { ...s, points: s.points.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })) }
-    }
-    return s
+    return [] // freehand: no resize handles
   }
 
-  function resizeShape(s, role, p, scale) {
+  // ---------- Hit testing (tolerance in image px = screen px ÷ scale) ----------
+  function distToSegment(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y
+    const len2 = dx * dx + dy * dy
+    if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y)
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+    t = clamp(t, 0, 1)
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+  }
+  function hitShape(s, p, tol) {
+    if (s.type === 'arrow') {
+      if (distToSegment(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) <= tol) return true
+      return Math.hypot(p.x - s.x2, p.y - s.y2) <= s.w * 3.5
+    }
+    if (s.type === 'rect') {
+      return p.x >= Math.min(s.x1, s.x2) - tol && p.x <= Math.max(s.x1, s.x2) + tol &&
+             p.y >= Math.min(s.y1, s.y2) - tol && p.y <= Math.max(s.y1, s.y2) + tol
+    }
+    if (s.type === 'circle') {
+      const cx = (s.x1 + s.x2) / 2, cy = (s.y1 + s.y2) / 2
+      const rx = Math.abs(s.x2 - s.x1) / 2 + tol, ry = Math.abs(s.y2 - s.y1) / 2 + tol
+      if (rx <= 0 || ry <= 0) return false
+      const nx = (p.x - cx) / rx, ny = (p.y - cy) / ry
+      return nx * nx + ny * ny <= 1
+    }
+    if (s.type === 'freehand') {
+      const pts = s.points || []
+      for (let i = 1; i < pts.length; i++) if (distToSegment(p, pts[i - 1], pts[i]) <= tol) return true
+      return false
+    }
+    if (s.type === 'text') {
+      const { w, h } = measureTextShape(s)
+      return p.x >= s.x1 - tol && p.x <= s.x1 + w + tol && p.y >= s.y1 - tol && p.y <= s.y1 + h + tol
+    }
+    return false
+  }
+  function hitHandle(s, p, tol) {
+    for (const h of getHandles(s)) if (Math.hypot(p.x - h.x, p.y - h.y) <= tol) return h
+    return null
+  }
+
+  // ---------- Mutations ----------
+  function moveShape(s, dx, dy) {
+    if (s.type === 'freehand') return { ...s, points: s.points.map((pt) => ({ x: pt.x + dx, y: pt.y + dy })) }
+    if (s.type === 'text') return { ...s, x1: s.x1 + dx, y1: s.y1 + dy }
+    return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy }
+  }
+  function resizeShape(s, role, p) {
     if (s.type === 'arrow') {
       if (role === 'p1') return { ...s, x1: p.x, y1: p.y }
       if (role === 'p2') return { ...s, x2: p.x, y2: p.y }
@@ -396,308 +393,569 @@ export default function PhotoAnnotator({ source, onSave, onCancel }) {
       if (role === 'bl') return { ...s, x1: p.x, y2: p.y }
     }
     if (s.type === 'text' && role === 'fontsize') {
-      // Drag handle further from text origin → bigger font.
-      // Reverse of textFontPx: fontPx ≈ p.y - s.y1, width = fontPx / (4*scale).
-      const dy = Math.max(20 * scale, p.y - s.y1)
-      const newWidthCss = Math.max(6, Math.min(80, dy / (1.2 * 4 * scale)))
-      return { ...s, width: newWidthCss }
+      // Handle sits at (x1+w, y1+h); drag distance ≈ new text height → new w.
+      const newH = Math.max(20, p.y - s.y1)
+      const fp = newH / 1.25
+      return { ...s, w: clamp(fp / 3, 4, 4000) }
     }
     return s
   }
 
-  // ---------- Pointer flow ----------
+  // ---------- Rendering ----------
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current
+    const base = baseRef.current
+    if (!canvas || !base) return
+    const ctx = canvas.getContext('2d')
+    const dpr = dprRef.current
+    const { w: cw, h: ch } = cssRef.current
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // Dark backdrop around the image
+    ctx.fillStyle = '#1f2937'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // Image-space transform (folds in DPR + view)
+    ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.tx, dpr * view.ty)
+    ctx.drawImage(base, 0, 0, baseSize.w, baseSize.h)
+
+    const list = drawing ? [...shapes, drawing] : shapes
+    for (const s of list) drawShape(ctx, s)
+
+    if (mode === 'draw' && selectedId) {
+      const sel = list.find((s) => s.id === selectedId)
+      if (sel) drawSelectionOverlay(ctx, sel)
+    }
+
+    // Crop overlay — drawn in CSS space (DPR only), on top of everything.
+    if (mode === 'crop' && cropRect) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      const tl = toScreen(cropRect.x, cropRect.y)
+      const br = toScreen(cropRect.x + cropRect.w, cropRect.y + cropRect.h)
+      const rx = tl.x, ry = tl.y, rw = br.x - tl.x, rh = br.y - tl.y
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      ctx.fillRect(0, 0, cw, ry)                       // top
+      ctx.fillRect(0, ry + rh, cw, ch - (ry + rh))     // bottom
+      ctx.fillRect(0, ry, rx, rh)                      // left
+      ctx.fillRect(rx + rw, ry, cw - (rx + rw), rh)    // right
+      ctx.strokeStyle = '#FFFFFF'
+      ctx.lineWidth = 2
+      ctx.strokeRect(rx, ry, rw, rh)
+      // corner handles
+      ctx.fillStyle = '#FFFFFF'
+      for (const [hx, hy] of [[rx, ry], [rx + rw, ry], [rx + rw, ry + rh], [rx, ry + rh]]) {
+        ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = SELECTION_BLUE; ctx.lineWidth = 2; ctx.stroke()
+      }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, drawing, selectedId, view, mode, cropRect, baseSize])
+
+  function drawSelectionOverlay(ctx, s) {
+    const bbox = getBbox(s)
+    if (!bbox) return
+    const ui = 1 / view.scale // screen-constant sizes in image space
+    ctx.save()
+    ctx.strokeStyle = SELECTION_BLUE
+    ctx.lineWidth = 2 * ui
+    ctx.setLineDash([8 * ui, 4 * ui])
+    const pad = 6 * ui
+    ctx.strokeRect(bbox.minX - pad, bbox.minY - pad, bbox.maxX - bbox.minX + 2 * pad, bbox.maxY - bbox.minY + 2 * pad)
+    ctx.setLineDash([])
+    for (const h of getHandles(s)) {
+      ctx.beginPath()
+      ctx.arc(h.x, h.y, 9 * ui, 0, Math.PI * 2)
+      ctx.fillStyle = '#FFFFFF'; ctx.fill()
+      ctx.strokeStyle = SELECTION_BLUE; ctx.lineWidth = 2 * ui; ctx.stroke()
+    }
+    ctx.restore()
+  }
+
+  // Layout effect (not passive) so a canvas resize repaints BEFORE the browser
+  // paints — otherwise resizing the backing store clears it and a blank frame
+  // flashes (e.g. when the selection row grows the toolbar).
+  useLayoutEffect(() => { draw() }, [draw, resizeTick])
+
+  // ---------- Zoom helpers ----------
+  const zoomAround = useCallback((cx, cy, factor) => {
+    setView((v) => {
+      const minS = fitScale()
+      const maxS = minS * MAX_ZOOM_MULT
+      const ns = clamp(v.scale * factor, minS, maxS)
+      const ip = toImage(cx, cy, v)
+      return clampView({ scale: ns, tx: cx - ns * ip.x, ty: cy - ns * ip.y })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitScale, clampView])
+
+  const zoomButton = (factor) => {
+    const { w, h } = cssRef.current
+    zoomAround(w / 2, h / 2, factor)
+  }
+  const fitView = () => setView(computeFit())
+
+  const onWheel = (e) => {
+    if (mode === 'crop') return
+    e.preventDefault()
+    const p = canvasPoint(e)
+    zoomAround(p.x, p.y, e.deltaY < 0 ? 1.15 : 1 / 1.15)
+  }
+
+  // ---------- Pointer handling ----------
+  const dist2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
+  const midOf = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
+
+  const beginGesture = () => {
+    const pts = [...pointersRef.current.values()]
+    if (pts.length < 2) return
+    const [a, b] = pts
+    gestureRef.current = {
+      startDist: dist2(a, b),
+      startMid: midOf(a, b),
+      startView: view,
+      startMidImg: toImage(midOf(a, b).x, midOf(a, b).y, view),
+    }
+    // Cancel any in-progress single-finger action
+    dragRef.current = null
+    if (drawing) setDrawing(null)
+  }
 
   const onPointerDown = (e) => {
     e.preventDefault()
-    canvasRef.current.setPointerCapture(e.pointerId)
-    const p = ptFromEvent(e)
-    const scale = getDisplayScale()
-    const tolerance = 14 * scale // ~14 CSS px finger tolerance for shape hit
+    const p = canvasPoint(e)
+    pointersRef.current.set(e.pointerId, p)
+    try { canvasRef.current.setPointerCapture(e.pointerId) } catch {}
 
-    // 1. Already-selected shape's handles take precedence
+    if (pointersRef.current.size >= 2) { beginGesture(); return }
+    if (mode === 'crop') { cropPointerDown(p); return }
+
+    const scale = view.scale
+    const ip = toImage(p.x, p.y)
+    const tol = 14 / scale
+
+    if (tool === 'pan') { dragRef.current = { kind: 'pan', startP: p, startView: view }; return }
+
+    // Handles of the selected shape take priority
     if (selectedShape) {
-      const h = hitHandle(selectedShape, p, scale)
-      if (h) {
-        setDrag({ kind: 'handle', startP: p, originalShape: selectedShape, handleRole: h.role })
-        return
-      }
+      const h = hitHandle(selectedShape, ip, 24 / scale)
+      if (h) { dragRef.current = { kind: 'handle', role: h.role, origin: shapes, id: selectedShape.id, moved: false }; return }
     }
-
-    // 2. Hit-test all shapes (last drawn first = top of z-order)
+    // Hit-test all shapes, topmost first
     for (let i = shapes.length - 1; i >= 0; i--) {
-      const s = shapes[i]
-      if (hitShape(s, p, tolerance, scale)) {
-        setSelectedId(s.id)
-        setDrag({ kind: 'move', startP: p, originalShape: s })
+      if (hitShape(shapes[i], ip, tol)) {
+        setSelectedId(shapes[i].id)
+        dragRef.current = { kind: 'move', startP: ip, origin: shapes, orig: shapes[i], id: shapes[i].id, moved: false }
         return
       }
     }
-
-    // 3. Empty area — deselect, then start drawing new shape
+    // Empty area
     if (selectedId) setSelectedId(null)
+    const w = width / (fitScale() || 1) // preset screen-px → absolute image-px
 
-    if (tool === 'text') {
-      const text = window.prompt('Tekst:')
-      if (text && text.trim()) {
-        setShapes((arr) => [...arr, {
-          id: newShapeId(),
-          type: 'text', x1: p.x, y1: p.y, text: text.trim(), color, width,
-        }])
-      }
-      return
-    }
-    if (tool === 'freehand') {
-      setDrawing({ id: newShapeId(), type: 'freehand', points: [p], color, width })
-    } else {
-      setDrawing({ id: newShapeId(), type: tool, x1: p.x, y1: p.y, x2: p.x, y2: p.y, color, width })
-    }
+    if (tool === 'text') { openTextEditor(null, ip); return }
+    if (tool === 'freehand') { setDrawing({ id: newShapeId(), type: 'freehand', points: [ip], color, w }) }
+    else { setDrawing({ id: newShapeId(), type: tool, x1: ip.x, y1: ip.y, x2: ip.x, y2: ip.y, color, w }) }
   }
 
   const onPointerMove = (e) => {
-    if (!drag && !drawing) return
-    e.preventDefault()
-    const p = ptFromEvent(e)
-    const scale = getDisplayScale()
+    if (!pointersRef.current.has(e.pointerId)) return
+    const p = canvasPoint(e)
+    pointersRef.current.set(e.pointerId, p)
 
-    if (drag) {
-      if (drag.kind === 'move') {
-        const dx = p.x - drag.startP.x
-        const dy = p.y - drag.startP.y
-        setShapes((arr) => arr.map((s) =>
-          s.id === drag.originalShape.id ? moveShape(drag.originalShape, dx, dy) : s
-        ))
-      } else if (drag.kind === 'handle') {
-        setShapes((arr) => arr.map((s) =>
-          s.id === drag.originalShape.id ? resizeShape(drag.originalShape, drag.handleRole, p, scale) : s
-        ))
+    // 2-finger pinch/pan
+    if (gestureRef.current && pointersRef.current.size >= 2) {
+      e.preventDefault()
+      const pts = [...pointersRef.current.values()]
+      const [a, b] = pts
+      const g = gestureRef.current
+      const factor = dist2(a, b) / (g.startDist || 1)
+      const minS = fitScale(), maxS = minS * MAX_ZOOM_MULT
+      const ns = clamp(g.startView.scale * factor, minS, maxS)
+      const mid = midOf(a, b)
+      setView(clampView({ scale: ns, tx: mid.x - ns * g.startMidImg.x, ty: mid.y - ns * g.startMidImg.y }))
+      return
+    }
+
+    const d = dragRef.current
+    if (mode === 'crop') { if (d) { e.preventDefault(); cropPointerMove(p) } return }
+    if (!d && !drawing) return
+    e.preventDefault()
+    const ip = toImage(p.x, p.y)
+
+    if (d) {
+      if (d.kind === 'pan') {
+        const dx = p.x - d.startP.x, dy = p.y - d.startP.y
+        setView(clampView({ scale: d.startView.scale, tx: d.startView.tx + dx, ty: d.startView.ty + dy }))
+      } else if (d.kind === 'move') {
+        d.moved = true
+        const dx = ip.x - d.startP.x, dy = ip.y - d.startP.y
+        dispatch({ type: 'LIVE', shapes: shapes.map((s) => (s.id === d.id ? moveShape(d.orig, dx, dy) : s)) })
+      } else if (d.kind === 'handle') {
+        d.moved = true
+        dispatch({ type: 'LIVE', shapes: shapes.map((s) => (s.id === d.id ? resizeShape(s, d.role, ip) : s)) })
       }
       return
     }
 
-    setDrawing((d) => {
-      if (!d) return d
-      if (d.type === 'freehand') return { ...d, points: [...d.points, p] }
-      return { ...d, x2: p.x, y2: p.y }
+    setDrawing((dr) => {
+      if (!dr) return dr
+      if (dr.type === 'freehand') return { ...dr, points: [...dr.points, ip] }
+      return { ...dr, x2: ip.x, y2: ip.y }
     })
   }
 
-  const onPointerUp = (e) => {
-    if (drag) {
-      e.preventDefault()
-      setDrag(null)
+  const endPointer = (e) => {
+    pointersRef.current.delete(e.pointerId)
+    try { canvasRef.current.releasePointerCapture(e.pointerId) } catch {}
+
+    if (gestureRef.current) {
+      if (pointersRef.current.size < 2) { gestureRef.current = null; suppressDrawRef.current = pointersRef.current.size > 0 }
+      if (pointersRef.current.size === 0) suppressDrawRef.current = false
       return
     }
+
+    const d = dragRef.current
+    if (d) {
+      dragRef.current = null
+      if ((d.kind === 'move' || d.kind === 'handle') && d.moved) {
+        dispatch({ type: 'COMMIT_FROM', origin: d.origin })
+      }
+      return
+    }
+
+    if (mode === 'crop') return
+
     if (!drawing) return
-    e.preventDefault()
     // Discard tiny accidental strokes
     if (drawing.type !== 'freehand') {
-      const dx = drawing.x2 - drawing.x1
-      const dy = drawing.y2 - drawing.y1
-      if (Math.hypot(dx, dy) < 5) { setDrawing(null); return }
-    } else if ((drawing.points || []).length < 2) {
-      setDrawing(null); return
-    }
-    setShapes((arr) => [...arr, drawing])
+      if (Math.hypot(drawing.x2 - drawing.x1, drawing.y2 - drawing.y1) < 4 / view.scale) { setDrawing(null); return }
+    } else if ((drawing.points || []).length < 2) { setDrawing(null); return }
+    dispatch({ type: 'COMMIT', shapes: [...shapes, drawing] })
+    setSelectedId(drawing.id)
     setDrawing(null)
   }
 
-  // ---------- Toolbar actions ----------
-
-  const undo = () => {
-    setShapes((arr) => arr.slice(0, -1))
-    setSelectedId(null)
+  // ---------- Crop rect manipulation ----------
+  const cropDragRef = useRef(null)
+  function cropHandleAt(ip, tol) {
+    if (!cropRect) return null
+    const c = cropRect
+    const corners = [
+      { x: c.x, y: c.y, role: 'tl' }, { x: c.x + c.w, y: c.y, role: 'tr' },
+      { x: c.x + c.w, y: c.y + c.h, role: 'br' }, { x: c.x, y: c.y + c.h, role: 'bl' },
+    ]
+    for (const h of corners) if (Math.hypot(ip.x - h.x, ip.y - h.y) <= tol) return h.role
+    return null
   }
-  const clear = () => {
-    if (shapes.length === 0) return
-    if (window.confirm('Usunąć wszystkie adnotacje?')) {
-      setShapes([])
+  function cropPointerDown(p) {
+    const ip = toImage(p.x, p.y)
+    const role = cropHandleAt(ip, 24 / view.scale)
+    if (role) { cropDragRef.current = { kind: role, start: ip, rect: cropRect }; dragRef.current = { kind: 'crop' }; return }
+    const c = cropRect
+    if (c && ip.x >= c.x && ip.x <= c.x + c.w && ip.y >= c.y && ip.y <= c.y + c.h) {
+      cropDragRef.current = { kind: 'move', start: ip, rect: c }; dragRef.current = { kind: 'crop' }
+    }
+  }
+  function cropPointerMove(p) {
+    const cd = cropDragRef.current
+    if (!cd) return
+    const ip = toImage(p.x, p.y)
+    const dx = ip.x - cd.start.x, dy = ip.y - cd.start.y
+    const r = cd.rect
+    const B = baseSize
+    let nx = r.x, ny = r.y, nw = r.w, nh = r.h
+    const MIN = Math.max(16, Math.min(B.w, B.h) * 0.05)
+    if (cd.kind === 'move') {
+      nx = clamp(r.x + dx, 0, B.w - r.w); ny = clamp(r.y + dy, 0, B.h - r.h)
+    } else {
+      let x1 = r.x, y1 = r.y, x2 = r.x + r.w, y2 = r.y + r.h
+      if (cd.kind.includes('l')) x1 = clamp(r.x + dx, 0, x2 - MIN)
+      if (cd.kind.includes('r')) x2 = clamp(r.x + r.w + dx, x1 + MIN, B.w)
+      if (cd.kind.includes('t')) y1 = clamp(r.y + dy, 0, y2 - MIN)
+      if (cd.kind.includes('b')) y2 = clamp(r.y + r.h + dy, y1 + MIN, B.h)
+      nx = x1; ny = y1; nw = x2 - x1; nh = y2 - y1
+    }
+    setCropRect({ x: nx, y: ny, w: nw, h: nh })
+  }
+
+  const enterCrop = () => {
+    setSelectedId(null)
+    const B = baseSize
+    const inset = 0.06
+    setCropRect({ x: B.w * inset, y: B.h * inset, w: B.w * (1 - 2 * inset), h: B.h * (1 - 2 * inset) })
+    setMode('crop')
+    setView(computeFit())
+  }
+  const cancelCrop = () => { setMode('draw'); setCropRect(null); cropDragRef.current = null }
+  const applyCrop = () => {
+    const c = cropRect
+    if (!c) { cancelCrop(); return }
+    const cx = Math.round(c.x), cy = Math.round(c.y)
+    const cw = Math.max(1, Math.round(c.w)), ch = Math.max(1, Math.round(c.h))
+    const off = document.createElement('canvas')
+    off.width = cw; off.height = ch
+    off.getContext('2d').drawImage(baseRef.current, cx, cy, cw, ch, 0, 0, cw, ch)
+    baseRef.current = off
+    // Translate shapes into the new origin; drop those fully outside the crop.
+    const shift = (s) => {
+      if (s.type === 'freehand') return { ...s, points: s.points.map((p) => ({ x: p.x - cx, y: p.y - cy })) }
+      if (s.type === 'text') return { ...s, x1: s.x1 - cx, y1: s.y1 - cy }
+      return { ...s, x1: s.x1 - cx, y1: s.y1 - cy, x2: s.x2 - cx, y2: s.y2 - cy }
+    }
+    const inside = (s) => {
+      const b = getBbox(s)
+      return b && b.maxX > 0 && b.minX < cw && b.maxY > 0 && b.minY < ch
+    }
+    const next = shapes.filter(inside).map(shift)
+    dispatch({ type: 'RESET', shapes: next })
+    setBaseSize({ w: cw, h: ch })
+    setMode('draw'); setCropRect(null); cropDragRef.current = null
+    prevFitRef.current = null
+    setView(computeFitFor(cw, ch))
+  }
+
+  // ---------- Rotate 90° CW ----------
+  const rotateCW = () => {
+    const B = baseSize
+    const nw = B.h, nh = B.w
+    const off = document.createElement('canvas')
+    off.width = nw; off.height = nh
+    const octx = off.getContext('2d')
+    octx.translate(nw, 0)
+    octx.rotate(Math.PI / 2)
+    octx.drawImage(baseRef.current, 0, 0, B.w, B.h)
+    baseRef.current = off
+    // Point (x,y) → (oldH - y, x)
+    const rp = (x, y) => ({ x: B.h - y, y: x })
+    const rot = (s) => {
+      if (s.type === 'freehand') return { ...s, points: s.points.map((p) => rp(p.x, p.y)) }
+      if (s.type === 'text') { const q = rp(s.x1, s.y1); return { ...s, x1: q.x, y1: q.y } }
+      const a = rp(s.x1, s.y1), b = rp(s.x2, s.y2)
+      return { ...s, x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+    }
+    dispatch({ type: 'RESET', shapes: shapes.map(rot) })
+    setSelectedId(null)
+    setBaseSize({ w: nw, h: nh })
+    prevFitRef.current = null
+    setView(computeFitFor(nw, nh))
+  }
+
+  // ---------- Text editor overlay ----------
+  function openTextEditor(id, ip) {
+    if (id) {
+      const s = shapes.find((x) => x.id === id)
+      setTextEditor({ id, ix: s.x1, iy: s.y1, value: s.text || '' })
+    } else {
+      setTextEditor({ id: null, ix: ip.x, iy: ip.y, value: '' })
+    }
+  }
+  const commitText = () => {
+    const te = textEditor
+    if (!te) return
+    const val = (te.value || '').replace(/\s+$/,'')
+    if (te.id) {
+      if (!val.trim()) { // emptied → delete
+        dispatch({ type: 'COMMIT', shapes: shapes.filter((s) => s.id !== te.id) })
+        setSelectedId(null)
+      } else {
+        dispatch({ type: 'COMMIT', shapes: shapes.map((s) => (s.id === te.id ? { ...s, text: val } : s)) })
+      }
+    } else if (val.trim()) {
+      const w = width / (fitScale() || 1)
+      const shape = { id: newShapeId(), type: 'text', x1: te.ix, y1: te.iy, text: val, color, w }
+      dispatch({ type: 'COMMIT', shapes: [...shapes, shape] })
+      setSelectedId(shape.id)
+    }
+    setTextEditor(null)
+  }
+  const cancelText = () => setTextEditor(null)
+
+  // ---------- Toolbar actions ----------
+  const canUndo = hist.past.length > 0
+  const canRedo = hist.future.length > 0
+  const undo = () => { dispatch({ type: 'UNDO' }); setSelectedId(null) }
+  const redo = () => { dispatch({ type: 'REDO' }); setSelectedId(null) }
+  const clearAll = async () => {
+    if (!shapes.length) return
+    if (await confirm('Usunąć wszystkie adnotacje?', { title: 'Wyczyść', confirmLabel: 'Usuń', variant: 'danger' })) {
+      dispatch({ type: 'COMMIT', shapes: [] })
       setSelectedId(null)
     }
   }
   const deleteSelected = () => {
     if (!selectedId) return
-    setShapes((arr) => arr.filter((s) => s.id !== selectedId))
+    dispatch({ type: 'COMMIT', shapes: shapes.filter((s) => s.id !== selectedId) })
     setSelectedId(null)
   }
-  const editSelectedText = () => {
-    if (!selectedShape || selectedShape.type !== 'text') return
-    const next = window.prompt('Tekst:', selectedShape.text || '')
-    if (next === null) return // cancelled
-    if (!next.trim()) {
-      // Empty → treat as delete
-      deleteSelected()
-      return
-    }
-    setShapes((arr) => arr.map((s) =>
-      s.id === selectedId ? { ...s, text: next.trim() } : s
-    ))
+  const restyle = (patch) => {
+    if (!selectedId) return
+    dispatch({ type: 'COMMIT', shapes: shapes.map((s) => (s.id === selectedId ? { ...s, ...patch } : s)) })
+  }
+  const handleColor = (c) => { setColor(c); if (selectedId) restyle({ color: c }) }
+  const handleWidth = (px) => {
+    setWidth(px)
+    if (selectedId) restyle({ w: px / (fitScale() || 1) })
   }
 
-  // Color/width changes: apply to selected shape (if any) AND update next-draw default
-  const handleColorChange = (newColor) => {
-    setColor(newColor)
-    if (selectedId) {
-      setShapes((arr) => arr.map((s) =>
-        s.id === selectedId ? { ...s, color: newColor } : s
-      ))
-    }
-  }
-  const handleWidthChange = (newWidth) => {
-    setWidth(newWidth)
-    if (selectedId) {
-      setShapes((arr) => arr.map((s) =>
-        s.id === selectedId ? { ...s, width: newWidth } : s
-      ))
-    }
-  }
-
-  // Save: re-render clean (no selection overlay, no in-progress shape) then snapshot.
+  // ---------- Save ----------
   const save = () => {
-    const canvas = canvasRef.current
-    const img = imgRef.current
-    if (!canvas || !img) return
-    const ctx = canvas.getContext('2d')
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    const scale = getDisplayScale()
-    for (const s of shapes) drawShape(ctx, s, scale)
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        // Older browsers / very edge cases — fall back to dataURL → Blob conversion.
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
-        fetch(dataUrl).then((r) => r.blob()).then(onSave)
-        return
-      }
-      onSave(blob)
-    }, 'image/jpeg', 0.9)
+    const B = baseSize
+    const out = document.createElement('canvas')
+    out.width = B.w; out.height = B.h
+    const octx = out.getContext('2d')
+    octx.drawImage(baseRef.current, 0, 0, B.w, B.h)
+    for (const s of shapes) drawShape(octx, s)
+    const isPng = /png/i.test(mimeType)
+    const type = isPng ? 'image/png' : 'image/jpeg'
+    const done = (blob) => { if (blob) onSave(blob) }
+    if (out.toBlob) out.toBlob(done, type, isPng ? undefined : 0.92)
+    else fetch(out.toDataURL(type, 0.92)).then((r) => r.blob()).then(done)
   }
+
+  const zoomPct = baseSize.w ? Math.round((view.scale / (fitScale() || 1)) * 100) : 100
+  const textScreen = textEditor ? toScreen(textEditor.ix, textEditor.iy) : null
 
   return (
-    <div className="fixed inset-0 bg-black z-[60] flex flex-col">
+    <div className="fixed inset-0 bg-black z-[60] flex flex-col select-none">
       {/* Top bar */}
       <div className="flex items-center justify-between px-3 py-2 bg-gray-900 text-white">
-        <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded bg-white/10 hover:bg-white/20">
-          Anuluj
-        </button>
+        <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded bg-white/10 hover:bg-white/20">Anuluj</button>
         <div className="text-sm font-medium">
-          {selectedShape ? 'Edycja zaznaczonego' : 'Adnotacje'}
+          {mode === 'crop' ? 'Kadrowanie' : selectedShape ? 'Edycja zaznaczonego' : 'Adnotacje'}
         </div>
-        <button onClick={save} className="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 font-medium">
-          Zapisz
-        </button>
+        <button onClick={save} className="text-sm px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 font-medium">Zapisz</button>
       </div>
 
       {/* Canvas area */}
-      <div className="flex-1 flex items-center justify-center overflow-hidden bg-gray-800 p-2">
+      <div ref={wrapRef} className="relative flex-1 overflow-hidden bg-gray-800" style={{ touchAction: 'none' }}>
         <canvas
           ref={canvasRef}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          style={{
-            maxWidth: '100%',
-            maxHeight: '100%',
-            touchAction: 'none',
-            background: '#000',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
-            cursor: selectedShape ? 'move' : 'crosshair',
-          }}
+          onPointerUp={endPointer}
+          onPointerCancel={endPointer}
+          onWheel={onWheel}
+          className="absolute inset-0 w-full h-full"
+          style={{ touchAction: 'none', cursor: tool === 'pan' ? 'grab' : selectedShape ? 'move' : 'crosshair' }}
         />
-      </div>
 
-      {/* Bottom toolbar */}
-      <div className="bg-gray-900 text-white px-2 py-2 space-y-2">
-        <div className="flex gap-1 overflow-x-auto">
-          {TOOLS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTool(t.key)}
-              className={
-                'flex-1 min-w-[64px] px-2 py-2 rounded text-xs flex flex-col items-center gap-0.5 transition ' +
-                (tool === t.key ? 'bg-sure-blue text-white' : 'bg-white/10 hover:bg-white/20')
-              }
-            >
-              <span className="text-base leading-none">{t.icon}</span>
-              <span>{t.label}</span>
-            </button>
-          ))}
-        </div>
+        {/* Floating zoom controls (hidden in crop mode) */}
+        {mode === 'draw' && (
+          <div className="absolute top-2 right-2 flex flex-col gap-1 bg-gray-900/80 backdrop-blur rounded-lg p-1 text-white">
+            <button onClick={() => zoomButton(1.3)} className="w-9 h-9 rounded hover:bg-white/15 text-lg leading-none" aria-label="Powiększ">＋</button>
+            <div className="text-[10px] text-center tabular-nums text-white/70">{zoomPct}%</div>
+            <button onClick={() => zoomButton(1 / 1.3)} className="w-9 h-9 rounded hover:bg-white/15 text-lg leading-none" aria-label="Pomniejsz">－</button>
+            <button onClick={fitView} className="w-9 h-9 rounded hover:bg-white/15 text-sm leading-none" title="Dopasuj" aria-label="Dopasuj do ekranu">⤢</button>
+          </div>
+        )}
 
-        <div className="flex gap-1 items-center">
-          <div className="text-[10px] uppercase tracking-wider text-white/60 mr-1">Kolor</div>
-          {COLORS.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => handleColorChange(c.value)}
-              className={
-                'w-8 h-8 rounded-full border-2 transition ' +
-                (color === c.value ? 'border-white scale-110' : 'border-white/30')
-              }
-              style={{ background: c.value }}
-              aria-label={c.key}
+        {/* In-place text editor overlay */}
+        {textEditor && textScreen && (
+          <div
+            className="absolute z-10"
+            style={{
+              left: clamp(textScreen.x, 8, (cssRef.current.w || 300) - 220),
+              top: clamp(textScreen.y, 8, (cssRef.current.h || 300) - 120),
+            }}
+          >
+            <textarea
+              autoFocus
+              value={textEditor.value}
+              onChange={(e) => setTextEditor((t) => ({ ...t, value: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText() }
+                if (e.key === 'Escape') { e.preventDefault(); cancelText() }
+              }}
+              placeholder="Wpisz tekst…"
+              rows={2}
+              className="w-52 text-sm rounded-lg border-2 border-sure-blue bg-white text-gray-900 px-2 py-1.5 shadow-xl resize-none focus:outline-none"
             />
-          ))}
-        </div>
-
-        <div className="flex gap-1 items-center">
-          <div className="text-[10px] uppercase tracking-wider text-white/60 mr-1">Grubość</div>
-          {WIDTHS.map((w) => (
-            <button
-              key={w.key}
-              onClick={() => handleWidthChange(w.px)}
-              className={
-                'flex-1 px-2 py-1.5 rounded text-xs transition ' +
-                (width === w.px ? 'bg-sure-blue text-white' : 'bg-white/10 hover:bg-white/20')
-              }
-            >
-              {w.label}
-            </button>
-          ))}
-          <button
-            onClick={undo}
-            disabled={shapes.length === 0}
-            className="px-3 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20 disabled:opacity-30"
-            title="Cofnij"
-          >
-            ↶ Cofnij
-          </button>
-          <button
-            onClick={clear}
-            disabled={shapes.length === 0}
-            className="px-3 py-1.5 rounded text-xs bg-red-700/60 hover:bg-red-700 disabled:opacity-30"
-          >
-            Wyczyść
-          </button>
-        </div>
-
-        {/* Selection action row — only shows when something is selected */}
-        {selectedShape && (
-          <div className="flex gap-1 items-center pt-1 border-t border-white/10">
-            <div className="text-[10px] uppercase tracking-wider text-sky-300 mr-1">Zaznaczone</div>
-            {selectedShape.type === 'text' && (
-              <button
-                onClick={editSelectedText}
-                className="px-3 py-1.5 rounded text-xs bg-sky-700 hover:bg-sky-600"
-              >
-                ✎ Edytuj tekst
-              </button>
-            )}
-            <button
-              onClick={() => setSelectedId(null)}
-              className="px-3 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20"
-            >
-              Odznacz
-            </button>
-            <button
-              onClick={deleteSelected}
-              className="ml-auto px-3 py-1.5 rounded text-xs bg-red-600 hover:bg-red-700 font-medium"
-            >
-              🗑 Usuń zaznaczony
-            </button>
+            <div className="flex gap-1 mt-1">
+              <button onMouseDown={(e) => e.preventDefault()} onClick={commitText} className="flex-1 text-xs px-2 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Gotowe</button>
+              <button onMouseDown={(e) => e.preventDefault()} onClick={cancelText} className="text-xs px-3 py-1.5 rounded bg-white/90 text-gray-700 hover:bg-white border border-gray-300">Anuluj</button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Bottom toolbar */}
+      {mode === 'crop' ? (
+        <div className="bg-gray-900 text-white px-3 py-3 flex items-center gap-2">
+          <div className="text-xs text-white/70 flex-1">Przeciągnij ramkę i narożniki, aby przyciąć.</div>
+          <button onClick={cancelCrop} className="px-3 py-2 rounded text-sm bg-white/10 hover:bg-white/20">Anuluj kadr</button>
+          <button onClick={applyCrop} className="px-4 py-2 rounded text-sm bg-sure-blue hover:bg-blue-700 font-medium">Zastosuj kadr</button>
+        </div>
+      ) : (
+        <div className="bg-gray-900 text-white px-2 py-2 space-y-2">
+          {/* Tools */}
+          <div className="flex gap-1 overflow-x-auto">
+            {TOOLS.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => { setTool(t.key); if (t.key !== 'text') setTextEditor(null) }}
+                className={'flex-1 min-w-[58px] px-2 py-2 rounded text-xs flex flex-col items-center gap-0.5 transition ' +
+                  (tool === t.key ? 'bg-sure-blue text-white' : 'bg-white/10 hover:bg-white/20')}
+                aria-pressed={tool === t.key}
+              >
+                <span className="text-base leading-none">{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Colors */}
+          <div className="flex gap-1 items-center">
+            <div className="text-[10px] uppercase tracking-wider text-white/60 mr-1">Kolor</div>
+            {COLORS.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => handleColor(c.value)}
+                className={'w-8 h-8 rounded-full border-2 transition ' + (color === c.value ? 'border-white scale-110' : 'border-white/30')}
+                style={{ background: c.value }}
+                aria-label={c.key}
+              />
+            ))}
+          </div>
+
+          {/* Widths + undo/redo */}
+          <div className="flex gap-1 items-center">
+            <div className="text-[10px] uppercase tracking-wider text-white/60 mr-1">Grubość</div>
+            {WIDTHS.map((w) => (
+              <button
+                key={w.key}
+                onClick={() => handleWidth(w.px)}
+                className={'flex-1 px-2 py-1.5 rounded text-xs transition ' + (width === w.px ? 'bg-sure-blue text-white' : 'bg-white/10 hover:bg-white/20')}
+                aria-pressed={width === w.px}
+              >
+                {w.label}
+              </button>
+            ))}
+            <button onClick={undo} disabled={!canUndo} className="px-3 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20 disabled:opacity-30" title="Cofnij">↶</button>
+            <button onClick={redo} disabled={!canRedo} className="px-3 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20 disabled:opacity-30" title="Ponów">↷</button>
+          </div>
+
+          {/* Transforms */}
+          <div className="flex gap-1 items-center">
+            <button onClick={enterCrop} className="flex-1 px-2 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20">✂ Kadruj</button>
+            <button onClick={rotateCW} className="flex-1 px-2 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20">⟳ Obróć</button>
+            <button onClick={clearAll} disabled={!shapes.length} className="flex-1 px-2 py-1.5 rounded text-xs bg-red-700/60 hover:bg-red-700 disabled:opacity-30">Wyczyść</button>
+          </div>
+
+          {/* Selection row */}
+          {selectedShape && (
+            <div className="flex gap-1 items-center pt-1 border-t border-white/10">
+              <div className="text-[10px] uppercase tracking-wider text-sky-300 mr-1">Zaznaczone</div>
+              {selectedShape.type === 'text' && (
+                <button onClick={() => openTextEditor(selectedShape.id)} className="px-3 py-1.5 rounded text-xs bg-sky-700 hover:bg-sky-600">✎ Edytuj tekst</button>
+              )}
+              <button onClick={() => setSelectedId(null)} className="px-3 py-1.5 rounded text-xs bg-white/10 hover:bg-white/20">Odznacz</button>
+              <button onClick={deleteSelected} className="ml-auto px-3 py-1.5 rounded text-xs bg-red-600 hover:bg-red-700 font-medium">🗑 Usuń zaznaczony</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

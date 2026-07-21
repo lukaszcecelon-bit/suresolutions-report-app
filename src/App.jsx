@@ -22,7 +22,7 @@ import logo from './assets/logo.png'
 
 // Jedno źródło numeru wersji (badge + komunikaty). Zgodnie z regułą
 // wersjonowania: bump TUTAJ + w package.json przy każdej zmianie kodu.
-const APP_VERSION = 'v0.44'
+const APP_VERSION = 'v0.45'
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '')
