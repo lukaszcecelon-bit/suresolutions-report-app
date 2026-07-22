@@ -85,6 +85,24 @@ export function MicButton({ value = '', onChange, lang = 'pl-PL', size = 'sm' })
   )
 }
 
+// Single-line input with a mic button on the right. Drop-in for a plain
+// `<input>` — pass the same className you'd use on the input (mic room padding
+// `pr-11` is appended automatically). In unsupported browsers it renders a bare
+// input with no padding change, so nothing shifts.
+export function MicInput({ value, onChange, className = '', ...rest }) {
+  if (!SUPPORTED) {
+    return <input value={value || ''} onChange={onChange} className={className} {...rest} />
+  }
+  return (
+    <div className="relative">
+      <input value={value || ''} onChange={onChange} className={`${className} pr-11`} {...rest} />
+      <div className="absolute top-1/2 -translate-y-1/2 right-1.5 z-10">
+        <MicButton value={value} onChange={onChange} />
+      </div>
+    </div>
+  )
+}
+
 // Textarea with a floating mic button in the top-right corner. Drop-in for plain
 // `<textarea className="field-textarea" ...>` — same props apply, extra right
 // padding is added so dictated text doesn't run under the button.

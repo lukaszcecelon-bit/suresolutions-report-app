@@ -7,7 +7,7 @@ import EmptyState from '../common/EmptyState.jsx'
 import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
-import { MicTextarea } from '../common/VoiceMic.jsx'
+import { MicTextarea, MicInput } from '../common/VoiceMic.jsx'
 import NotesList from '../common/NotesList.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
@@ -358,7 +358,7 @@ export default function SatFatReport({ navigate, reportId }) {
               </div>
               <div>
                 <label className="field-label">Kryterium akceptacji</label>
-                <input
+                <MicInput
                   type="text"
                   className="field-input"
                   placeholder="np. Czujnik zwraca 4-20mA przy 0-100% wypełnienia"

@@ -8,7 +8,7 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
-import { MicTextarea } from '../common/VoiceMic.jsx'
+import { MicTextarea, MicInput } from '../common/VoiceMic.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
@@ -319,7 +319,7 @@ export default function PrototypeReport({ navigate, reportId }) {
                 value={p.result}
                 onChange={(k) => updatePoint(p.id, { result: k })}
               />
-              <input type="text" className="field-input"
+              <MicInput type="text" className="field-input"
                 placeholder="Komentarz (opcjonalny)"
                 value={p.comment}
                 onChange={(e) => updatePoint(p.id, { comment: e.target.value })} />

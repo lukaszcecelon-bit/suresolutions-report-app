@@ -173,6 +173,20 @@ export default function CommissioningReport({ navigate, reportId }) {
     setStopModal(null)
   }
 
+  // Ręczne dodanie zatrzymania — gdy inżynier zapomniał kliknąć „ZATRZYMANIE"
+  // na żywo. Tworzy rekord z domyślnym czasem i od razu otwiera modal edycji,
+  // gdzie koryguje godzinę, czas trwania i powód (reużycie całej maszynerii
+  // edycji — zero nowego kodu formularza).
+  const addManualStop = () => {
+    const startAt = nowISO()
+    const stop = {
+      id: newId(), startAt, endAt: startAt, durationMs: 0,
+      reason: STOP_REASONS[0], customReason: '', comment: '', media: [],
+    }
+    setReport((r) => ({ ...r, stops: [...(r.stops || []), stop] }))
+    setEditStopId(stop.id)
+  }
+
   // ==== EDYCJA istniejącego zatrzymania ====
   // Edycja działa "na żywo" (każda zmiana auto-zapisywana), spójnie z resztą
   // aplikacji. Dzięki temu MediaUploader operuje wprost na rekordzie — nie ma
@@ -349,6 +363,15 @@ export default function CommissioningReport({ navigate, reportId }) {
               <p className="text-sm text-gray-500 dark:text-gray-400 italic">Maszyna pracuje bez przestojów — brak zatrzymań do zalogowania.</p>
             ) : (
               <StopsTable stops={report.stops} onEdit={setEditStopId} />
+            )}
+            {/* Ręczne dodanie zatrzymania (dostępne poza aktywnym zatrzymaniem) */}
+            {report.phase === 'running' && (
+              <button
+                onClick={addManualStop}
+                className="btn-sm w-full mt-3 bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+              >
+                + Dodaj zatrzymanie ręcznie
+              </button>
             )}
           </div>
 

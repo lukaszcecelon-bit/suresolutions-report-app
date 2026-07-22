@@ -8,7 +8,7 @@ import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import NotesList from '../common/NotesList.jsx'
-import { MicTextarea } from '../common/VoiceMic.jsx'
+import { MicTextarea, MicInput } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import {
   suggestClients, suggestLocations,
@@ -339,7 +339,7 @@ export default function ServiceReport({ navigate, reportId }) {
                 value={p.priority}
                 onChange={(k) => updatePart(p.id, { priority: k })}
               />
-              <input type="text" className="field-input"
+              <MicInput type="text" className="field-input"
                 placeholder="Komentarz (opcjonalny)"
                 value={p.comment}
                 onChange={(e) => updatePart(p.id, { comment: e.target.value })} />
