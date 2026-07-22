@@ -177,6 +177,30 @@ export async function putMedium(id, dataUrl) {
   })
 }
 
+export const deleteMediums = (ids) => deleteManyGeneric(STORE_MEDIUM, ids)
+
+// ---- Sprzątanie osieroconych blobów (GC) ----
+// Zwraca wszystkie klucze z każdego magazynu — porównywane z referencjami
+// zebranymi po raportach (collectMediaIds), żeby skasować bloby, do których
+// nie ma już żadnego odwołania (np. po usunięciu pojedynczego zdjęcia z raportu,
+// gdzie kasowany jest tylko rekord, nie blob).
+function getAllKeys(store) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly')
+    const req = tx.objectStore(store).getAllKeys()
+    req.onsuccess = () => resolve(req.result || [])
+    req.onerror = () => reject(req.error)
+  }))
+}
+
+export async function listAllMediaKeys() {
+  const [images, videos, originals, medium] = await Promise.all([
+    getAllKeys(STORE_IMAGES), getAllKeys(STORE_VIDEOS),
+    getAllKeys(STORE_ORIGINALS), getAllKeys(STORE_MEDIUM),
+  ])
+  return { images, videos, originals, medium }
+}
+
 export async function getStorageEstimate() {
   if (!navigator.storage || !navigator.storage.estimate) return null
   return navigator.storage.estimate()

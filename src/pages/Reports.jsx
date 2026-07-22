@@ -4,7 +4,7 @@ import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatP
 import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
 import { LESSON_SEVERITIES } from '../utils/settings.js'
 import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
-import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, makeBackupFilename } from '../utils/syncPackage.js'
+import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, backupAllReports } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
 
@@ -145,8 +145,9 @@ export default function Reports({ navigate }) {
     }
     setBackupBusy(true)
     try {
-      const blob = await exportAllReportsPackage()
-      await shareOrDownload(blob, makeBackupFilename(), `Backup raportów SURE (${reports.length})`)
+      // Wspólny helper — buduje paczkę, udostępnia/pobiera i stempluje znacznik
+      // ostatniego backupu (napędza przypomnienie na pulpicie).
+      await backupAllReports()
       toast.success('Backup gotowy')
     } catch (e) {
       toast.error('Błąd backupu: ' + (e.message || e))

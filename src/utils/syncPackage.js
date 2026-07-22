@@ -23,6 +23,7 @@ import {
 } from './imageStore.js'
 import { collectMediaIds, loadAll, upsert, newId } from './storage.js'
 import { slugify } from './text.js'
+import { setLastBackupAt } from './settings.js'
 
 const FORMAT = 'suresync-v1'
 
@@ -396,6 +397,21 @@ export function makePackageFilename(report) {
 }
 
 export function makeBackupFilename() {
-  const stamp = new Date().toISOString().slice(0, 10)
+  // Data + godzina-minuta, żeby kilka backupów tego samego dnia nie nadpisywało
+  // się w folderze Pobrane (wcześniej sama data → kolizja nazw).
+  const d = new Date()
+  const p = (n) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}`
   return `backup_raporty-sure_${stamp}.zip`
+}
+
+// Wspólny przepływ pełnego backupu (Reports „💾 Backup" + baner ostrzeżeń o
+// pamięci). Buduje paczkę ze WSZYSTKICH raportów, udostępnia/pobiera i stempluje
+// znacznik ostatniego backupu. Zwraca liczbę zapakowanych raportów.
+export async function backupAllReports() {
+  const count = loadAll().length
+  const blob = await exportAllReportsPackage()
+  await shareOrDownload(blob, makeBackupFilename(), `Backup raportów SURE (${count})`)
+  setLastBackupAt()
+  return count
 }

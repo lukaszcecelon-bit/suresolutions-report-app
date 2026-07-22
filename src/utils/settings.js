@@ -104,6 +104,17 @@ export function saveSettings(patch) {
   return next
 }
 
+// Znacznik ostatniego pełnego backupu — trzymany pod osobnym kluczem (jak
+// buyerEmail), NIE w obiekcie ustawień, żeby zapis backupu nie kolidował z
+// edycją ustawień w innej karcie. Napędza przypomnienie o backupie na pulpicie.
+const LAST_BACKUP_KEY = 'suresolutions.lastBackupAt'
+export function getLastBackupAt() {
+  try { return localStorage.getItem(LAST_BACKUP_KEY) || '' } catch { return '' }
+}
+export function setLastBackupAt(iso) {
+  try { localStorage.setItem(LAST_BACKUP_KEY, iso || new Date().toISOString()) } catch {}
+}
+
 export function getBuyerEmail() {
   try { return localStorage.getItem(BUYER_EMAIL_KEY) || '' } catch { return '' }
 }

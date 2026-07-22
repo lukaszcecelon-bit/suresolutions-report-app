@@ -1,4 +1,4 @@
-import { deleteImages, deleteVideos, deleteOriginals } from './imageStore.js'
+import { deleteImages, deleteVideos, deleteOriginals, deleteMediums, listAllMediaKeys } from './imageStore.js'
 import { computeReportNumber } from './reportNumber.js'
 
 // === Format przechowywania ===
@@ -143,8 +143,51 @@ export function upsert(report) {
     // Quota / tryb prywatny: dane zostają w cache (sesja działa dalej,
     // eksport paczki wciąż możliwy) — nie wywracamy UI wyjątkiem z autosave.
     console.error('Zapis raportu do localStorage nie powiódł się', e)
+    // KRYTYCZNE: przy przepełnieniu pamięci autosave „udawał sukces", a zmiany
+    // ginęły po reloadzie (żyły tylko w cache RAM). Sygnalizujemy to globalnie —
+    // baner nakłania do backupu i zwolnienia miejsca, zanim praca przepadnie.
+    if (isQuotaError(e) && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('suresolutions:storage-full'))
+    }
   }
   return next
+}
+
+// Rozpoznanie błędu przepełnienia pamięci (różne nazwy/kody w przeglądarkach).
+function isQuotaError(e) {
+  return !!e && (
+    e.name === 'QuotaExceededError' ||
+    e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    e.code === 22 || e.code === 1014
+  )
+}
+
+// GC osieroconych blobów w IndexedDB. Usuwanie pojedynczego zdjęcia/rekordu w
+// raporcie kasuje tylko referencję w JSON, nie blob — z czasem narasta martwy
+// balast. Zbieramy wszystkie ID faktycznie używane przez raporty i kasujemy
+// resztę. Bezpieczne przy starcie: wszystkie raporty są już w localStorage
+// (autosave), więc referencje są kompletne. Zwraca licznik skasowanych.
+export async function sweepOrphanedMedia() {
+  const ref = { photos: new Set(), originals: new Set(), videos: new Set() }
+  for (const r of loadAll()) collectMediaIds(r, ref)
+  const keys = await listAllMediaKeys()
+  const orphanImages = keys.images.filter((k) => !ref.photos.has(k))
+  const orphanOriginals = keys.originals.filter((k) => !ref.originals.has(k))
+  const orphanVideos = keys.videos.filter((k) => !ref.videos.has(k))
+  // medium jest kluczowane originalId → osierocone gdy jego oryginał nie jest używany
+  const orphanMedium = keys.medium.filter((k) => !ref.originals.has(k))
+  await Promise.all([
+    orphanImages.length ? deleteImages(orphanImages) : null,
+    orphanOriginals.length ? deleteOriginals(orphanOriginals) : null,
+    orphanVideos.length ? deleteVideos(orphanVideos) : null,
+    orphanMedium.length ? deleteMediums(orphanMedium) : null,
+  ].filter(Boolean))
+  return {
+    images: orphanImages.length,
+    originals: orphanOriginals.length,
+    videos: orphanVideos.length,
+    medium: orphanMedium.length,
+  }
 }
 
 export function getById(id) {

@@ -14,6 +14,8 @@ import InstallPrompt from './components/common/InstallPrompt.jsx'
 import TabBar, { TAB_ROUTES } from './components/common/TabBar.jsx'
 import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import OnboardingTour from './components/common/OnboardingTour.jsx'
+import StorageAlerts from './components/common/StorageAlerts.jsx'
+import { sweepOrphanedMedia } from './utils/storage.js'
 import { ToastProvider, useToast, useConfirm } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
 import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
@@ -22,7 +24,7 @@ import logo from './assets/logo.png'
 
 // Jedno źródło numeru wersji (badge + komunikaty). Zgodnie z regułą
 // wersjonowania: bump TUTAJ + w package.json przy każdej zmianie kodu.
-const APP_VERSION = 'v0.46'
+const APP_VERSION = 'v0.47'
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '')
@@ -96,6 +98,28 @@ function AppShell() {
   // zgodę automatycznie; wywołanie jest idempotentne i darmowe.
   useEffect(() => {
     navigator.storage?.persist?.().catch(() => {})
+  }, [])
+
+  // Sprzątanie osieroconych blobów w IndexedDB raz na starcie (bezczynnie).
+  // Usuwanie zdjęć/rekordów wewnątrz raportu kasuje tylko referencję w JSON, nie
+  // blob — bez tego martwe zdjęcia narastają. Bezpieczne: wszystkie raporty są
+  // już w localStorage, więc zbiór referencji jest kompletny.
+  useEffect(() => {
+    const run = () => {
+      sweepOrphanedMedia()
+        .then((r) => {
+          if (r && (r.images || r.originals || r.videos || r.medium)) {
+            console.info('[GC] osierocone bloby usunięte:', r)
+          }
+        })
+        .catch((e) => console.warn('[GC] sweep nie powiódł się', e))
+    }
+    if (typeof requestIdleCallback !== 'undefined') {
+      const h = requestIdleCallback(run, { timeout: 8000 })
+      return () => cancelIdleCallback?.(h)
+    }
+    const t = setTimeout(run, 3000)
+    return () => clearTimeout(t)
   }, [])
 
   // After first paint, idly preload the heavy PDF/ZIP libs so the first
@@ -179,6 +203,7 @@ function AppShell() {
         </div>
       </footer>
 
+      <StorageAlerts />
       <UpdatePrompt />
       <InstallPrompt />
       <OnboardingTour />

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadAll } from '../utils/storage.js'
-import { getDefaultAuthor } from '../utils/settings.js'
+import { getDefaultAuthor, getLastBackupAt } from '../utils/settings.js'
+import { getStorageEstimate } from '../utils/imageStore.js'
+import { backupAllReports } from '../utils/syncPackage.js'
+import { useToast } from '../components/common/Toast.jsx'
 import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
 
 // Ekran startowy (v0.42) — lekki „pulpit" zamiast pełnej listy raportów:
@@ -49,10 +52,38 @@ function monthStats(reports) {
 }
 
 export default function Start({ navigate }) {
+  const toast = useToast()
   const [reports, setReports] = useState([])
+  const [estimate, setEstimate] = useState(null) // { usage, quota }
+  const [backupBusy, setBackupBusy] = useState(false)
   useEffect(() => { setReports(loadAll()) }, [])
+  useEffect(() => { getStorageEstimate().then(setEstimate).catch(() => {}) }, [])
 
   const stats = useMemo(() => monthStats(reports), [reports])
+
+  // Bezpieczeństwo danych (v0.47): pamięć prawie pełna LUB dawno bez backupu.
+  // Jedyna kopia to urządzenie, więc łagodnie przypominamy o backupie.
+  const storagePct = estimate && estimate.quota ? estimate.usage / estimate.quota : 0
+  const daysSinceBackup = useMemo(() => {
+    const iso = getLastBackupAt()
+    if (!iso) return Infinity
+    return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  }, [])
+  const storageWarn = storagePct >= 0.85
+  const backupWarn = reports.length >= 3 && daysSinceBackup >= 14
+
+  const doBackup = async () => {
+    if (backupBusy) return
+    setBackupBusy(true)
+    try {
+      const n = await backupAllReports()
+      toast.success(`Backup gotowy — ${n} ${n === 1 ? 'raport' : n < 5 ? 'raporty' : 'raportów'}`)
+    } catch (e) {
+      toast.error('Błąd backupu: ' + (e.message || e))
+    } finally {
+      setBackupBusy(false)
+    }
+  }
 
   // Ostatnio EDYTOWANY raport (max updatedAt) — „tu skończyłem".
   const recent = useMemo(() => {
@@ -87,6 +118,37 @@ export default function Start({ navigate }) {
         </h1>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Co dziś dokumentujemy?</p>
       </div>
+
+      {/* Bezpieczeństwo danych: pamięć prawie pełna / dawno bez backupu */}
+      {(storageWarn || backupWarn) && (
+        <div className={
+          'card flex items-start gap-3 ' +
+          (storageWarn
+            ? 'border-red-300 bg-red-50 dark:border-red-500/40 dark:bg-red-900/20'
+            : 'border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-900/20')
+        }>
+          <span className="text-xl shrink-0" aria-hidden="true">{storageWarn ? '⚠️' : '💾'}</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sure-dark dark:text-gray-100">
+              {storageWarn ? `Pamięć prawie pełna (${Math.round(storagePct * 100)}%)` : 'Dawno nie było backupu'}
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">
+              {storageWarn
+                ? 'Zrób backup i usuń stare raporty, żeby nie stracić nowych.'
+                : daysSinceBackup === Infinity
+                  ? 'Twoje raporty są tylko na tym urządzeniu — zrób pierwszą kopię.'
+                  : `Ostatnia kopia ${daysSinceBackup} dni temu. Raporty są tylko na tym urządzeniu.`}
+            </div>
+            <button
+              onClick={doBackup}
+              disabled={backupBusy}
+              className="btn-sm btn-primary mt-2 disabled:opacity-60"
+            >
+              {backupBusy ? '⏳ Pakowanie…' : '💾 Zrób backup teraz'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Statystyki bieżącego miesiąca */}
       {reports.length > 0 && stats.count > 0 && (
