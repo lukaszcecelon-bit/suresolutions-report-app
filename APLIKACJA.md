@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v0.36**.
+> Aktualny, kompletny opis aplikacji. Stan na **v0.50**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -34,6 +34,7 @@ SharePointem) tylko po wyraźnej decyzji biznesowej.
 | Generowanie PDF | jsPDF 2.5.2 + jspdf-autotable 3.8.2 + osadzony font Roboto |
 | Podgląd PDF w apce | pdf.js (pdfjs-dist 3.11.174) → render na `<canvas>` |
 | Paczki ZIP / sync | JSZip |
+| Eksport rejestru (XLSX) | SheetJS (`xlsx`) — leniwie, wykluczony z precache |
 | Drag & drop | @dnd-kit |
 | Testy E2E | Playwright + pdf-parse (weryfikacja treści PDF) |
 | Hosting | GitHub Pages + GitHub Actions |
@@ -42,13 +43,26 @@ SharePointem) tylko po wyraźnej decyzji biznesowej.
 
 ## 3. Architektura i przepływ
 
-- **`src/App.jsx`** — szkielet: nagłówek (logo, ⚙️ Ustawienia, ? Pomoc,
-  przełącznik motywu, `VersionBadge`), routing po hashu, providery
+- **`src/App.jsx`** — szkielet: nagłówek (logo, ⚙️ Ustawienia, przełącznik
+  motywu, `VersionBadge`), routing po hashu, providery
   (`ErrorBoundary → ThemeProvider → SWProvider → ToastProvider`), prośba o
   trwałość pamięci (`navigator.storage.persist()`), wstępne ładowanie ciężkich
-  bibliotek PDF w tle (`warmupLibs`).
-- **Routing (hash):** `#/` (Home), `#/new`, `#/commissioning/:id`, `#/service/:id`,
-  `#/prototype/:id`, `#/satfat/:id`, `#/complaint/:id`, `#/help`, `#/settings`.
+  bibliotek PDF w tle (`warmupLibs`), bezczynne sprzątanie osieroconych blobów
+  (`sweepOrphanedMedia`, patrz §4) oraz globalny baner ostrzeżeń o pamięci
+  (`StorageAlerts`).
+- **Dolny pasek nawigacji** (`TabBar`, v0.42): `Start / 🗂 Raporty / Pomoc` —
+  wzorzec zainstalowanej aplikacji mobilnej (strefa kciuka, safe-area na iOS).
+  Widoczny tylko na ekranach najwyższego poziomu (`TAB_ROUTES`); formularze
+  raportów go chowają (drill-down z „← Strona główna"). „?" zniknął z nagłówka
+  (Pomoc jest zakładką).
+- **Routing (hash):** `#/` (Start), `#/reports` (lista), `#/new`,
+  `#/commissioning/:id`, `#/service/:id`, `#/prototype/:id`, `#/satfat/:id`,
+  `#/complaint/:id`, `#/lesson/:id`, `#/help`, `#/settings`.
+- **Strefy typów** (`src/utils/reportMeta.js`, v0.42) — jedno źródło prawdy
+  (labels/ikony/kategorie/akcenty): **🏢 Dla klienta** (niebieski `sure-blue`:
+  serwis, SAT/FAT, uruchomienie) i **🔒 Wewnętrzne** (fiolet: prototyp, lekcja
+  projektowa, reklamacja — idzie do zakupowca, klient jej nie widzi). Kolor
+  strefy = język wizualny: akcent kart listy, chipy, segment, strefy w `#/new`.
 - Każda strona raportu korzysta ze wspólnego hooka **`useReportPage`** i (poza
   reklamacją) ze wspólnego paska **`ReportActionBar`**.
 
@@ -61,50 +75,129 @@ SharePointem) tylko po wyraźnej decyzji biznesowej.
   (wcześniej była jedna wielka tablica — autosave przepisywał całą bazę).
 - W pamięci trzymany jest **cache** (czytany raz na sesję; zdarzenie `storage`
   z innej karty go unieważnia).
-- **`SCHEMA_VERSION`** + `migrateReport()` — migracje kształtu danych przy
-  odczycie (np. `service.observations` string → lista; `satfat.punchlist`
-  uzupełnienie pola `media`).
+- **`SCHEMA_VERSION` = 3** + `migrateReport()` — kumulatywne, idempotentne
+  migracje kształtu danych przy odczycie (trwałe przy najbliższym zapisie):
+  - v0→v1: `service.observations` string→lista, `satfat.punchlist` pole `media`;
+  - v1→v2: `service.recommendations`, `commissioning.observations` i
+    `.conclusions` string→lista rekordów;
+  - v2→v3: `satfat.conclusions` string→lista rekordów.
+  Helper `strToRecords()` zamienia stare pola tekstowe na listę `[{id,text,media}]`.
 - Plik: `src/utils/storage.js` (`loadAll`, `getById`, `upsert`, `remove`,
-  `newId`, `cloneReport`).
+  `newId`, `cloneReport`). `cloneReport` (duplikat raportu) dla każdego typu
+  przelicza numer raportu z zachowanego numeru projektu (`URU-/RPT-/FAT-/SAT-/PRT-/REK-/LL-`).
 
 ### Media — IndexedDB `suresolutions.images.v1` (VERSION 4)
 - `images` — miniatury 400×300 (dataURL, do UI i osadzenia w PDF),
-- `originals` — pełne oryginały zdjęć (Blob, do paczki ZIP),
+- `originals` — pełne oryginały zdjęć (Blob, do paczki ZIP); tu też leży
+  **czysta baza edycji** adnotacji (`editBaseId`, patrz niżej),
 - `videos` — pliki wideo (Blob),
 - `medium` — cache 1200×900 per `originalId` (do dużych zdjęć w PDF; liczone raz).
 - Plik: `src/utils/imageStore.js`.
+- **Nie-destrukcyjne adnotacje (v0.46):** element media zdjęcia trzyma trzy
+  powiązane artefakty — `originalId` (obraz SPŁASZCZONY z wypalonymi uwagami, do
+  ZIP/PDF), `editBaseId` (CZYSTA baza bez uwag) i `shapes` (wektorowe adnotacje w
+  `report.json`). Ponowne otwarcie edytora wczytuje czystą bazę + kształty, więc
+  uwagi da się poprawić/usunąć po wyjściu (patrz §8, PhotoAnnotator).
+
+### Bezpieczeństwo danych (v0.47)
+Jedyna kopia raportów to urządzenie, więc warstwa ochronna pilnuje, by praca nie
+przepadła po cichu:
+- **Twardy błąd zapisu (quota).** Gdy `localStorage` jest pełny, `upsert` emituje
+  zdarzenie `suresolutions:storage-full`; komponent `StorageAlerts` pokazuje
+  uporczywy czerwony baner „Pamięć pełna" z przyciskiem backupu (wcześniej
+  autosave tylko logował błąd i „udawał sukces" — zmiany ginęły po reloadzie).
+- **Przypomnienie o backupie.** Pulpit (Start) przypomina o kopii, gdy jest
+  ≥3 raporty i brak backupu lub minęło >14 dni (`getLastBackupAt`/`setLastBackupAt`,
+  osobny klucz `suresolutions.lastBackupAt`); ostrzega też przy >85% zapełnienia
+  pamięci (`getStorageEstimate`).
+- **GC osieroconych blobów** (`sweepOrphanedMedia`, wołane bezczynnie przy
+  starcie): usunięcie zdjęcia/rekordu w raporcie kasowało dotąd tylko referencję
+  w JSON, nie blob w IndexedDB — teraz martwe zdjęcia/miniatury/wideo bez żadnej
+  referencji są sprzątane (zbiór referencji z `collectMediaIds` po wszystkich
+  raportach; `editBaseId` też jest liczony jako referencja).
+- Wspólny `backupAllReports()` (buduje paczkę + udostępnia/pobiera + stempluje
+  znacznik); nazwa backupu z godziną (koniec kolizji kilku kopii tego samego dnia).
 
 ### Ustawienia — `localStorage` `suresolutions.settings.v1`
 - `sharepointSubfolder` (domyślnie `08. Notesy`), e-mail zakupowca
-  (`BUYER_EMAIL_KEY`). Plik: `src/utils/settings.js`, ekran `#/settings`.
+  (`BUYER_EMAIL_KEY`, osobny klucz współdzielony z reklamacją),
+  **`defaultAuthor` + `defaultRole`** (podpowiadane w nowych raportach na tym
+  urządzeniu — każdy z zespołu ustawia raz i nie wpisuje w kółko),
+  **`stopReasons`** (konfigurowalna lista powodów zatrzymań w raporcie
+  uruchomienia; „Inne" doklejane zawsze), **`lessonCategories`** (konfigurowalne
+  kategorie błędu w lekcji projektowej). Helpery: `getDefaultAuthor()`,
+  `getDefaultRole()`, `getStopReasons()`, `getLessonCategories()`; stałe
+  `ROLE_OPTIONS`, `DEFAULT_STOP_REASONS`, `DEFAULT_LESSON_CATEGORIES`,
+  `LESSON_SEVERITIES`, `LESSON_STAGES`. Plik: `src/utils/settings.js`, ekran `#/settings`.
 
 ---
 
-## 5. Typy raportów (5)
+## 5. Typy raportów (6)
 
 | Typ | Trasa | Opis |
 |---|---|---|
 | **Uruchomienie / obserwacja maszyny** | `commissioning` | Sesja ze stoperem: start → logowanie zatrzymań na żywo → podsumowanie. |
-| **Serwis na obiekcie** | `service` | Wizyta: dane wizyty, wykonane czynności, elementy do wymiany, obserwacje, rekomendacje. |
+| **Serwis na obiekcie** | `service` | Wizyta: dane wizyty, liczba obecnych, wykonane czynności, elementy do wymiany, obserwacje, rekomendacje. |
 | **Testy prototypu / podzespołu** | `prototype` | Informacje o teście, warunki, punkty kontrolne (OK/NOK/warunkowo), decyzja. |
-| **Odbiór SAT / FAT** | `satfat` | Uczestnicy, testy odbiorowe ze statusami, lista usterek (punchlist), status końcowy, podpisy stron. |
+| **Odbiór SAT / FAT** | `satfat` | Uczestnicy, testy odbiorowe ze statusami, lista usterek (punchlist), wnioski, status końcowy, podpisy stron. |
 | **Reklamacja / zgłoszenie wady** | `complaint` | Duże zdjęcia-dowody wady, identyfikacja części, opis, wysyłka do zakupowca. |
+| **Lekcja projektowa** | `lesson` | Feedback błędu projektowego do konstrukcji (Lessons Learned): kontekst, opis błędu, kategoria + istotność, skutek, wnioski. Rejestr z eksportem do Excela. |
+
+### Automatyczna numeracja (wszystkie typy poza reklamacją mają auto-numer)
+Użytkownik podaje **numer projektu** (np. `25-104`), a numer raportu tworzy się
+sam wg wzorca `{PREFIX}-{nr projektu}-{data}`: `URU-` (uruchomienie), `RPT-`
+(serwis), `PRT-` (prototyp), `FAT-`/`SAT-` (odbiór — zależnie od typu testu),
+`LL-` (lekcja projektowa), `REK-` (reklamacja). Logika w `Header.jsx`
+(`autoNumber`) + `computeReportNumber` w komponentach; walidacja żąda „Numeru
+projektu" (nie „Numeru raportu").
+
+### Rekordy powtarzalne (`NotesList`)
+Obserwacje, rekomendacje i wnioski to **listy rekordów** `[{id, text, media}]`,
+nie pojedyncze pola tekstowe — dodajesz kolejne wpisy przyciskiem „+ Dodaj",
+każdy z własnym zdjęciem, dyktowaniem i zmianą kolejności. Wspólny komponent
+**`src/components/common/NotesList.jsx`** obsługuje: serwis (obserwacje +
+rekomendacje), uruchomienie (obserwacje + wnioski), SAT/FAT (wnioski), lekcja
+projektowa (wnioski/rekomendacje dla konstrukcji).
 
 ### Specyfika raportu uruchomienia (commissioning)
 - Fazy: `setup` (nagłówek + START) → `running`/`stopped` (timer na żywo, log
   zatrzymań) → `finished` (podsumowanie).
-- **Obserwacje i wnioski/rekomendacje dostępne NA BIEŻĄCO** — już w trakcie
-  sesji (Faza 2), nie tylko po jej zakończeniu (komponent `NotesSection`).
+- **Obserwacje i wnioski dostępne NA BIEŻĄCO** — już w trakcie sesji (Faza 2),
+  nie tylko po jej zakończeniu (komponent `NotesSection` → dwa `NotesList`).
+- **Powody zatrzymań konfigurowalne** w Ustawieniach (`getStopReasons()` + „Inne").
 - **Każdy rekord zatrzymania jest edytowalny i usuwalny** — powód (w tym
   „Inne"), komentarz, media, godzina rozpoczęcia i czas trwania; edycja działa
   na żywo (auto-zapis), spójnie z resztą apki (`StopsTable` + modal edycji).
+- **Ręczne dodanie zatrzymania** (v0.49) — „+ Dodaj zatrzymanie ręcznie" tworzy
+  rekord i otwiera modal korekty czasu/powodu (gdy inżynier zapomni kliknąć na
+  żywo).
+- **Wake Lock** (v0.48, `useWakeLock`) — w fazach `running`/`stopped` ekran nie
+  gaśnie podczas obserwacji maszyny z live-timerem.
+
+### Specyfika raportu serwisowego (service)
+- **„⏱ Teraz"** przy godzinie przyjazdu i odjazdu — jedno tapnięcie wstawia
+  bieżącą godzinę (`nowHHMM()`).
+- **Liczba osób obecnych na serwisie** (`visit.attendees`) — w sekcji danych
+  wizyty i w PDF.
+- **Domyślny autor i rola** z Ustawień podpowiadane w nowym raporcie.
+
+### Specyfika lekcji projektowej (lesson, v0.40)
+- **Cel:** zamknięcie pętli teren → konstrukcja. Błąd projektowy wykryty przy
+  uruchomieniu/serwisie trafia jako trwały wpis do konstrukcji (Lessons Learned).
+- **Pola:** kontekst (etap wykrycia `stage`, nr rysunku `drawingNo`), opis błędu
+  (`problem` + zdjęcia), klasyfikacja (`category` — konfigurowalna lista + „Inne";
+  `severity` — krytyczny/poważny/drobny), skutek (`impact`), wnioski (`lessons` —
+  rekordy `NotesList`).
+- **„Baza" bez SharePointa:** PDF to karta pojedynczej lekcji; kategoryzowalny
+  rejestr powstaje z ustrukturyzowanych danych — filtrowanie na Home + **eksport
+  wszystkich lekcji do XLSX** (patrz §7). Świadoma decyzja: PDF ≠ baza.
 
 ---
 
 ## 6. Generowanie PDF
 
-Rdzeń: **`src/utils/pdf/core.js`** + 5 modułów per typ
-(`service/commissioning/prototype/satfat/complaint.js`) + barrel
+Rdzeń: **`src/utils/pdf/core.js`** + 6 modułów per typ
+(`service/commissioning/prototype/satfat/complaint/lesson.js`) + barrel
 `src/utils/pdfGenerator.js`.
 
 - **Natywny, kopiowalny tekst** (nie obraz): jsPDF + autotable + osadzony font
@@ -113,14 +206,17 @@ Rdzeń: **`src/utils/pdf/core.js`** + 5 modułów per typ
   2–6 MB (poprzednio cały raport był rasterem z html2canvas).
 - **Prymitywy** w core.js: `drawReportHeader` (logo), `drawMetaTable`,
   `drawSectionHeader` (keep-with-next), `drawStatCards`, `drawTable` (autotable
-  z miniaturkami/badge/linkami w komórkach), `drawTextBlock`, `drawThumbsRow`,
+  z miniaturkami/badge w komórkach), `drawTextBlock`, `drawThumbsRow`,
   `drawEvidencePhotos`, `drawSignatures`, `drawBadge`, `drawVideosTable`,
   `drawBlockerBanner`, `drawPhotoAppendix`, `drawEmpty`.
 - **Załącznik fotograficzny** (`drawPhotoAppendix`) — na końcu PDF WSZYSTKIE
   zdjęcia raportu DUŻE (~pół strony A4, proporcje zachowane), z podpisem
-  (kontekst + opis) i linkiem do pliku w ZIP. Dzięki temu PDF jest
-  samowystarczalny. Dodany do service/commissioning/prototype/satfat;
-  **pominięty w reklamacji** (tam zdjęcia-dowody są już duże w treści).
+  (kontekst + opis). Dzięki temu PDF jest samowystarczalny. Dodany do
+  service/commissioning/prototype/satfat; **pominięty w reklamacji** (tam
+  zdjęcia-dowody są już duże w treści).
+- **Bez hiperłączy na zdjęciach** (v0.37) — miniaturki i duże zdjęcia w PDF nie
+  są już klikalnymi linkami (mylące dla odbiorcy, bo prowadziły do plików w ZIP).
+  Link zostaje wyłącznie przy **nazwie pliku wideo** (wideo nie da się osadzić w PDF).
 - **Fabryka generatorów** (`makeReportGenerators`, v0.36) — każdy moduł deklaruje
   tylko `collectMedia`, funkcję rysującą `buildPdf` i `baseName`; fabryka tworzy
   `buildXPdf` i `buildXPackage` zwracające `{ blob, filename }` (bez pobierania).
@@ -137,21 +233,45 @@ Rdzeń: **`src/utils/pdf/core.js`** + 5 modułów per typ
 
 ## 7. Eksport, udostępnianie i wysyłka
 
-Wspólny pasek **`ReportActionBar`** (poza reklamacją, która ma własny):
+Wspólny pasek **`ReportActionBar`** (poza reklamacją, która ma własny),
+w trzech rzędach:
 
-- **👁 Podgląd** — podgląd PDF w aplikacji (patrz wyżej).
-- **Telefon (Web Share dostępny):** „📲 Udostępnij PDF" / „📦 Udostępnij ZIP" —
-  wprost do systemowego okna (Teams/Mail/Pliki).
-- **Komputer:** „📄 Pobierz PDF" / „📦 ZIP (PDF + zdjęcia)".
-- **🔄 Przenieś na inne urządzenie** — paczka **synchronizacyjna** `.suresync`
-  (ZIP z `report.json` + media) do przeniesienia raportu na inne urządzenie
-  (import na Home). To NIE jest plik dla klienta — to kopia robocza do edycji.
-- Reklamacja: dodatkowo **📤 Wyślij do zakupowca** (telefon → Web Share ZIP do
-  Outlooka; komputer → pobranie ZIP + `mailto` z tematem/treścią).
+- **Rząd 1 (zawsze):** „👁 Podgląd" (podgląd PDF w aplikacji, patrz wyżej) +
+  „💾 Zapisz PDF na urządzenie" (zapis lekkiego PDF na dysk komputera / do Plików
+  telefonu — najlepszy do wysyłki).
+- **Rząd 2 — telefon (Web Share dostępny):** „📲 Udostępnij PDF" +
+  „📦 Udostępnij ZIP" — wprost do systemowego okna (Teams/Mail/Pliki).
+- **Rząd 2 — komputer:** „📦 Zapisz ZIP" + **„✉️ Wyślij mailem"** (pobiera PDF
+  i otwiera Outlooka z gotowym tematem — załączasz pobrany plik).
+- **Rząd 3:** „✓ Oznacz ukończony" (jeśli dotyczy) + „🔄 Przenieś na inne
+  urządzenie" + „Zapisz i wyjdź".
+
+**🔄 Przenieś na inne urządzenie** — paczka **synchronizacyjna** `.suresync`
+(ZIP z `report.json` + media) do przeniesienia raportu na inne urządzenie
+(import na Home). To NIE jest plik dla klienta — to kopia robocza do edycji.
+
+Reklamacja (własny pasek): dodatkowo **📤 Wyślij do zakupowca** (telefon → Web
+Share ZIP do Outlooka; komputer → pobranie ZIP + `mailto` z tematem/treścią).
 
 Rozróżnienie: **PDF/ZIP = gotowy raport dla odbiorcy**; **.suresync = sync między
 własnymi urządzeniami**. Wybór share vs pobranie steruje `canShareFiles()`
-(`syncPackage.js`) — telefon udostępnia, desktop pobiera.
+(`syncPackage.js`) — telefon udostępnia, desktop pobiera i podpowiada mail.
+Nazwa pliku = numer raportu (bez podwójnej daty — `fileBase` w `core.js`).
+
+### Rejestr lekcji projektowych → XLSX (v0.40)
+Osobna ścieżka eksportu (nie PDF): na Home przycisk **„📊 Rejestr lekcji → Excel
+(XLSX)"** (widoczny gdy istnieje ≥1 lekcja) zbiera WSZYSTKIE lekcje w jeden
+arkusz — wiersz = lekcja, kolumny = pola (numer, data, projekt, maszyna, nr
+rysunku, etap, kategoria, istotność, opis, skutek, wnioski, liczba zdjęć, autor,
+status), z autofiltrem. To filtrowalna „baza" bez backendu (sort/filtr/tabela
+przestawna w Excelu lub Power BI). Silnik: `utils/registerExport.js` + SheetJS
+(`xlsx`, leniwie). Telefon → udostępnij, desktop → pobierz (`canShareFiles`).
+- **Przeglądanie rejestru w apce (v0.41):** po włączeniu filtra „🎓 Lekcja" na
+  Home pojawia się kontekstowy wiersz podfiltrów — chipy **kategorii** (brane z
+  danych) + **istotności**; rejestr filtrujesz też bez Excela. Podfiltry czyszczą
+  się po wyłączeniu filtra „Lekcja".
+- **Eksport z zaznaczonych (v0.41):** w trybie multi-select przycisk „📊 Rejestr"
+  eksportuje XLSX tylko z zaznaczonych lekcji (`handleExportRegister(subset)`).
 
 ---
 
@@ -161,20 +281,62 @@ własnymi urządzeniami**. Wybór share vs pobranie steruje `canShareFiles()`
 - **Walidacja przed eksportem** (`validateReport`) — modal z listą braków +
   scroll do pierwszej brakującej sekcji; można pobrać mimo to. (Podgląd NIE
   wymaga kompletu — można podejrzeć szkic.)
+- **Live wskaźnik kompletności** (v0.48) — w sticky pasku sekcji (`SectionNav`)
+  pasek postępu + „Brakuje N · X/Y" lub „✓ Kompletny"; tapnięcie skacze do
+  pierwszego braku. Liczony z tego samego `validateReport` (jedno źródło —
+  `buildChecks` zwraca `total`/`filled`), więc wskaźnik i bramka pobierania nigdy
+  się nie rozjadą. Serwis/prototyp/SAT-FAT/lekcja (uruchomienie jest fazowe,
+  reklamacja to lean-form — bez paska).
 - **Blokada ukończonych** — status `completed` → `<fieldset disabled>` +
   `LockBanner` z „Odblokuj edycję"; pobieranie działa mimo blokady.
 - **Zdjęcia/wideo** (`MediaUploader`) — aparat / galeria / nagrywanie;
-  kompresja do miniatury + zapis oryginału; **adnotacje** (`PhotoAnnotator` —
-  strzałki, kształty, tekst) tapnięciem w miniaturę.
-- **Dyktowanie głosem** (`VoiceMic` / `MicTextarea`).
+  kompresja do miniatury + zapis oryginału; **edytor adnotacji**
+  (`PhotoAnnotator`) tapnięciem w miniaturę: strzałki, kółka, prostokąty,
+  rysowanie odręczne, **tekst w miejscu**; **zoom (szczypanie / kółko myszy) +
+  przesuwanie** do precyzyjnych adnotacji na zdjęciach z telefonu;
+  **undo/redo** całej historii; **kadrowanie** i **obrót 90°**; zapis zachowuje
+  jakość (PNG bezstratnie, JPEG 0.92 — bez degradacji przy wielokrotnej edycji).
+  Adnotacje są **nie-destrukcyjne** — po wyjściu z edytora można wrócić i
+  poprawić/usunąć naniesione uwagi (czysta baza + wektorowe kształty są
+  zapisywane obok spłaszczonej wersji eksportowej).
+- **Dyktowanie głosem** (`VoiceMic`) — w polach wielolinijkowych (`MicTextarea`)
+  oraz, od v0.49, w opisowych polach jednoliniowych (`MicInput`): kryterium
+  akceptacji SAT/FAT, komentarz punktu prototypu, komentarz części serwisu.
+  Bez wsparcia Web Speech (Firefox) pola działają normalnie (graceful fallback).
+- **Chipy autouzupełniania** (`SuggestInput`) — pola powtarzalne (klient,
+  lokalizacja, numer/nazwa projektu, maszyna, autor, komponent, części) po
+  wejściu w fokus pokazują **tapowalne podpowiedzi z historii** raportów
+  (`suggestions.js`); tapnięcie wypełnia pole. Filtrowane po wpisywanym tekście.
+- **Rekordy powtarzalne** (`NotesList`) — obserwacje/rekomendacje/wnioski jako
+  lista wpisów „+ Dodaj", każdy ze zdjęciem i dyktowaniem (patrz sekcja 5).
+- **Domyślny autor i rola** — prefill nowych raportów z Ustawień.
 - **Drag & drop** kolejności (`SortableList`, @dnd-kit; long-press na mobile).
 - **Tryb jasny/ciemny** (`ThemeContext`, bez FOUC).
-- **Home** — lista raportów (stała kolejność wg `createdAt`), statystyki
-  miesiąca, wyszukiwarka (debounced), multi-select z akcjami zbiorczymi
-  (eksport/usuń), import paczki `.suresync`.
-- **Onboarding** (jednorazowy tour) + **stała strona Pomocy** (`#/help`).
-- **Ustawienia globalne** (`#/settings`) — podfolder SharePoint, e-mail
-  zakupowca, wskaźnik pamięci urządzenia.
+- **Powiadomienia i dostępność** (v0.50): toasty na dole ekranu (bliżej kciuka,
+  nad dolnym paskiem) z `aria-live`; modale potwierdzeń dostępne (`role="dialog"`,
+  `aria-modal`, autofocus, `Escape` = anuluj, pułapka `Tab`, powrót fokusu);
+  spójny pusty stan (`EmptyState`) na Start i Raportach; większe cele dotykowe
+  (chipy filtrów, ✕ wyszukiwarki); dark-warianty chipów priorytetu/istotności.
+- **Menu ⋯ na kartach listy** (v0.50) — rzadsze/destrukcyjne akcje (Duplikuj,
+  Usuń) schowane w rozwijanym menu; „Otwórz" i „📄 PDF" zostają widoczne, więc
+  czerwony „Usuń" nie sąsiaduje bezpośrednio z „Otwórz".
+- **Start** (`#/`, v0.42) — lekki pulpit: powitanie z imieniem (z domyślnego
+  autora), statystyki miesiąca, „+ Nowy raport", karta „⏱ Ostatnio edytowany"
+  z akcentem strefy, link do pełnej listy. Bez listy raportów.
+- **Raporty** (`#/reports`, v0.42) — pełna lista (stała kolejność wg
+  `createdAt`): **segment `Wszystkie | 🏢 Dla klienta | 🔒 Wewnętrzne`**
+  (z licznikami; chipy typów zawężane do strefy i kolorowane jej kolorem),
+  wyszukiwarka (debounced, przeszukuje też rekordy `NotesList`), filtry
+  statusu, podfiltry rejestru lekcji, multi-select z akcjami zbiorczymi
+  (eksport/rejestr/usuń; pasek nad TabBarem), import paczki `.suresync`,
+  „💾 Backup wszystko", przycisk „📄 PDF" na karcie; gdy istnieją lekcje —
+  przycisk **„📊 Rejestr lekcji → Excel"** (patrz §7). Karty mają akcent
+  strefy na lewej krawędzi.
+- **Onboarding** (jednorazowy tour) + **stała strona Pomocy** (`#/help`, z sekcją
+  „Wysyłka do Teams — znane problemy").
+- **Ustawienia globalne** (`#/settings`) — domyślny autor + rola, konfigurowalne
+  powody zatrzymań, **kategorie błędu (lekcja projektowa)**, podfolder SharePoint,
+  e-mail zakupowca, wskaźnik pamięci.
 
 ---
 
@@ -182,45 +344,58 @@ własnymi urządzeniami**. Wybór share vs pobranie steruje `canShareFiles()`
 
 - Tryb **`prompt`** — nowa wersja czeka w „waiting", baner `UpdatePrompt`
   proponuje „Odśwież" (skipWaiting + reload). Kliknięcie `VersionBadge` ręcznie
-  sprawdza aktualizacje.
+  sprawdza aktualizacje (v0.43: czeka aż nowy SW się zainstaluje, nie sztywne
+  1,2 s) i — gdy nic nie znajdzie — proponuje **„Wymuś odświeżenie"**
+  (`forceUpdate`: czyści cache Workboxa + reload) dla upartej PWA na iOS.
+  `updateNow` ma zapasowy reload po 2,5 s (iOS bywa głuchy na `controllerchange`).
 - **Precache** (Workbox): kod + font Roboto (świadomie, do generowania PDF
   offline). **Wykluczone z precache**: martwe opcjonalne zależności jsPDF
-  (`index.es`, `purify.es`, `html2canvas`) oraz **pdf.js + worker** (~1,3 MB —
-  ładowane online dopiero przy 1. podglądzie).
-- Instalacja PWA z ekranu głównego (`InstallPrompt`).
+  (`index.es`, `purify.es`, `html2canvas`), **pdf.js + worker** (~1,3 MB) oraz
+  **SheetJS `xlsx`** (~430 KB) — ładowane online dopiero przy 1. użyciu (podgląd
+  PDF / eksport rejestru XLSX). Nazwane chunki (`pdfjs`, `xlsx`) w `manualChunks`.
+- Instalacja PWA z ekranu głównego (`InstallPrompt`). Na Androidzie/desktopie
+  przycisk „Zainstaluj" (`beforeinstallprompt`); na **iOS** (gdzie Safari tego
+  zdarzenia nie odpala) — instrukcja „Udostępnij → Do ekranu początkowego"
+  (v0.50), inaczej użytkownicy iPhone nie widzieli żadnej podpowiedzi.
 
 ---
 
 ## 10. Struktura plików (`src/`)
 
 ```
-App.jsx                     # szkielet, routing, providery, VersionBadge
+App.jsx                     # szkielet, routing, providery, VersionBadge, TabBar
 main.jsx                    # punkt wejścia
 pages/
-  Home.jsx                  # lista raportów, statystyki, multi-select, import/eksport sync
-  NewReport.jsx             # wybór typu raportu
+  Start.jsx                 # pulpit: powitanie, statystyki, + Nowy, „kontynuuj ostatni"
+  Reports.jsx               # zakładka 🗂: pełna lista, segment stref, filtry, multi-select, import/backup/rejestr
+  NewReport.jsx             # wybór typu raportu (dwie kolorowe strefy)
   Help.jsx                  # pomoc
   Settings.jsx              # ustawienia globalne
 components/
-  reports/                  # 5 komponentów: Commissioning/Service/Prototype/SatFat/Complaint
+  reports/                  # 6 komponentów: Commissioning/Service/Prototype/SatFat/Complaint/Lesson
   common/                   # Header, MediaUploader, PhotoAnnotator, VoiceMic, AutoSaveIndicator,
                             # ReportActionBar (+LockBanner), LoadingOverlay, PdfPreview, ErrorBoundary,
-                            # Toast, SWManager, ThemeContext, InstallPrompt, UpdatePrompt,
-                            # OnboardingTour, SortableList, ToggleGroup, SuggestInput,
-                            # PackageImportDialog, SectionNav, EmptyState
+                            # Toast, SWManager, ThemeContext, InstallPrompt, UpdatePrompt, TabBar,
+                            # OnboardingTour, SortableList, ToggleGroup, SuggestInput, NotesList,
+                            # PackageImportDialog, SectionNav, EmptyState, StorageAlerts
 utils/
   storage.js                # raporty (localStorage per-klucz + cache + migracje)
   imageStore.js             # media w IndexedDB
   settings.js               # ustawienia
   useReportPage.js          # wspólny hook strony raportu (download/share/preview)
   useAutoSave.js            # debounced autosave
-  validateReport.js         # walidacja przed eksportem
+  useWakeLock.js            # Screen Wake Lock (ekran nie gaśnie w sesji uruchomienia)
+  validateReport.js         # walidacja przed eksportem + buildChecks (total/filled do wskaźnika)
   syncPackage.js            # paczki .suresync + helpery Web Share + canShareFiles
   pdfGenerator.js           # barrel API generowania
   pdf/
     core.js                 # silnik PDF + prymitywy + buildReportPdf + makeReportGenerators
-    service.js commissioning.js prototype.js satfat.js complaint.js
+    service.js commissioning.js prototype.js satfat.js complaint.js lesson.js
     fonts/roboto-regular.js roboto-bold.js   # font base64 (lazy)
+  registerExport.js         # eksport rejestru lekcji → XLSX (SheetJS, lazy)
+  reportMeta.js             # typy + strefy (labels/ikony/kategorie/akcenty)
+  reportNumber.js           # wspólny computeReportNumber(prefix,projekt,data,prev)
+  text.js                   # slugify + formatBytes (współdzielone, bezzależnościowe)
   suggestions.js            # źródła autouzupełniania
   imageCompressor.js        # kompresja zdjęć
 assets/logo.png
@@ -232,10 +407,11 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`): ładowanie Home; serwisowy PDF z
-  natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych zdjęć;
-  podgląd PDF w apce renderuje strony. `beforeEach` wyłącza Web Share, by
-  deterministycznie pojawiały się przyciski „Pobierz".
+- **Smoke testy** (`tests/smoke.spec.js`, 5 testów): ładowanie Home; serwisowy
+  PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
+  zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; podgląd PDF w
+  apce renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
+  pojawiały się przyciski „Pobierz".
 - **CI/CD:** GitHub Actions buduje, instaluje Chromium, uruchamia smoke testy i
   publikuje na GitHub Pages (deploy bramkowany testami).
 
@@ -247,7 +423,97 @@ assets/logo.png
 widoczny w `VersionBadge` (`src/App.jsx`) **oraz** w `package.json`. Numer służy
 użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
 
-**Aktualna wersja: v0.36.** Skrót ostatnich zmian:
+**Aktualna wersja: v0.50.** Skrót ostatnich zmian:
+- **v0.50** — pakiet **UX/UI polish**. Menu ⋯ na kartach listy (Duplikuj/Usuń
+  schowane — bezpieczniejszy „Usuń"). Modale dostępne (role=dialog, aria-modal,
+  autofocus, Escape, pułapka Tab). Toasty przeniesione na dół (bliżej kciuka) +
+  `aria-live`. Ujednolicony pusty stan (`EmptyState`) na Start i Raportach.
+  Dark-warianty chipów priorytetu/istotności (serwis, lekcja). Większe cele
+  dotykowe (chipy filtrów, ✕ wyszukiwarki) + etykieta wyszukiwarki. Instrukcja
+  „Dodaj do ekranu głównego" na iOS (Safari nie ma zwykłej instalacji).
+- **v0.49** — pakiet **teren / mniej pisania (część 2)**. Dyktowanie
+  (`MicInput`) w opisowych polach jednoliniowych: kryterium akceptacji SAT/FAT,
+  komentarz punktu prototypu, komentarz części serwisu. Ręczne dodanie
+  zatrzymania w raporcie uruchomienia („+ Dodaj zatrzymanie ręcznie") — gdy
+  inżynier zapomni kliknąć na żywo; tworzy rekord i otwiera modal korekty
+  czasu/powodu.
+- **v0.48** — pakiet **teren / mniej pisania (część 1)**. Live wskaźnik
+  kompletności w pasku sekcji: pasek postępu + „Brakuje N · X/Y" (lub
+  „✓ Kompletny"), tapnięcie skacze do pierwszego braku — z tego samego źródła
+  co walidacja przy pobieraniu. Wake Lock w sesji uruchomienia — ekran nie
+  gaśnie podczas obserwacji z live-timerem.
+- **v0.47** — pakiet **bezpieczeństwa danych**. Autosave przy pełnej pamięci
+  już nie „udaje sukcesu" — pojawia się czerwony baner „Pamięć pełna" z
+  przyciskiem backupu (wcześniej zmiany ginęły po reloadzie). Pulpit
+  przypomina o backupie (≥3 raporty i brak kopii / >14 dni) i ostrzega przy
+  >85% zapełnienia. Osierocone zdjęcia w IndexedDB są sprzątane przy starcie
+  (usunięcie zdjęcia z raportu kasowało dotąd tylko wpis, nie plik). Nazwa
+  backupu zawiera godzinę (koniec kolizji kilku kopii tego samego dnia).
+- **v0.46** — **nie-destrukcyjna re-edycja adnotacji**. Po wyjściu z edytora
+  można wrócić i poprawić/usunąć naniesione uwagi. Zamiast nadpisywać oryginał
+  spłaszczonym obrazem, apka trzyma trzy artefakty: `originalId` (spłaszczony —
+  do ZIP/PDF), `editBaseId` (czysta baza) i `shapes` (wektorowe adnotacje).
+  Ponowne otwarcie wczytuje czystą bazę i przywraca edytowalne kształty. Naprawia
+  też rysowanie poza obrazem (w ciemnym pasie) — punkty są klamrowane do kadru,
+  więc adnotacje nie znikają z eksportu. Uwaga: zdjęcia zaadnotowane przed v0.46
+  mają uwagi wtopione na stałe (nowe są w pełni edytowalne).
+- **v0.45** — **nowy edytor zdjęć** (pełny rewrite `PhotoAnnotator`). Kształty
+  w współrzędnych obrazu + transformacja widoku → **zoom (szczypanie / kółko /
+  narzędzie 🖐) i przesuwanie** dla precyzyjnych adnotacji na zdjęciach z
+  telefonu; **undo/redo** całej historii (`useReducer`) zamiast zepsutego
+  „Cofnij"; **tekst w miejscu** (nakładka `textarea`) zamiast `window.prompt`;
+  **kadrowanie** i **obrót 90°** (transformują też adnotacje); **jakość** —
+  PNG zapisywany bezstratnie, JPEG 0.92, brak degradacji przy wielokrotnej
+  edycji; Toast/Confirm zamiast `alert/confirm/prompt`.
+- **v0.44** — **refaktoryzacja i optymalizacja** (audyt 3 obszarów; netto −194
+  linie). Martwy kod: usunięty łańcuch `buildLinkMaps/photoMap/target` (core +
+  6 modułów PDF), nieużywane eksporty (`collectPhotoIds`, `getImage/getVideo`,
+  `suggestActionDescriptions`, `fmtSize`), devDep `ffmpeg-static`. Dedup do
+  jednego źródła: `utils/reportNumber.js` (`computeReportNumber`), `utils/text.js`
+  (`slugify` + `formatBytes`), `ROLE_OPTIONS`/`TYPE_ICONS`/etykiety z
+  settings|reportMeta. Bugi: `useAutoSave` nie bumpuje `updatedAt` przy samym
+  otwarciu (dirtyRef), guardy uczestników SAT/FAT, `imageStore.openDb`
+  onblocked/onversionchange, `PackageImportDialog` `Wrap` poza renderem +
+  etykiety lesson/complaint, ochrona ręcznego numeru w serwisie/lekcji. Perf/a11y:
+  useMemo liczników (prototyp/SAT-FAT), `aria-pressed`/`role=status`.
+- **v0.43** — **fix niezawodnej aktualizacji PWA na telefonie**: `checkForUpdate`
+  czeka aż nowy SW faktycznie się zainstaluje (nasłuch `statechange`, do 15 s)
+  zamiast sztywnych 1,2 s (na wolnym mobile dawało fałszywe „aktualna");
+  `forceUpdate()` — „Wymuś odświeżenie" czyści cache i przeładowuje (ratunek dla
+  upartej PWA na iOS; dane w IndexedDB nietknięte); `VersionBadge` proponuje je,
+  gdy check nic nie znajdzie; zapasowy reload w `updateNow`.
+- **v0.42** — **nowy interfejs** (hybryda „tab bar + strefy"): dolny pasek
+  nawigacji `Start / 🗂 Raporty / Pomoc` (`TabBar`, safe-area, ukryty w
+  formularzach); **strefy typów** — 🏢 Dla klienta (niebieski: serwis, SAT/FAT,
+  uruchomienie) i 🔒 Wewnętrzne (fiolet: prototyp, lekcja, reklamacja) w
+  `reportMeta.js`; **Start** = lekki pulpit (powitanie, statystyki, „+ Nowy",
+  „ostatnio edytowany"); **Raporty** = pełna lista z segmentem stref,
+  kolorowanymi chipami i akcentem na kartach; wybór typu w dwóch strefach;
+  `Home.jsx` → `Start.jsx` + `Reports.jsx`.
+- **v0.41** — rejestr lekcji **w aplikacji**: przy filtrze „🎓 Lekcja" kontekstowy
+  wiersz podfiltrów (kategoria z danych + istotność) — przeglądasz rejestr bez
+  Excela; w multi-select przycisk „📊 Rejestr" eksportuje XLSX **tylko z
+  zaznaczonych** lekcji. `clearAllFilters()`, `handleExportRegister(subset)`.
+- **v0.40** — nowy, 6. typ raportu **„Lekcja projektowa"** (feedback błędów do
+  konstrukcji / Lessons Learned): kontekst, opis błędu + zdjęcia, kategoria
+  (konfigurowalna) + istotność, skutek, wnioski (`NotesList`); auto-numer `LL-`;
+  karta PDF. **Eksport rejestru wszystkich lekcji do XLSX** (SheetJS, leniwie,
+  poza precache) — filtrowalna „baza" bez backendu. Kategorie edytowalne w
+  Ustawieniach. 5. smoke test (karta PDF + XLSX). Świadoma decyzja: bez integracji
+  SharePoint na teraz (`registerExport.js`, `pdf/lesson.js`, `LessonReport.jsx`).
+- **v0.39** — pakiet UX: chipy autouzupełniania (`SuggestInput` przepisany na
+  tapowalne podpowiedzi z historii), domyślny autor + rola w Ustawieniach
+  (prefill), „⏱ Teraz" przy godzinach serwisu, **auto-numer dla wszystkich typów**
+  (`PRT-`, `FAT-`/`SAT-`), konfigurowalne powody zatrzymań, „✉️ Wyślij mailem"
+  (desktop), karta na Home → „📄 PDF", koniec podwójnej daty w nazwie pliku
+  (`fileBase`), sekcja Teams/OneDrive w Pomocy, mikrofon w prototypie, SAT/FAT
+  „Wnioski" → `NotesList` (schemat 2→3), poprawka walidacji („Numer projektu").
+- **v0.38** — rekomendacje serwisu oraz obserwacje/wnioski uruchomienia jako
+  **powtarzalne rekordy** (przycisk „+ Dodaj", jak obserwacje serwisu); wspólny
+  komponent `NotesList`; `SCHEMA_VERSION` 1→2 (migracja pól-stringów na listy).
+- **v0.37** — numer raportu uruchomienia auto (`URU-`) jak w serwisie; „💾 Zapisz
+  PDF na urządzenie" w każdym raporcie; **usunięte hiperłącza ze zdjęć** w PDF
+  (zostaje link nazwy wideo); liczba osób obecnych na serwisie (`visit.attendees`).
 - **v0.36** — refaktoryzacja: fabryka `makeReportGenerators` usuwa powtarzalny
   boilerplate build* w 5 modułach PDF; pełny audyt obecności funkcji
   v0.32–v0.35 we wszystkich typach; ten dokument.
@@ -275,8 +541,9 @@ użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
   Teams często **nie pojawia się** w oknie udostępniania iOS dla plików (jego
   ograniczenie). Obejścia: wysyłka **mailem (Outlook)** lub link z OneDrive;
   docelowo naprawa OneDrive przez admina M365.
-- **Podgląd offline** — pdf.js ładuje się online przy pierwszym użyciu (świadomie
-  poza precache); offline podgląd pokaże błąd z sugestią pobrania PDF.
+- **Podgląd offline / eksport XLSX offline** — pdf.js oraz SheetJS (`xlsx`)
+  ładują się online przy pierwszym użyciu (świadomie poza precache). Offline
+  podgląd/eksport rejestru pokaże błąd; sama praca nad raportami działa offline.
 - **Duże raporty** — wiele zdjęć w załączniku zwiększa rozmiar PDF (kompromis:
   samowystarczalny plik vs waga).
 - **Dane lokalne** — wyczyszczenie danych przeglądarki = utrata raportów.
