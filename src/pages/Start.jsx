@@ -4,6 +4,7 @@ import { getDefaultAuthor, getLastBackupAt } from '../utils/settings.js'
 import { getStorageEstimate } from '../utils/imageStore.js'
 import { backupAllReports } from '../utils/syncPackage.js'
 import { useToast } from '../components/common/Toast.jsx'
+import EmptyState from '../components/common/EmptyState.jsx'
 import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
 
 // Ekran startowy (v0.42) — lekki „pulpit" zamiast pełnej listy raportów:
@@ -224,11 +225,9 @@ export default function Start({ navigate }) {
           🗂 Wszystkie raporty ({reports.length}) →
         </button>
       ) : (
-        <div className="card text-center text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
-          Zacznij od pierwszego raportu — kliknij <span className="font-medium">„+ Nowy raport"</span>.
-          Zapisane raporty znajdziesz potem w zakładce <span className="font-medium">🗂 Raporty</span> na dolnym pasku,
-          a jak coś działa — w <button onClick={() => navigate('help')} className="text-sure-blue underline">Pomocy</button>.
-        </div>
+        <EmptyState icon="📋" title="Zacznij od pierwszego raportu" hint="Kliknij „+ Nowy raport” powyżej. Zapisane raporty znajdziesz w zakładce 🗂 Raporty na dolnym pasku.">
+          <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz, jak to działa</button>
+        </EmptyState>
       )}
     </div>
   )

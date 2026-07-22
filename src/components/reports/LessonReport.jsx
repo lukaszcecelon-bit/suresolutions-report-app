@@ -15,9 +15,9 @@ import { buildLessonPackage, buildLessonPdf } from '../../utils/pdfGenerator.js'
 
 // Istotność błędu (klucz zapisywany w danych; kolory jak w reszcie apki).
 const SEVERITY_ITEMS = [
-  { key: 'critical', label: 'Krytyczny', icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold' },
-  { key: 'major',    label: 'Poważny',   icon: '🟠', activeClass: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold' },
-  { key: 'minor',    label: 'Drobny',    icon: '⚪', activeClass: 'bg-gray-200 text-gray-700 border-gray-400 font-semibold' },
+  { key: 'critical', label: 'Krytyczny', icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold dark:bg-red-900/40 dark:text-red-200 dark:border-red-500/50' },
+  { key: 'major',    label: 'Poważny',   icon: '🟠', activeClass: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-500/50' },
+  { key: 'minor',    label: 'Drobny',    icon: '⚪', activeClass: 'bg-gray-200 text-gray-700 border-gray-400 font-semibold dark:bg-gray-600 dark:text-gray-100 dark:border-gray-400/50' },
 ]
 
 const SECTIONS = [

@@ -21,9 +21,9 @@ import { useReportPage } from '../../utils/useReportPage.js'
 import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
 
 const PRIORITY_ITEMS = [
-  { key: 'urgent',  label: 'Pilne',      icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold' },
-  { key: 'planned', label: 'Planowe',    icon: '🟡', activeClass: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold' },
-  { key: 'watch',   label: 'Obserwacja', icon: '🟢', activeClass: 'bg-emerald-100 text-emerald-700 border-emerald-400 font-semibold' },
+  { key: 'urgent',  label: 'Pilne',      icon: '🔴', activeClass: 'bg-red-100 text-red-700 border-red-400 font-semibold dark:bg-red-900/40 dark:text-red-200 dark:border-red-500/50' },
+  { key: 'planned', label: 'Planowe',    icon: '🟡', activeClass: 'bg-amber-100 text-amber-800 border-amber-400 font-semibold dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-500/50' },
+  { key: 'watch',   label: 'Obserwacja', icon: '🟢', activeClass: 'bg-emerald-100 text-emerald-700 border-emerald-400 font-semibold dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-500/50' },
 ]
 
 // Statusy wizyty (klucze zachowane dla kompatybilności danych, etykiety nowe).

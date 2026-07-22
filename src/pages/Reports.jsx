@@ -7,6 +7,7 @@ import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, backupAllReports } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
+import EmptyState from '../components/common/EmptyState.jsx'
 
 // Zakładka 🗂 RAPORTY (v0.42) — pełna lista przeniesiona ze strony głównej
 // (Start został lekkim pulpitem). Tu mieszka wszystko „archiwalne":
@@ -104,6 +105,8 @@ export default function Reports({ navigate }) {
   // zbiorczych (eksport zaznaczonych / usuń zaznaczone) na dole.
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
+  // Karta listy: które menu ⋯ (Duplikuj/Usuń) jest otwarte
+  const [openMenuId, setOpenMenuId] = useState(null)
   const importInput = useRef(null)
 
   const toast = useToast()
@@ -466,17 +469,18 @@ export default function Reports({ navigate }) {
               <input
                 type="search"
                 inputMode="search"
+                aria-label="Szukaj raportów"
                 placeholder="🔍 Szukaj (numer, projekt, klient, treść…)"
                 value={queryInput}
                 onChange={(e) => setQueryInput(e.target.value)}
-                className="field-input pr-10"
+                className="field-input pr-12"
               />
               {queryInput && (
                 <button
                   type="button"
                   onClick={() => { setQueryInput(''); setQuery('') }}
-                  className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 text-xs"
-                  aria-label="Wyczyść"
+                  className="absolute top-1/2 -translate-y-1/2 right-1.5 w-9 h-9 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 text-sm flex items-center justify-center"
+                  aria-label="Wyczyść wyszukiwanie"
                 >✕</button>
               )}
             </div>
@@ -492,7 +496,7 @@ export default function Reports({ navigate }) {
                     key={t.key}
                     onClick={() => toggleFilter(typeFilter, setTypeFilter, t.key)}
                     className={
-                      'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
+                      'text-xs px-3 py-2 min-h-[38px] rounded-full font-medium transition border ' +
                       (active
                         ? activeCls
                         : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
@@ -590,16 +594,13 @@ export default function Reports({ navigate }) {
         )}
 
         {sorted.length === 0 ? (
-          <div className="card text-center text-gray-500 dark:text-gray-400">
-            Brak zapisanych raportów. Kliknij <span className="font-medium">„+ Nowy"</span> powyżej aby zacząć,
-            albo <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz jak to działa</button>.
-          </div>
+          <EmptyState icon="🗂" title="Brak zapisanych raportów" hint="Kliknij „+ Nowy” powyżej, aby zacząć.">
+            <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz jak to działa</button>
+          </EmptyState>
         ) : filtered.length === 0 ? (
-          <div className="card text-center text-gray-500 dark:text-gray-400">
-            Nic nie pasuje do bieżących filtrów. Zmień zapytanie lub
-            <button onClick={clearAllFilters}
-              className="ml-1 text-sure-blue underline">wyczyść filtry</button>.
-          </div>
+          <EmptyState icon="🔍" title="Nic nie pasuje do filtrów">
+            <button onClick={clearAllFilters} className="text-sure-blue underline">wyczyść filtry</button>
+          </EmptyState>
         ) : (
           <div className="space-y-3">
             {filtered.map((r) => {
@@ -653,7 +654,7 @@ export default function Reports({ navigate }) {
                     )}
                   </div>
                   {!selectMode && (
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 flex-wrap items-center">
                     <button
                       className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
                       onClick={() => handleOpen(r)}
@@ -662,24 +663,45 @@ export default function Reports({ navigate }) {
                     </button>
                     <button
                       className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
-                      onClick={() => handleClone(r)}
-                      title="Utwórz kopię tego raportu jako szablon"
-                    >
-                      📋 Duplikuj
-                    </button>
-                    <button
-                      className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
                       disabled={isBusy}
                       onClick={() => handlePdf(r)}
                     >
                       {isBusy ? '⏳…' : '📄 PDF'}
                     </button>
-                    <button
-                      className="btn-sm bg-red-600 text-white hover:bg-red-700"
-                      onClick={() => handleDelete(r)}
-                    >
-                      Usuń
-                    </button>
+                    {/* Rzadsze/destrukcyjne akcje w menu ⋯ — „Usuń" nie sąsiaduje
+                        już bezpośrednio z „Otwórz" (mniej przypadkowych tapnięć). */}
+                    <div className="relative">
+                      <button
+                        className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-10"
+                        onClick={() => setOpenMenuId(openMenuId === r.id ? null : r.id)}
+                        aria-label="Więcej akcji"
+                        aria-haspopup="menu"
+                        aria-expanded={openMenuId === r.id}
+                      >
+                        ⋯
+                      </button>
+                      {openMenuId === r.id && (
+                        <>
+                          <div className="fixed inset-0 z-20" onClick={() => setOpenMenuId(null)} />
+                          <div role="menu" className="absolute right-0 top-full mt-1 z-30 min-w-[168px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
+                            <button
+                              role="menuitem"
+                              className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              onClick={() => { setOpenMenuId(null); handleClone(r) }}
+                            >
+                              📋 Duplikuj jako szablon
+                            </button>
+                            <button
+                              role="menuitem"
+                              className="w-full text-left px-3 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+                              onClick={() => { setOpenMenuId(null); handleDelete(r) }}
+                            >
+                              🗑 Usuń raport
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                   )}
                 </div>
