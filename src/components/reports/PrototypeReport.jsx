@@ -166,7 +166,7 @@ export default function PrototypeReport({ navigate, reportId }) {
         Test #{report.info.iteration || 1}
       </div>
 
-      <SectionNav sections={SECTIONS} />
+      <SectionNav sections={SECTIONS} report={report} />
 
       <LockBanner locked={locked} onUnlock={page.unlock} />
 

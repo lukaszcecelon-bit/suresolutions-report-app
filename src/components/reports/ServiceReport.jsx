@@ -162,7 +162,7 @@ export default function ServiceReport({ navigate, reportId }) {
         <AutoSaveIndicator savedAt={page.savedAt} />
       </div>
 
-      <SectionNav sections={SECTIONS} />
+      <SectionNav sections={SECTIONS} report={report} />
 
       <LockBanner locked={locked} onUnlock={page.unlock} />
 

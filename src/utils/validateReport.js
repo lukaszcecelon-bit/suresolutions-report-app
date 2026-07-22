@@ -23,68 +23,58 @@ const COMMON_HEADER = [
   { field: 'header.author',       label: 'Autor',                sectionId: 'sec-header' },
 ]
 
-export function validateReport(report) {
-  const missing = []
+// Buduje pełną listę WYMAGANYCH pól z flagą spełnienia — jedno źródło dla
+// walidacji przy pobieraniu (missing) ORAZ dla live-wskaźnika kompletności
+// (filled/total). Dzięki temu % i lista braków nigdy się nie rozjadą.
+function buildChecks(report) {
+  const checks = []
+  const req = (val, label, sectionId) => checks.push({ ok: !isEmpty(val), label, sectionId })
 
   // Reklamacja — własna, minimalna walidacja (lean form, bez wspólnego nagłówka).
   if (report.type === 'complaint') {
-    if (isEmpty(report.header?.projectNumber)) missing.push({ label: 'Numer projektu', sectionId: 'sec-ident' })
-    if (isEmpty(report.partNo)) missing.push({ label: 'Numer / nazwa części', sectionId: 'sec-ident' })
-    if (isEmpty(report.header?.author)) missing.push({ label: 'Zgłaszający', sectionId: 'sec-ident' })
+    req(report.header?.projectNumber, 'Numer projektu', 'sec-ident')
+    req(report.partNo, 'Numer / nazwa części', 'sec-ident')
+    req(report.header?.author, 'Zgłaszający', 'sec-ident')
     const hasPhoto = Array.isArray(report.media) && report.media.some((m) => m.kind === 'image')
-    if (!hasPhoto) missing.push({ label: 'Co najmniej 1 zdjęcie wady', sectionId: 'sec-photos' })
-    return { ok: missing.length === 0, missing }
+    checks.push({ ok: hasPhoto, label: 'Co najmniej 1 zdjęcie wady', sectionId: 'sec-photos' })
+    return checks
   }
 
   // Identyfikator raportu — serwis/uruchomienie/prototyp/SAT-FAT wpisują NUMER
-  // PROJEKTU, z którego auto-generuje się numer raportu. (Reklamacja obsłużona
-  // wyżej i już wróciła.)
-  if (isEmpty(report.header?.projectNumber)) {
-    missing.push({ label: 'Numer projektu', sectionId: 'sec-header' })
-  }
-
-  for (const r of COMMON_HEADER) {
-    if (isEmpty(get(report, r.field))) missing.push(r)
-  }
+  // PROJEKTU, z którego auto-generuje się numer raportu.
+  req(report.header?.projectNumber, 'Numer projektu', 'sec-header')
+  for (const r of COMMON_HEADER) req(get(report, r.field), r.label, r.sectionId)
 
   if (report.type === 'service') {
-    if (isEmpty(report.visit?.client))   missing.push({ label: 'Nazwa klienta',   sectionId: 'sec-a' })
-    if (isEmpty(report.visit?.location)) missing.push({ label: 'Lokalizacja',     sectionId: 'sec-a' })
-    if (isEmpty(report.actions)) missing.push({
-      label: 'Co najmniej 1 czynność (sekcja B)',
-      sectionId: 'sec-b',
-    })
+    req(report.visit?.client, 'Nazwa klienta', 'sec-a')
+    req(report.visit?.location, 'Lokalizacja', 'sec-a')
+    req(report.actions, 'Co najmniej 1 czynność (sekcja B)', 'sec-b')
   }
-
   if (report.type === 'commissioning') {
-    if (!report.sessionStartAt) missing.push({
-      label: 'Start sesji nie został rozpoczęty',
-      sectionId: 'sec-header',
-    })
+    checks.push({ ok: !!report.sessionStartAt, label: 'Start sesji nie został rozpoczęty', sectionId: 'sec-header' })
   }
-
   if (report.type === 'prototype') {
-    if (isEmpty(report.info?.component)) missing.push({ label: 'Podzespół testowany', sectionId: 'sec-a' })
-    if (isEmpty(report.info?.goal))      missing.push({ label: 'Cel testu',           sectionId: 'sec-a' })
-    if (isEmpty(report.points)) missing.push({
-      label: 'Co najmniej 1 punkt kontrolny (sekcja C)',
-      sectionId: 'sec-c',
-    })
+    req(report.info?.component, 'Podzespół testowany', 'sec-a')
+    req(report.info?.goal, 'Cel testu', 'sec-a')
+    req(report.points, 'Co najmniej 1 punkt kontrolny (sekcja C)', 'sec-c')
   }
-
   if (report.type === 'satfat') {
-    if (isEmpty(report.info?.client))   missing.push({ label: 'Klient / Zamawiający', sectionId: 'sec-a' })
-    if (isEmpty(report.info?.location)) missing.push({ label: 'Lokalizacja',          sectionId: 'sec-a' })
-    if (isEmpty(report.tests))          missing.push({ label: 'Co najmniej 1 test (sekcja C)', sectionId: 'sec-c' })
+    req(report.info?.client, 'Klient / Zamawiający', 'sec-a')
+    req(report.info?.location, 'Lokalizacja', 'sec-a')
+    req(report.tests, 'Co najmniej 1 test (sekcja C)', 'sec-c')
   }
-
   if (report.type === 'lesson') {
-    if (isEmpty(report.problem))  missing.push({ label: 'Opis błędu (sekcja B)',         sectionId: 'sec-b' })
-    if (isEmpty(report.category)) missing.push({ label: 'Kategoria błędu (sekcja C)',    sectionId: 'sec-c' })
-    if (isEmpty(report.lessons))  missing.push({ label: 'Co najmniej 1 wniosek (sekcja E)', sectionId: 'sec-e' })
+    req(report.problem, 'Opis błędu (sekcja B)', 'sec-b')
+    req(report.category, 'Kategoria błędu (sekcja C)', 'sec-c')
+    req(report.lessons, 'Co najmniej 1 wniosek (sekcja E)', 'sec-e')
   }
+  return checks
+}
 
-  return { ok: missing.length === 0, missing }
+export function validateReport(report) {
+  const checks = buildChecks(report)
+  const missing = checks.filter((c) => !c.ok).map(({ label, sectionId }) => ({ label, sectionId }))
+  return { ok: missing.length === 0, missing, total: checks.length, filled: checks.length - missing.length }
 }
 
 // Helper do uruchomienia walidacji + interakcji UI — wywołuje confirm

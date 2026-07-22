@@ -223,7 +223,7 @@ export default function SatFatReport({ navigate, reportId }) {
         </div>
       </div>
 
-      <SectionNav sections={SECTIONS} />
+      <SectionNav sections={SECTIONS} report={report} />
 
       <LockBanner locked={locked} onUnlock={page.unlock} />
 

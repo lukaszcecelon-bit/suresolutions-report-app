@@ -9,6 +9,7 @@ import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor, getStopReasons } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
+import { useWakeLock } from '../../utils/useWakeLock.js'
 import { buildCommissioningPackage, buildCommissioningPdf } from '../../utils/pdfGenerator.js'
 import { deleteImage, deleteVideo, deleteOriginal } from '../../utils/imageStore.js'
 
@@ -88,6 +89,10 @@ export default function CommissioningReport({ navigate, reportId }) {
     const t = setInterval(() => setTick((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [report.phase])
+
+  // Ekran nie gaśnie podczas trwającej sesji (running/stopped) — inżynier
+  // obserwuje maszynę i live-timer, nie dotykając telefonu.
+  useWakeLock(report.phase === 'running' || report.phase === 'stopped')
 
   const [attemptedStart, setAttemptedStart] = useState(false)
 

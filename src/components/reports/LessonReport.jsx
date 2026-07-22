@@ -88,7 +88,7 @@ export default function LessonReport({ navigate, reportId }) {
         <AutoSaveIndicator savedAt={page.savedAt} />
       </div>
 
-      <SectionNav sections={SECTIONS} />
+      <SectionNav sections={SECTIONS} report={report} />
 
       <LockBanner locked={locked} onUnlock={page.unlock} />
 
