@@ -72,6 +72,12 @@ function histReducer(state, a) {
 // `source` — dataURL or object URL for the full-resolution image.
 // `mimeType` — original mime (e.g. "image/png"); PNG is re-saved losslessly,
 //   everything else as high-quality JPEG (0.92). Avoids generational JPEG loss.
+// `initialShapes` — vector annotations to restore (non-destructive re-editing);
+//   they live in the same image-coordinate space as `source`.
+// `onSave` receives { blob, shapes, baseBlob }:
+//   • blob      — flattened image (base + shapes baked in) for ZIP/PDF export
+//   • shapes    — the editable vector overlay to persist for the next edit
+//   • baseBlob  — the clean base ONLY if crop/rotate changed it (else undefined)
 //
 // EDITING MODEL:
 //   • Coordinates are stored in IMAGE space; a view transform (scale/tx/ty)
@@ -80,7 +86,7 @@ function histReducer(state, a) {
 //   • Tap a shape to select → drag to move, drag a handle to resize, restyle
 //     via color/width, "Usuń" to delete. Every action is undoable (↶/↷).
 //   • ✂ Kadruj / ⟳ Obróć transform the base image itself (and existing shapes).
-export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = '' }) {
+export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = '', initialShapes = [] }) {
   const toast = useToast()
   const confirm = useConfirm()
 
@@ -88,6 +94,7 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
   const canvasRef = useRef(null)
   const baseRef = useRef(null)      // current base: ImageBitmap or offscreen canvas
   const measureRef = useRef(null)   // 1×1 ctx for text metrics (transform-free)
+  const baseDirtyRef = useRef(false) // true once crop/rotate changed the base image
 
   // Layout refs (not state — updated by ResizeObserver, read during draw).
   const cssRef = useRef({ w: 0, h: 0 })
@@ -101,7 +108,14 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
   const [color, setColor] = useState(COLORS[0].value)
   const [width, setWidth] = useState(WIDTHS[1].px)
 
-  const [hist, dispatch] = useReducer(histReducer, initHist)
+  // Lazy init restores any previously-saved shapes (shallow-copied so the
+  // reducer never mutates the caller's array). Runs once per mount; the editor
+  // remounts on each open, so re-editing always seeds from the persisted shapes.
+  const [hist, dispatch] = useReducer(histReducer, initialShapes, (init) => ({
+    shapes: (init || []).map((s) => ({ ...s })),
+    past: [],
+    future: [],
+  }))
   const shapes = hist.shapes
 
   const [drawing, setDrawing] = useState(null)
@@ -153,6 +167,10 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
   // CSS-in-canvas point → image coords, using a specific view.
   const toImage = (cx, cy, v = view) => ({ x: (cx - v.tx) / v.scale, y: (cy - v.ty) / v.scale })
   const toScreen = (ix, iy, v = view) => ({ x: ix * v.scale + v.tx, y: iy * v.scale + v.ty })
+  // Keep drawn/placed annotations inside the image — tapping the dark letterbox
+  // around the photo would otherwise create shapes with off-image coords that
+  // silently vanish from the exported (image-only) result.
+  const clampToImage = (p) => ({ x: clamp(p.x, 0, baseSize.w), y: clamp(p.y, 0, baseSize.h) })
 
   const canvasPoint = (e) => {
     const r = canvasRef.current.getBoundingClientRect()
@@ -550,13 +568,14 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
         return
       }
     }
-    // Empty area
+    // Empty area — start a new shape (clamped to the image, never the letterbox)
     if (selectedId) setSelectedId(null)
     const w = width / (fitScale() || 1) // preset screen-px → absolute image-px
+    const cp = clampToImage(ip)
 
-    if (tool === 'text') { openTextEditor(null, ip); return }
-    if (tool === 'freehand') { setDrawing({ id: newShapeId(), type: 'freehand', points: [ip], color, w }) }
-    else { setDrawing({ id: newShapeId(), type: tool, x1: ip.x, y1: ip.y, x2: ip.x, y2: ip.y, color, w }) }
+    if (tool === 'text') { openTextEditor(null, cp); return }
+    if (tool === 'freehand') { setDrawing({ id: newShapeId(), type: 'freehand', points: [cp], color, w }) }
+    else { setDrawing({ id: newShapeId(), type: tool, x1: cp.x, y1: cp.y, x2: cp.x, y2: cp.y, color, w }) }
   }
 
   const onPointerMove = (e) => {
@@ -599,10 +618,11 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
       return
     }
 
+    const cp = clampToImage(ip)
     setDrawing((dr) => {
       if (!dr) return dr
-      if (dr.type === 'freehand') return { ...dr, points: [...dr.points, ip] }
-      return { ...dr, x2: ip.x, y2: ip.y }
+      if (dr.type === 'freehand') return { ...dr, points: [...dr.points, cp] }
+      return { ...dr, x2: cp.x, y2: cp.y }
     })
   }
 
@@ -698,6 +718,7 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
     off.width = cw; off.height = ch
     off.getContext('2d').drawImage(baseRef.current, cx, cy, cw, ch, 0, 0, cw, ch)
     baseRef.current = off
+    baseDirtyRef.current = true
     // Translate shapes into the new origin; drop those fully outside the crop.
     const shift = (s) => {
       if (s.type === 'freehand') return { ...s, points: s.points.map((p) => ({ x: p.x - cx, y: p.y - cy })) }
@@ -727,6 +748,7 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
     octx.rotate(Math.PI / 2)
     octx.drawImage(baseRef.current, 0, 0, B.w, B.h)
     baseRef.current = off
+    baseDirtyRef.current = true
     // Point (x,y) → (oldH - y, x)
     const rp = (x, y) => ({ x: B.h - y, y: x })
     const rot = (s) => {
@@ -800,18 +822,43 @@ export default function PhotoAnnotator({ source, onSave, onCancel, mimeType = ''
   }
 
   // ---------- Save ----------
+  // Non-destructive: returns the flattened image for export AND the editable
+  // shapes (+ a fresh clean base only if crop/rotate changed it) so the caller
+  // can persist everything and re-open the editor with annotations intact.
   const save = () => {
     const B = baseSize
+    const isPng = /png/i.test(mimeType)
+    const type = isPng ? 'image/png' : 'image/jpeg'
+    // Serializable snapshot of the overlay (detached from reducer state).
+    const shapesCopy = shapes.map((s) => ({
+      ...s,
+      ...(s.points ? { points: s.points.map((p) => ({ x: p.x, y: p.y })) } : {}),
+    }))
+
+    // Clean base blob — only when crop/rotate mutated it (else caller keeps the
+    // existing base / snapshots the pristine original, avoiding a re-encode).
+    const makeBase = (cb) => {
+      if (!baseDirtyRef.current) { cb(undefined); return }
+      const bc = document.createElement('canvas')
+      bc.width = B.w; bc.height = B.h
+      bc.getContext('2d').drawImage(baseRef.current, 0, 0, B.w, B.h)
+      if (bc.toBlob) bc.toBlob((b) => cb(b || undefined), type, isPng ? undefined : 0.95)
+      else cb(undefined)
+    }
+
+    // Flattened export image (base + shapes baked in).
     const out = document.createElement('canvas')
     out.width = B.w; out.height = B.h
     const octx = out.getContext('2d')
     octx.drawImage(baseRef.current, 0, 0, B.w, B.h)
     for (const s of shapes) drawShape(octx, s)
-    const isPng = /png/i.test(mimeType)
-    const type = isPng ? 'image/png' : 'image/jpeg'
-    const done = (blob) => { if (blob) onSave(blob) }
-    if (out.toBlob) out.toBlob(done, type, isPng ? undefined : 0.92)
-    else fetch(out.toDataURL(type, 0.92)).then((r) => r.blob()).then(done)
+
+    const emit = (flatBlob) => {
+      if (!flatBlob) return
+      makeBase((baseBlob) => onSave({ blob: flatBlob, shapes: shapesCopy, baseBlob }))
+    }
+    if (out.toBlob) out.toBlob(emit, type, isPng ? undefined : 0.92)
+    else fetch(out.toDataURL(type, 0.92)).then((r) => r.blob()).then(emit)
   }
 
   const zoomPct = baseSize.w ? Math.round((view.scale / (fitScale() || 1)) * 100) : 100

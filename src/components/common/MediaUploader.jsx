@@ -35,6 +35,8 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
   // src for the open annotator (object URL for full original blob, or dataURL fallback)
   const [annotatorSrc, setAnnotatorSrc] = useState(null)
   const [annotatorIsBlob, setAnnotatorIsBlob] = useState(false)
+  // vector annotations restored into the editor (non-destructive re-editing)
+  const [initialShapes, setInitialShapes] = useState([])
   // Tracks the active object URL so we can revoke it if the component unmounts
   // while the annotator is still open (closeAnnotator handles the normal path).
   const annotatorUrlRef = useRef(null)
@@ -48,27 +50,35 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
   }, [])
 
   const openAnnotator = async (item) => {
-    // Prefer the full-resolution original from IDB; fall back to the thumbnail dataURL
-    // (legacy items uploaded before originals were stored).
+    const openBlob = (blob, shapes) => {
+      const url = URL.createObjectURL(blob)
+      annotatorUrlRef.current = url
+      setAnnotatorSrc(url)
+      setAnnotatorIsBlob(true)
+      setInitialShapes(shapes || [])
+      setEditingItem(item)
+    }
+    // 1) Non-destructive re-edit: clean base (no annotations baked) + saved shapes.
+    if (item.editBaseId) {
+      try {
+        const base = await getOriginal(item.editBaseId)
+        if (base) { openBlob(base, item.shapes); return }
+      } catch (e) { console.warn('getOriginal(editBase) failed', e) }
+    }
+    // 2) Full-resolution original (first edit, or legacy item annotated before
+    //    v0.46 — its annotations are baked into pixels, so start with no shapes).
     if (item.originalId) {
       try {
         const blob = await getOriginal(item.originalId)
-        if (blob) {
-          const url = URL.createObjectURL(blob)
-          annotatorUrlRef.current = url
-          setAnnotatorSrc(url)
-          setAnnotatorIsBlob(true)
-          setEditingItem(item)
-          return
-        }
-      } catch (e) {
-        console.warn('getOriginal failed', e)
-      }
+        if (blob) { openBlob(blob, []); return }
+      } catch (e) { console.warn('getOriginal failed', e) }
     }
+    // 3) Last resort: thumbnail dataURL.
     const fallback = item.dataUrl || (item.photoId ? resolved[item.photoId] : null)
     if (!fallback) return
     setAnnotatorSrc(fallback)
     setAnnotatorIsBlob(false)
+    setInitialShapes([])
     setEditingItem(item)
   }
 
@@ -79,23 +89,39 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
     annotatorUrlRef.current = null
     setAnnotatorSrc(null)
     setAnnotatorIsBlob(false)
+    setInitialShapes([])
     setEditingItem(null)
   }
 
-  const onAnnotationSave = async (annotatedBlob) => {
+  const onAnnotationSave = async (payload) => {
     const item = editingItem
+    const annotatedBlob = payload?.blob
     if (!item || !annotatedBlob) { closeAnnotator(); return }
     try {
-      // Replace the full-resolution original (if we have one tracked).
+      // Persist the EDITABLE state so annotations can be corrected later:
+      //   editBaseId → clean base image (no shapes baked), shapes → vector overlay.
+      let editBaseId = item.editBaseId
+      if (payload.baseBlob) {
+        // Base image itself changed (crop/rotate) → store/replace the clean base.
+        if (editBaseId) await replaceOriginal(editBaseId, payload.baseBlob)
+        else editBaseId = await putOriginal(payload.baseBlob)
+      } else if (!editBaseId) {
+        // First annotation, base unchanged → snapshot the pristine original as the
+        // reusable clean base BEFORE we overwrite the original with the flat image.
+        const clean = await getOriginal(item.originalId)
+        if (clean) editBaseId = await putOriginal(clean)
+      }
+
+      // Bake annotations into the export original + regenerate the thumbnail.
       if (item.originalId) {
         await replaceOriginal(item.originalId, annotatedBlob)
       }
-      // Re-generate the small thumbnail from the annotated full image.
       const thumb = await compressImageBlob(annotatedBlob)
       if (item.photoId) {
         await replaceImage(item.photoId, thumb.dataUrl)
         setResolved((prev) => ({ ...prev, [item.photoId]: thumb.dataUrl }))
       }
+      updateItem(item.id, { editBaseId, shapes: payload.shapes || [] })
     } catch (e) {
       toast.error('Błąd zapisu zdjęcia: ' + (e.message || e))
     } finally {
@@ -141,6 +167,9 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
     }
     if (m?.originalId) {
       deleteOriginal(m.originalId).catch((e) => console.warn('deleteOriginal failed', e))
+    }
+    if (m?.editBaseId) {
+      deleteOriginal(m.editBaseId).catch((e) => console.warn('deleteOriginal(editBase) failed', e))
     }
     if (m?.videoId) {
       deleteVideo(m.videoId).catch((e) => console.warn('deleteVideo failed', e))
@@ -321,6 +350,7 @@ export default function MediaUploader({ media = [], onChange, photoOnly = false 
           <PhotoAnnotator
             source={annotatorSrc}
             mimeType={editingItem?.mimeType}
+            initialShapes={initialShapes}
             onCancel={closeAnnotator}
             onSave={onAnnotationSave}
           />

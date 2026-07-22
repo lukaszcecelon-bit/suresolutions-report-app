@@ -112,6 +112,9 @@ export function collectMediaIds(value, out) {
   }
   if (value.kind === 'image' && value.photoId) out.photos.add(value.photoId)
   if (value.kind === 'image' && value.originalId) out.originals.add(value.originalId)
+  // Clean edit-base (non-destructive annotations) lives in the same 'originals'
+  // store → include it so cleanup on delete + backup/restore carry it along.
+  if (value.kind === 'image' && value.editBaseId) out.originals.add(value.editBaseId)
   if (value.kind === 'video' && value.videoId) out.videos.add(value.videoId)
   for (const k of Object.keys(value)) collectMediaIds(value[k], out)
   return out
