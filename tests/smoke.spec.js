@@ -143,9 +143,12 @@ test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({
   expect(pdfData.text).toMatch(/[ĄĆĘŁŃÓŚŻŹ]/)        // polskie znaki (BŁĘDU)
 
   // --- 2) Eksport REJESTRU lekcji do XLSX z zakładki Raporty (v0.42) ---
+  // Od v0.51 narzędzia archiwum (import/backup/rejestr) są w menu ⋯ w nagłówku,
+  // żeby nie zajmowały stałych wierszy nad listą raportów.
   await page.goto('/#/reports')
+  await page.getByRole('button', { name: 'Narzędzia archiwum' }).click()
   const dlXlsx = page.waitForEvent('download', { timeout: 120_000 })
-  await page.getByRole('button', { name: /Rejestr lekcji/ }).click()
+  await page.getByRole('menuitem', { name: /Rejestr lekcji/ }).click()
   const xlsx = await dlXlsx
   expect(xlsx.suggestedFilename()).toMatch(/rejestr-lekcji.*\.xlsx$/)
   // XLSX to archiwum ZIP — sygnatura „PK" na starcie pliku.

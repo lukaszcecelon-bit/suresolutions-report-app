@@ -5,13 +5,14 @@ import { getStorageEstimate } from '../utils/imageStore.js'
 import { backupAllReports } from '../utils/syncPackage.js'
 import { useToast } from '../components/common/Toast.jsx'
 import EmptyState from '../components/common/EmptyState.jsx'
-import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
+import { TYPE_LABELS, TYPE_SHORT, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
 
-// Ekran startowy (v0.42) — lekki „pulpit" zamiast pełnej listy raportów:
-// powitanie, statystyki miesiąca, wielki „+ Nowy raport" i karta
-// „kontynuuj ostatni" (najczęstsza realna potrzeba w terenie).
-// Pełna lista z wyszukiwarką, filtrami, multi-selectem, importem/backupem
-// i rejestrem lekcji mieszka w zakładce 🗂 Raporty (dolny pasek).
+// Ekran startowy — pulpit „co teraz zrobić" (przebudowany w v0.51).
+// Kolejność wynika z częstotliwości użycia: najpierw akcja (nowy raport +
+// skróty do najczęstszych typów), potem powrót do niedokończonej pracy
+// (3 ostatnie raporty), a metryki miesiąca — jako jeden cienki wiersz na dole
+// (nic się z nimi nie robi, więc nie zajmują miejsca nad akcją).
+// Pełna lista z wyszukiwarką, filtrami i archiwum mieszka w zakładce Raporty.
 
 // Czas wizyty serwisowej w minutach (HH:MM, z przejściem przez północ).
 function visitMinutes(arrival, departure) {
@@ -52,6 +53,21 @@ function monthStats(reports) {
   return { count: inMonth.length, hours, topClient }
 }
 
+// Trzy skróty „nowy raport typu X" — te, których naprawdę używasz najczęściej;
+// dopełniane domyślnymi (strefa „dla klienta"), gdy historia jest krótka.
+const DEFAULT_QUICK = ['service', 'commissioning', 'satfat']
+function quickTypes(reports) {
+  const count = new Map()
+  for (const r of reports) count.set(r.type, (count.get(r.type) || 0) + 1)
+  const used = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t)
+  const out = []
+  for (const t of [...used, ...DEFAULT_QUICK]) {
+    if (TYPE_SHORT[t] && !out.includes(t)) out.push(t)
+    if (out.length === 3) break
+  }
+  return out
+}
+
 export default function Start({ navigate }) {
   const toast = useToast()
   const [reports, setReports] = useState([])
@@ -61,6 +77,7 @@ export default function Start({ navigate }) {
   useEffect(() => { getStorageEstimate().then(setEstimate).catch(() => {}) }, [])
 
   const stats = useMemo(() => monthStats(reports), [reports])
+  const quick = useMemo(() => quickTypes(reports), [reports])
 
   // Bezpieczeństwo danych (v0.47): pamięć prawie pełna LUB dawno bez backupu.
   // Jedyna kopia to urządzenie, więc łagodnie przypominamy o backupie.
@@ -86,18 +103,13 @@ export default function Start({ navigate }) {
     }
   }
 
-  // Ostatnio EDYTOWANY raport (max updatedAt) — „tu skończyłem".
+  // Trzy ostatnio edytowane raporty — „tu skończyłem". W terenie żongluje się
+  // kilkoma naraz, więc jedna karta (jak było do v0.50) była za mało.
   const recent = useMemo(() => {
-    let best = null
-    let bestT = -Infinity
-    for (const r of reports) {
-      const t = new Date(r.updatedAt || r.createdAt || 0).getTime()
-      if (t > bestT) { bestT = t; best = r }
-    }
-    return best
+    const t = (r) => new Date(r.updatedAt || r.createdAt || 0).getTime()
+    return [...reports].sort((a, b) => t(b) - t(a)).slice(0, 3)
   }, [reports])
 
-  // Imię z domyślnego autora (Ustawienia) — drobne, osobiste powitanie.
   const firstName = useMemo(() => (getDefaultAuthor().trim().split(/\s+/)[0] || ''), [])
 
   const fmtUpdated = (iso) => {
@@ -109,16 +121,21 @@ export default function Start({ navigate }) {
     return d.toISOString().slice(0, 10)
   }
 
-  const recentCompleted = recent?.status === 'completed'
+  const statsLine = stats.count > 0
+    ? [
+        `${stats.count} ${stats.count === 1 ? 'raport' : stats.count < 5 ? 'raporty' : 'raportów'}`,
+        stats.hours >= 1
+          ? `${Math.round(stats.hours * 10) / 10} h u klientów`
+          : stats.hours > 0 ? `${Math.round(stats.hours * 60)} min u klientów` : null,
+        stats.topClient,
+      ].filter(Boolean).join(' · ')
+    : null
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-sure-dark dark:text-gray-100">
-          {firstName ? `Cześć, ${firstName}! 👋` : 'Dzień dobry! 👋'}
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Co dziś dokumentujemy?</p>
-      </div>
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold text-sure-dark dark:text-gray-100">
+        {firstName ? `Cześć, ${firstName}! 👋` : 'Dzień dobry! 👋'}
+      </h1>
 
       {/* Bezpieczeństwo danych: pamięć prawie pełna / dawno bez backupu */}
       {(storageWarn || backupWarn) && (
@@ -151,69 +168,68 @@ export default function Start({ navigate }) {
         </div>
       )}
 
-      {/* Statystyki bieżącego miesiąca */}
-      {reports.length > 0 && stats.count > 0 && (
-        <section className="grid grid-cols-3 gap-2">
-          <div className="card !p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Ten miesiąc</div>
-            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">{stats.count}</div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">{stats.count === 1 ? 'raport' : stats.count < 5 ? 'raporty' : 'raportów'}</div>
-          </div>
-          <div className="card !p-3 text-center">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">U klientów</div>
-            <div className="text-xl font-bold text-sure-dark dark:text-gray-100 mt-0.5 tabular-nums">
-              {stats.hours >= 1 ? `${Math.round(stats.hours * 10) / 10} h` : stats.hours > 0 ? `${Math.round(stats.hours * 60)} min` : '—'}
-            </div>
-            <div className="text-[11px] text-gray-500 dark:text-gray-400">czas wizyt/sesji</div>
-          </div>
-          <div className="card !p-3 text-center min-w-0">
-            <div className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Top klient</div>
-            <div className="text-sm font-bold text-sure-dark dark:text-gray-100 mt-1.5 truncate" title={stats.topClient || ''}>
-              {stats.topClient || '—'}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* AKCJA na pierwszym miejscu — to po to najczęściej otwiera się apkę */}
+      <div className="space-y-2">
+        <button
+          onClick={() => navigate('new')}
+          className="w-full btn-primary text-lg py-6 shadow-sm"
+        >
+          + Nowy raport
+        </button>
+        {/* Skróty do najczęstszych typów — omijają ekran wyboru typu */}
+        <div className="grid grid-cols-3 gap-2">
+          {quick.map((t) => (
+            <button
+              key={t}
+              onClick={() => navigate(t)}
+              title={`Nowy raport: ${TYPE_LABELS[t]}`}
+              className="flex flex-col items-center gap-1 py-2.5 px-1 rounded-lg border border-gray-300 bg-white text-sure-dark hover:border-sure-blue hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 transition"
+            >
+              <span className="text-lg leading-none" aria-hidden="true">{TYPE_ICONS[t]}</span>
+              <span className="text-xs font-medium text-center leading-tight">{TYPE_SHORT[t]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <button
-        onClick={() => navigate('new')}
-        className="w-full btn-primary text-lg py-6 shadow-sm"
-      >
-        + Nowy raport
-      </button>
-
-      {/* Kontynuuj ostatni — jedna karta, nie lista */}
-      {recent && (
+      {/* WRÓĆ DO PRACY — trzy ostatnio edytowane raporty */}
+      {recent.length > 0 && (
         <section className="space-y-1.5">
           <div className="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">
-            ⏱ Ostatnio edytowany
+            ⏱ Wróć do pracy
           </div>
-          <button
-            onClick={() => navigate(`${recent.type}/${recent.id}`)}
-            className={
-              'card w-full text-left flex items-center gap-3 hover:border-sure-blue hover:shadow transition ' +
-              (CATEGORY_ACCENT[typeCategory(recent.type)] || '')
-            }
-          >
-            <div className="text-2xl shrink-0">{TYPE_ICONS[recent.type] || '📄'}</div>
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-sure-dark dark:text-gray-100 truncate">
-                {recent.header?.reportNumber || '(brak nr)'} · {recent.header?.projectName || '(brak projektu)'}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                {TYPE_LABELS[recent.type] || recent.type} · zmienione {fmtUpdated(recent.updatedAt)}
-              </div>
-            </div>
-            <span className={
-              'text-xs px-2 py-0.5 rounded-full border shrink-0 ' +
-              (recentCompleted
-                ? 'border-emerald-400 text-emerald-700 bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-300 dark:bg-emerald-900/30'
-                : 'border-amber-400 text-amber-700 bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:bg-amber-900/30')
-            }>
-              {recentCompleted ? '🔒' : 'Roboczy'}
-            </span>
-            <span className="text-sure-blue text-xl shrink-0" aria-hidden="true">›</span>
-          </button>
+          {recent.map((r) => {
+            const completed = r.status === 'completed'
+            return (
+              <button
+                key={r.id}
+                onClick={() => navigate(`${r.type}/${r.id}`)}
+                className={
+                  'card w-full text-left flex items-center gap-3 hover:border-sure-blue hover:shadow transition ' +
+                  (CATEGORY_ACCENT[typeCategory(r.type)] || '')
+                }
+              >
+                <div className="text-2xl shrink-0" aria-hidden="true">{TYPE_ICONS[r.type] || '📄'}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sure-dark dark:text-gray-100 truncate">
+                    {r.header?.reportNumber || '(brak nr)'} · {r.header?.projectName || '(brak projektu)'}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    {TYPE_LABELS[r.type] || r.type} · zmienione {fmtUpdated(r.updatedAt)}
+                  </div>
+                </div>
+                <span className={
+                  'text-xs px-2 py-0.5 rounded-full border shrink-0 ' +
+                  (completed
+                    ? 'border-emerald-400 text-emerald-700 bg-emerald-50 dark:border-emerald-500/50 dark:text-emerald-300 dark:bg-emerald-900/30'
+                    : 'border-amber-400 text-amber-700 bg-amber-50 dark:border-amber-500/50 dark:text-amber-300 dark:bg-amber-900/30')
+                }>
+                  {completed ? '🔒' : 'Roboczy'}
+                </span>
+                <span className="text-sure-blue text-xl shrink-0" aria-hidden="true">›</span>
+              </button>
+            )
+          })}
         </section>
       )}
 
@@ -225,9 +241,20 @@ export default function Start({ navigate }) {
           🗂 Wszystkie raporty ({reports.length}) →
         </button>
       ) : (
-        <EmptyState icon="📋" title="Zacznij od pierwszego raportu" hint="Kliknij „+ Nowy raport” powyżej. Zapisane raporty znajdziesz w zakładce 🗂 Raporty na dolnym pasku.">
+        <EmptyState icon="📋" title="Zacznij od pierwszego raportu" hint="Wybierz typ powyżej. Zapisane raporty znajdziesz w zakładce 🗂 Raporty na dolnym pasku.">
           <button onClick={() => navigate('help')} className="text-sure-blue underline">zobacz, jak to działa</button>
         </EmptyState>
+      )}
+
+      {/* Metryki miesiąca — informacja, nie akcja → jeden cichy wiersz na dole */}
+      {statsLine && (
+        <button
+          onClick={() => navigate('reports')}
+          className="w-full text-center text-xs text-gray-500 dark:text-gray-400 py-1 hover:text-sure-blue transition"
+          title="Zobacz raporty"
+        >
+          Ten miesiąc: {statsLine}
+        </button>
       )}
     </div>
   )

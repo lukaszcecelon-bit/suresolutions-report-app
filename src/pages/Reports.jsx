@@ -107,6 +107,9 @@ export default function Reports({ navigate }) {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   // Karta listy: które menu ⋯ (Duplikuj/Usuń) jest otwarte
   const [openMenuId, setOpenMenuId] = useState(null)
+  // Menu ⋯ w nagłówku (archiwum) + zwijany panel filtrów (v0.51)
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const importInput = useRef(null)
 
   const toast = useToast()
@@ -368,37 +371,75 @@ export default function Reports({ navigate }) {
   }
 
   const hasFiltersActive = query.trim() || segment !== 'all' || typeFilter.size > 0 || statusFilter.size > 0 || categoryFilter.size > 0 || severityFilter.size > 0
+  // Licznik na przycisku „Filtry (N)" — liczy tylko to, co jest SCHOWANE w
+  // panelu (szukajka i segment są widoczne na stałe, więc się nie liczą).
+  const activeFilterCount = typeFilter.size + statusFilter.size + categoryFilter.size + severityFilter.size
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-sure-dark dark:text-gray-100">Raporty</h1>
-        <button
-          onClick={() => navigate('new')}
-          className="btn-sm bg-sure-blue text-white hover:bg-sure-blue/90 shrink-0"
-        >
-          + Nowy
-        </button>
-      </div>
-
-      {/* Narzędzia archiwum: import / backup / rejestr lekcji */}
-      <section className="space-y-2">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handleImportClick}
-            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
-            title="Wczytaj paczkę .suresync z innego urządzenia"
+            onClick={() => navigate('new')}
+            className="btn-sm bg-sure-blue text-white hover:bg-sure-blue/90"
           >
-            📥 Importuj raport
+            + Nowy
           </button>
-          <button
-            onClick={handleBackup}
-            disabled={backupBusy || reports.length === 0}
-            className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
-            title="Eksportuj wszystkie raporty + media do jednej paczki .suresync"
-          >
-            {backupBusy ? '⏳ Pakowanie…' : '💾 Backup wszystko'}
-          </button>
+          {/* Narzędzia archiwum (import / backup / rejestr / zaznaczanie) —
+              używane raz w miesiącu, więc nie zajmują stałych wierszy nad listą. */}
+          <div className="relative">
+            <button
+              onClick={() => setToolsOpen((o) => !o)}
+              className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 w-10"
+              aria-label="Narzędzia archiwum"
+              aria-haspopup="menu"
+              aria-expanded={toolsOpen}
+            >
+              ⋯
+            </button>
+            {toolsOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setToolsOpen(false)} />
+                <div role="menu" className="absolute right-0 top-full mt-1 z-30 min-w-[232px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg py-1">
+                  {sorted.length > 0 && (
+                    <button
+                      role="menuitem"
+                      className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      onClick={() => { setToolsOpen(false); toggleSelectMode() }}
+                    >
+                      {selectMode ? '✕ Zakończ zaznaczanie' : '☑ Zaznacz wiele'}
+                    </button>
+                  )}
+                  <button
+                    role="menuitem"
+                    className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    onClick={() => { setToolsOpen(false); handleImportClick() }}
+                  >
+                    📥 Importuj raport z paczki
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={backupBusy || reports.length === 0}
+                    className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
+                    onClick={() => { setToolsOpen(false); handleBackup() }}
+                  >
+                    {backupBusy ? '⏳ Pakowanie…' : '💾 Backup wszystkich raportów'}
+                  </button>
+                  {reports.some((r) => r.type === 'lesson') && (
+                    <button
+                      role="menuitem"
+                      disabled={xlsxBusy}
+                      className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
+                      onClick={() => { setToolsOpen(false); handleExportRegister() }}
+                    >
+                      {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr lekcji → Excel'}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
         <input
           ref={importInput}
@@ -407,17 +448,7 @@ export default function Reports({ navigate }) {
           onChange={handleImportFileChange}
           className="hidden"
         />
-        {reports.some((r) => r.type === 'lesson') && (
-          <button
-            onClick={() => handleExportRegister()}
-            disabled={xlsxBusy}
-            className="w-full btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
-            title="Eksportuj wszystkie lekcje projektowe do arkusza Excel (filtrowalny rejestr)"
-          >
-            {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr lekcji → Excel (XLSX)'}
-          </button>
-        )}
-      </section>
+      </div>
 
       <section>
         {/* Segment stref — nadrzędny podział listy */}
@@ -446,22 +477,6 @@ export default function Reports({ navigate }) {
           </div>
         )}
 
-        <div className="flex items-center justify-end gap-2 mb-3">
-          {sorted.length > 0 && (
-            <button
-              onClick={toggleSelectMode}
-              className={
-                'text-xs px-3 py-1.5 rounded-full font-medium transition border ' +
-                (selectMode
-                  ? 'bg-sure-blue text-white border-transparent'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
-              }
-            >
-              {selectMode ? '✕ Anuluj zaznaczanie' : '☑ Zaznacz'}
-            </button>
-          )}
-        </div>
-
         {/* Search + filters — only show if there's anything to filter */}
         {sorted.length > 0 && (
           <div className="space-y-2 mb-4">
@@ -484,6 +499,39 @@ export default function Reports({ navigate }) {
                 >✕</button>
               )}
             </div>
+
+            {/* Filtry ZWINIĘTE — rozwijasz tylko gdy naprawdę zawężasz listę.
+                Licznik pokazuje, ile filtrów działa, więc nic nie „filtruje w
+                ukryciu". Obok licznik wyników, żeby efekt był od razu widać. */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setFiltersOpen((o) => !o)}
+                aria-expanded={filtersOpen}
+                className={
+                  'text-xs px-3 py-2 min-h-[38px] rounded-full font-medium transition border ' +
+                  (activeFilterCount > 0
+                    ? 'bg-sure-blue text-white border-transparent'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:border-gray-500')
+                }
+              >
+                Filtry{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''} {filtersOpen ? '▴' : '▾'}
+              </button>
+              {hasFiltersActive && (
+                <button
+                  onClick={clearAllFilters}
+                  className="text-xs text-sure-blue px-1 py-1.5 hover:underline"
+                >
+                  Wyczyść
+                </button>
+              )}
+              <div className="ml-auto text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                {filtered.length === sorted.length
+                  ? `${sorted.length} ${sorted.length === 1 ? 'raport' : sorted.length < 5 ? 'raporty' : 'raportów'}`
+                  : `${filtered.length} z ${sorted.length}`}
+              </div>
+            </div>
+
+            {filtersOpen && (<>
             <div className="flex flex-wrap gap-1.5">
               {visibleTypeItems.map((t) => {
                 const active = typeFilter.has(t.key)
@@ -526,14 +574,6 @@ export default function Reports({ navigate }) {
                   </button>
                 )
               })}
-              {hasFiltersActive && (
-                <button
-                  onClick={clearAllFilters}
-                  className="ml-auto text-xs text-sure-blue px-2 py-1.5 hover:underline"
-                >
-                  Wyczyść filtry
-                </button>
-              )}
             </div>
 
             {/* Podfiltry rejestru lekcji — widoczne tylko przy aktywnym filtrze
@@ -585,11 +625,7 @@ export default function Reports({ navigate }) {
               </div>
             )}
 
-            <div className="text-xs text-gray-500 dark:text-gray-400">
-              {filtered.length === sorted.length
-                ? `${sorted.length} ${sorted.length === 1 ? 'raport' : sorted.length < 5 ? 'raporty' : 'raportów'}`
-                : `${filtered.length} z ${sorted.length}`}
-            </div>
+            </>)}
           </div>
         )}
 

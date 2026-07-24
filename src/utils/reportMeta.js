@@ -18,6 +18,17 @@ export const TYPE_LABELS = {
   lesson: 'Lekcja projektowa (feedback do konstrukcji)',
 }
 
+// Krótkie etykiety do ciasnych miejsc (skróty „nowy raport" na pulpicie,
+// chipy) — pełne TYPE_LABELS są za długie na przycisk szerokości 1/3 ekranu.
+export const TYPE_SHORT = {
+  commissioning: 'Uruchomienie',
+  service: 'Serwis',
+  prototype: 'Prototyp',
+  satfat: 'SAT / FAT',
+  complaint: 'Reklamacja',
+  lesson: 'Lekcja',
+}
+
 export const TYPE_ICONS = {
   commissioning: '▶',
   service: '🔧',

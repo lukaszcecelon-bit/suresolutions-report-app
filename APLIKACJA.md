@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v0.50**.
+> Aktualny, kompletny opis aplikacji. Stan na **v0.51**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -320,18 +320,27 @@ przestawna w Excelu lub Power BI). Silnik: `utils/registerExport.js` + SheetJS
 - **Menu ⋯ na kartach listy** (v0.50) — rzadsze/destrukcyjne akcje (Duplikuj,
   Usuń) schowane w rozwijanym menu; „Otwórz" i „📄 PDF" zostają widoczne, więc
   czerwony „Usuń" nie sąsiaduje bezpośrednio z „Otwórz".
-- **Start** (`#/`, v0.42) — lekki pulpit: powitanie z imieniem (z domyślnego
-  autora), statystyki miesiąca, „+ Nowy raport", karta „⏱ Ostatnio edytowany"
-  z akcentem strefy, link do pełnej listy. Bez listy raportów.
-- **Raporty** (`#/reports`, v0.42) — pełna lista (stała kolejność wg
-  `createdAt`): **segment `Wszystkie | 🏢 Dla klienta | 🔒 Wewnętrzne`**
-  (z licznikami; chipy typów zawężane do strefy i kolorowane jej kolorem),
-  wyszukiwarka (debounced, przeszukuje też rekordy `NotesList`), filtry
-  statusu, podfiltry rejestru lekcji, multi-select z akcjami zbiorczymi
-  (eksport/rejestr/usuń; pasek nad TabBarem), import paczki `.suresync`,
-  „💾 Backup wszystko", przycisk „📄 PDF" na karcie; gdy istnieją lekcje —
-  przycisk **„📊 Rejestr lekcji → Excel"** (patrz §7). Karty mają akcent
-  strefy na lewej krawędzi.
+- **Start** (`#/`, przebudowany w v0.51) — pulpit „co teraz zrobić", ułożony wg
+  **częstotliwości użycia**: powitanie → (ewentualne ostrzeżenia o pamięci/backupie)
+  → **„+ Nowy raport" + 3 skróty do najczęstszych typów** (omijają ekran wyboru
+  typu; kolejność wynika z Twojej historii, dopełniana strefą „dla klienta")
+  → **„⏱ Wróć do pracy"** = 3 ostatnio edytowane raporty (wcześniej tylko 1)
+  → link do pełnej listy → **metryki miesiąca jako jeden cichy wiersz na dole**
+  (informacja, nie akcja — wcześniej trzy karty nad głównym przyciskiem).
+- **Raporty** (`#/reports`, uporządkowane w v0.51) — **lista jest widoczna od
+  razu**, nad nią tylko trzy wiersze: nagłówek (`+ Nowy` + menu ⋯), wyszukiwarka
+  (debounced, przeszukuje też rekordy `NotesList`) oraz segment
+  `Wszystkie | 🏢 Dla klienta | 🔒 Wewnętrzne` z przyciskiem **„Filtry (N)"**.
+  - **Filtry zwinięte** — chipy typów, statusu i podfiltry rejestru lekcji
+    rozwijają się na żądanie; licznik `(N)` na przycisku zostaje po zwinięciu,
+    więc nic nie filtruje „w ukryciu". Obok licznik wyników i „Wyczyść".
+  - **Narzędzia archiwum w menu ⋯** (rzeczy używane raz w miesiącu, wcześniej
+    zajmowały stałe wiersze nad listą): „☑ Zaznacz wiele", „📥 Importuj raport
+    z paczki", „💾 Backup wszystkich raportów" oraz — gdy istnieją lekcje —
+    „📊 Rejestr lekcji → Excel" (patrz §7).
+  - Lista ma stałą kolejność (wg `createdAt`), akcent strefy na lewej krawędzi
+    karty, „Otwórz" + „📄 PDF" widoczne, a Duplikuj/Usuń w menu ⋯ karty.
+    Multi-select ma pasek akcji zbiorczych nad TabBarem.
 - **Onboarding** (jednorazowy tour) + **stała strona Pomocy** (`#/help`, z sekcją
   „Wysyłka do Teams — znane problemy").
 - **Ustawienia globalne** (`#/settings`) — domyślny autor + rola, konfigurowalne
@@ -423,7 +432,14 @@ assets/logo.png
 widoczny w `VersionBadge` (`src/App.jsx`) **oraz** w `package.json`. Numer służy
 użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
 
-**Aktualna wersja: v0.50.** Skrót ostatnich zmian:
+**Aktualna wersja: v0.51.** Skrót ostatnich zmian:
+- **v0.51** — **uporządkowanie ekranu głównego i listy** (aplikacja rosła przez
+  dodawanie — każda nowa funkcja dostawała stały wiersz nad treścią). Zasada:
+  **miejsce = częstotliwość użycia**. Start: „+ Nowy raport" i 3 skróty typów na
+  górze, „Wróć do pracy" = 3 ostatnie raporty, metryki miesiąca zdegradowane do
+  jednego wiersza na dole. Raporty: lista widoczna od razu (z 8–11 wierszy chromu
+  zostały 3), filtry zwinięte za „Filtry (N)", a import/backup/rejestr/zaznaczanie
+  przeniesione do menu ⋯ w nagłówku. Nowe: `TYPE_SHORT` w `reportMeta.js`.
 - **v0.50** — pakiet **UX/UI polish**. Menu ⋯ na kartach listy (Duplikuj/Usuń
   schowane — bezpieczniejszy „Usuń"). Modale dostępne (role=dialog, aria-modal,
   autofocus, Escape, pułapka Tab). Toasty przeniesione na dół (bliżej kciuka) +
