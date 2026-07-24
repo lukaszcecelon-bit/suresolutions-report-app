@@ -27,6 +27,9 @@ function buildPdf(ctx, report, photos) {
     [{ label: 'Nr projektu', value: h.projectNumber || '—' }, { label: 'Część (nr / nazwa)', value: report.partNo || '—' }, { label: 'Data', value: h.date || '—' }],
     [{ label: 'Kategoria wady', value: report.defectCategory || '—' }, { label: 'Zgłaszający', value: h.author || '—' }, { label: 'Blokuje montaż', value: blocks ? 'TAK' : 'nie' }],
   ]
+  // Dostawca zawsze widoczny (v0.52) — pusty pokazuje „—", żeby brak od razu
+  // kłuł w oczy: bez niego nie da się zestawić reklamacji per dostawca.
+  metaRows.push([{ label: 'Dostawca', value: report.supplier || '—', colspan: 3 }])
   if (report.buyerEmail) metaRows.push([{ label: 'Adresat (zakupowiec)', value: report.buyerEmail, colspan: 3 }])
   drawMetaTable(ctx, metaRows)
 

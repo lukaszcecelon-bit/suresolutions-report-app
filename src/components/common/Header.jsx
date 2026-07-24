@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import SuggestInput from './SuggestInput.jsx'
-import { suggestAuthors, suggestProjectNames, suggestProjectNumbers, suggestMachineNames } from '../../utils/suggestions.js'
+import { suggestAuthors, suggestProjectNames, suggestProjectNumbers, suggestMachineNames, suggestClients } from '../../utils/suggestions.js'
 import { TYPE_ICONS } from '../../utils/reportMeta.js'
 
 // Tytuł w pasku kontekstu nad formularzem — dłuższe „Raport …" niż krótkie
@@ -15,12 +15,16 @@ const TYPE_TITLES = {
 
 // `requiredFields` (default: all) — which header fields are validated as required.
 // `showErrors` (default: false) — only show red borders after user attempted a gated action.
+// `showClient` (default: false) — dokłada opcjonalne pole „Klient" (v0.52).
+//   Włączone dla typów, które NIE mają własnej sekcji z klientem (uruchomienie,
+//   prototyp, lekcja); serwis i SAT/FAT edytują header.client w swojej sekcji A.
 export default function Header({
   header,
   onChange,
   reportType,
   requiredFields = ['reportNumber', 'projectName', 'machineName', 'date', 'author'],
   showErrors = false,
+  showClient = false,
 }) {
   const set = (k, v) => onChange({ ...header, [k]: v })
   const invalid = (k) => showErrors && requiredFields.includes(k) && !(header[k] || '').toString().trim()
@@ -34,6 +38,7 @@ export default function Header({
   const projectNumberSug = useMemo(() => suggestProjectNumbers(), [])
   const machineNameSug = useMemo(() => suggestMachineNames(header.projectName), [header.projectName])
   const authorSug = useMemo(() => suggestAuthors(), [])
+  const clientSug = useMemo(() => (showClient ? suggestClients() : []), [showClient])
 
   // Raport serwisowy i uruchomieniowy: zamiast numeru raportu wpisuje się numer
   // projektu, a numer raportu generuje się automatycznie (RPT-/URU-{nr}-{data}).
@@ -97,7 +102,20 @@ export default function Header({
               onChange={(e) => set('projectName', e.target.value)}
             />
           </div>
-          <div className="sm:col-span-2 min-w-0">
+          {showClient && (
+            <div className="min-w-0">
+              <label className="field-label">Klient</label>
+              <SuggestInput
+                type="text"
+                className="field-input"
+                placeholder="np. BSH"
+                suggestions={clientSug}
+                value={header.client || ''}
+                onChange={(e) => set('client', e.target.value)}
+              />
+            </div>
+          )}
+          <div className={(showClient ? '' : 'sm:col-span-2 ') + 'min-w-0'}>
             <label className={labelCls('machineName')}>Nazwa / numer maszyny</label>
             <SuggestInput
               type="text"

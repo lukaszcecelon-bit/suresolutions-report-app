@@ -7,6 +7,8 @@ import {
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
+import { durationBetweenLabel } from '../time.js'
+import { reportClient, reportLocation } from '../reportFields.js'
 
 const PRIORITY_BADGE = {
   urgent: { text: 'Pilne', kind: 'rejected' },
@@ -18,19 +20,6 @@ const VISIT_STATUS_LABELS = {
   completed: 'Zakończono (maszyna działa)',
   followup: 'Wymaga spotkania / dalszych działań',
   parts: 'Maszyna zatrzymana',
-}
-
-function serviceVisitDuration(arrival, departure) {
-  if (!arrival || !departure) return null
-  const [ah, am] = String(arrival).split(':').map(Number)
-  const [dh, dm] = String(departure).split(':').map(Number)
-  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return null
-  let mins = (dh * 60 + dm) - (ah * 60 + am)
-  if (mins < 0) mins += 24 * 60
-  if (mins === 0) return null
-  const hh = Math.floor(mins / 60)
-  const mm = mins % 60
-  return hh > 0 ? `${hh} h ${mm} min` : `${mm} min`
 }
 
 function collectMedia(report) {
@@ -56,7 +45,7 @@ function buildPdf(ctx, report, photos) {
   const v = report.visit || {}
   const observations = Array.isArray(report.observations) ? report.observations : []
   const recommendations = Array.isArray(report.recommendations) ? report.recommendations : []
-  const totalTime = serviceVisitDuration(v.arrival, v.departure)
+  const totalTime = durationBetweenLabel(v.arrival, v.departure)
   const W = ctx.contentW
 
   drawReportHeader(ctx, { title: 'RAPORT SERWISU NA OBIEKCIE', number: h.reportNumber })
@@ -68,7 +57,7 @@ function buildPdf(ctx, report, photos) {
 
   drawSectionHeader(ctx, 'A. Dane wizyty')
   drawMetaTable(ctx, [
-    [{ label: 'Klient', value: v.client || '—' }, { label: 'Lokalizacja', value: v.location || '—' }, { label: 'Osoby obecne', value: v.attendees ? String(v.attendees) : '—' }],
+    [{ label: 'Klient', value: reportClient(report) || '—' }, { label: 'Lokalizacja', value: reportLocation(report) || '—' }, { label: 'Osoby obecne', value: v.attendees ? String(v.attendees) : '—' }],
     [{ label: 'Przyjazd', value: v.arrival || '—' }, { label: 'Odjazd', value: v.departure || '—' }, { label: 'Łączny czas', value: totalTime || '—' }],
     [{ label: 'Odbiór prac (kto odebrał)', value: report.receivedBy || '—', colspan: 3 }],
   ])
@@ -94,13 +83,15 @@ function buildPdf(ctx, report, photos) {
     drawTable(ctx, {
       columns: [
         { header: 'Nr', dataKey: 'nr', width: 12, align: 'center' },
-        { header: 'Element', dataKey: 'name', width: 40 },
-        { header: 'Nr katalogowy', dataKey: 'cat', width: 28 },
+        { header: 'Element', dataKey: 'name', width: 38 },
+        { header: 'Nr katalogowy', dataKey: 'cat', width: 26 },
+        { header: 'Szt.', dataKey: 'qty', width: 12, align: 'center' },
         { header: 'Priorytet', dataKey: 'prio', width: 24 },
-        { header: 'Komentarz', dataKey: 'comment', width: W - 12 - 40 - 28 - 24 },
+        { header: 'Komentarz', dataKey: 'comment', width: W - 12 - 38 - 26 - 12 - 24 },
       ],
       rows: report.parts.map((p, i) => ({
         nr: i + 1, name: p.name || '—', cat: p.catalogNo || '—',
+        qty: (p.qty ?? '') === '' ? '—' : String(p.qty),
         prio: '', _prio: p.priority,
         comment: p.comment || '', _thumbs: thumbDescriptors(p.media),
       })),

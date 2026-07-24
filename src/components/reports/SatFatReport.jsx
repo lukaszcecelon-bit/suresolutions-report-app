@@ -13,6 +13,7 @@ import SuggestInput from '../common/SuggestInput.jsx'
 import { suggestClients, suggestLocations } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
+import { nowHHMM, durationBetweenLabel } from '../../utils/time.js'
 import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildSatFatPackage, buildSatFatPdf } from '../../utils/pdfGenerator.js'
@@ -78,12 +79,14 @@ function defaultReport() {
       machineName: '',
       date: todayISO(),
       author: getDefaultAuthor(),
+      client: '',                  // od v0.52 w header (wspólne dla typów)
+      location: '',
     },
     testType: 'fat',
     info: {
-      client: '',
-      location: '',
       referenceDoc: '',
+      startTime: '',               // v0.52 — czas trwania odbioru do analizy
+      endTime: '',
     },
     participants: {
       client: [],
@@ -118,7 +121,7 @@ export default function SatFatReport({ navigate, reportId }) {
 
   // Memoizowane źródła autouzupełniania (zamiast pełnego parse localStorage co render).
   const clientSug = useMemo(() => suggestClients(), [])
-  const locationSug = useMemo(() => suggestLocations(report.info.client), [report.info.client])
+  const locationSug = useMemo(() => suggestLocations(report.header.client), [report.header.client])
 
   // Numer raportu auto z numeru projektu + daty; prefiks zależny od FAT/SAT.
   // Pusty numer projektu → zachowaj ręczny numer starszych raportów.
@@ -127,6 +130,9 @@ export default function SatFatReport({ navigate, reportId }) {
     header: { ...h, reportNumber: computeReportNumber(satfatPrefix(r.testType), h.projectNumber, h.date, h.reportNumber) },
   }))
   const updateInfo = (k, v) => setReport((r) => ({ ...r, info: { ...r.info, [k]: v } }))
+  // Klient/lokalizacja są w header (v0.52) — przez updateHeader, żeby numer
+  // raportu przeliczał się identycznie jak przy zmianie projektu/daty.
+  const updateHeaderField = (k, v) => updateHeader({ ...report.header, [k]: v })
   const updateSignature = (k, v) => setReport((r) => ({ ...r, signatures: { ...r.signatures, [k]: v } }))
 
   // ---------- Participants (Klient / Wykonawca) ----------
@@ -253,8 +259,8 @@ export default function SatFatReport({ navigate, reportId }) {
               type="text"
               className="field-input"
               suggestions={clientSug}
-              value={report.info.client}
-              onChange={(e) => updateInfo('client', e.target.value)}
+              value={report.header.client || ''}
+              onChange={(e) => updateHeaderField('client', e.target.value)}
             />
           </div>
           <div className="min-w-0">
@@ -265,8 +271,8 @@ export default function SatFatReport({ navigate, reportId }) {
               type="text"
               className="field-input"
               suggestions={locationSug}
-              value={report.info.location}
-              onChange={(e) => updateInfo('location', e.target.value)}
+              value={report.header.location || ''}
+              onChange={(e) => updateHeaderField('location', e.target.value)}
             />
           </div>
         </div>
@@ -280,6 +286,37 @@ export default function SatFatReport({ navigate, reportId }) {
             onChange={(e) => updateInfo('referenceDoc', e.target.value)}
           />
         </div>
+        {/* Godziny odbioru (v0.52) — bez nich nie dało się zmierzyć, ile trwa
+            odbiór ani porównać tego między maszynami/projektami. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div className="min-w-0">
+            <label className="field-label">Start odbioru</label>
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.info.startTime || ''}
+                onChange={(e) => updateInfo('startTime', e.target.value)} />
+              <button type="button" onClick={() => updateInfo('startTime', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <label className="field-label">Koniec odbioru</label>
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.info.endTime || ''}
+                onChange={(e) => updateInfo('endTime', e.target.value)} />
+              <button type="button" onClick={() => updateInfo('endTime', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
+          </div>
+        </div>
+        {durationBetweenLabel(report.info.startTime, report.info.endTime) && (
+          <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+            Czas odbioru: <strong className="text-sure-dark dark:text-gray-100">{durationBetweenLabel(report.info.startTime, report.info.endTime)}</strong>
+          </div>
+        )}
       </div>
 
       <div id="sec-b" className="card">

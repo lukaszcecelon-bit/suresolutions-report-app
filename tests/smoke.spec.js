@@ -156,6 +156,94 @@ test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({
   expect(xlsxBuf.subarray(0, 2).toString('latin1')).toBe('PK')
 })
 
+test('eksport analityczny: XLSX z zakładkami + JSONL z wyliczonymi miarami (v0.52)', async ({ page }) => {
+  // Serwis SPECJALNIE w starym schemacie (v1, klient w `visit`) — sprawdza przy
+  // okazji migrację v3→v4, która przenosi klienta/lokalizację do `header`.
+  const service = {
+    id: 'r_an_service', type: 'service', status: 'completed', schemaVersion: 1,
+    createdAt: '2026-06-19T06:00:00.000Z', updatedAt: '2026-06-19T06:00:00.000Z',
+    header: { reportNumber: 'RPT-99-981-2026-06-19', projectNumber: '99-981', projectName: 'Projekt', machineName: 'Prasa', date: '2026-06-19', author: 'Jan' },
+    visit: { client: 'BSH', location: 'Hala 1', arrival: '08:00', departure: '10:30', attendees: '2' },
+    role: 'Technik serwisu', visitStatus: 'completed',
+    actions: [{ id: 'a1', description: 'Wymiana czujnika', media: [] }],
+    parts: [
+      { id: 'p1', name: 'Czujnik', catalogNo: 'ABC-1', qty: '2', priority: 'urgent', comment: '', media: [] },
+      { id: 'p2', name: 'Pasek', catalogNo: 'DEF-2', qty: '3', priority: 'planned', comment: '', media: [] },
+    ],
+    observations: [], recommendations: [], receivedBy: 'Klient',
+  }
+  // Uruchomienie z dwoma zatrzymaniami: sesja 120 min, przestój 6+3 = 9 min →
+  // dostępność 92.5%, MTTR 4.5, MTBF 60. Drugie zatrzymanie ma powód „Inne",
+  // więc weryfikuje też rozdzielenie Powód / powod_slownik.
+  const commissioning = {
+    id: 'r_an_comm', type: 'commissioning', status: 'completed', schemaVersion: 3,
+    createdAt: '2026-06-19T07:00:00.000Z', updatedAt: '2026-06-19T07:00:00.000Z',
+    header: { reportNumber: 'URU-99-980-2026-06-19', projectNumber: '99-980', projectName: 'Projekt', machineName: 'Linia A', date: '2026-06-19', author: 'Jan', client: 'BSH' },
+    phase: 'summary',
+    sessionStartAt: '2026-06-19T08:00:00.000Z', sessionEndAt: '2026-06-19T10:00:00.000Z',
+    activeStop: null,
+    stops: [
+      { id: 's1', startAt: '2026-06-19T08:30:00.000Z', endAt: '2026-06-19T08:36:00.000Z', durationMs: 360_000, reason: 'Zacięcie detalu', customReason: '', comment: 'zablokowany detal', media: [] },
+      { id: 's2', startAt: '2026-06-19T09:00:00.000Z', endAt: '2026-06-19T09:03:00.000Z', durationMs: 180_000, reason: 'Inne', customReason: 'Brak powietrza', comment: '', media: [] },
+    ],
+    observations: [], conclusions: [], generalMedia: [],
+  }
+  await page.addInitScript((rs) => {
+    for (const r of rs) {
+      try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+    }
+  }, [service, commissioning])
+
+  await page.goto('/#/reports')
+
+  // --- 1) XLSX: właściwe zakładki (gwiazda: fakty + dzieci) ---
+  const dlXlsx = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: 'Narzędzia archiwum' }).click()
+  await page.getByRole('menuitem', { name: /Eksport analityczny.*Excel/ }).click()
+  const xlsx = await dlXlsx
+  expect(xlsx.suggestedFilename()).toMatch(/analiza-raportow.*\.xlsx$/)
+  const xlsxBuf = await fs.readFile(await xlsx.path())
+  const XLSX = await import('xlsx')
+  const wb = XLSX.read(xlsxBuf, { type: 'buffer' })
+  expect(wb.SheetNames).toContain('Info')
+  expect(wb.SheetNames).toContain('Raporty')
+  expect(wb.SheetNames).toContain('Zatrzymania')
+  expect(wb.SheetNames).toContain('Części')
+
+  // --- 2) JSONL: 1 linia = 1 raport, z policzonymi miarami i dziećmi ---
+  const dlJson = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: 'Narzędzia archiwum' }).click()
+  await page.getByRole('menuitem', { name: /Eksport analityczny.*JSONL/ }).click()
+  const jsonl = await dlJson
+  expect(jsonl.suggestedFilename()).toMatch(/analiza-raportow.*\.jsonl$/)
+  const text = await fs.readFile(await jsonl.path(), 'utf8')
+  const rows = text.trim().split('\n').map((l) => JSON.parse(l))
+  expect(rows).toHaveLength(2)
+
+  const comm = rows.find((r) => r.report_id === 'r_an_comm')
+  expect(comm.czas_min).toBe(120)
+  expect(comm.zatrzymania_min).toBe(9)
+  expect(comm.dostepnosc_pct).toBe(92.5)
+  expect(comm.mttr_min).toBe(4.5)
+  expect(comm.mtbf_min).toBe(60)
+  expect(comm.zatrzymania).toHaveLength(2)
+  // „Inne" → w kolumnie Powód wpisany tekst, w słownikowej surowa wartość.
+  expect(comm.zatrzymania[1].powod).toBe('Brak powietrza')
+  expect(comm.zatrzymania[1].powod_slownik).toBe('Inne')
+  expect(comm.zatrzymania[0].czas_s).toBe(360)
+
+  const srv = rows.find((r) => r.report_id === 'r_an_service')
+  expect(srv.klient).toBe('BSH')          // migracja v3→v4 przeniosła z visit → header
+  expect(srv.lokalizacja).toBe('Hala 1')
+  expect(srv.czas_min).toBe(150)          // 08:00 → 10:30
+  expect(srv.czesci_szt).toBe(5)          // 2 + 3 sztuki
+  expect(srv.czesci_pilne).toBe(1)
+  expect(srv.czesci).toHaveLength(2)
+  // Kolumny nie dotyczące typu muszą być PUSTE, nie zerowe (inaczej średnie kłamią).
+  expect(srv.dostepnosc_pct).toBe('')
+  expect(comm.czesci_szt).toBe('')
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()

@@ -6,7 +6,7 @@ import LoadingOverlay from '../common/LoadingOverlay.jsx'
 import PdfPreview from '../common/PdfPreview.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
-import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors } from '../../utils/suggestions.js'
+import { suggestProjectNumbers, suggestPartCatalogNos, suggestAuthors, suggestSuppliers } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
 import { useReportPage } from '../../utils/useReportPage.js'
@@ -47,6 +47,7 @@ function defaultReport() {
       author: getDefaultAuthor(),
     },
     partNo: '',
+    supplier: '',        // v0.52 — bez dostawcy nie da się zrobić Pareto reklamacji
     defectCategory: '',
     blocksAssembly: false,
     description: '',
@@ -64,6 +65,7 @@ function buildEmailBody(report, desktop, filename) {
     `Zgłoszenie wady / reklamacja: ${h.reportNumber || ''}`,
     `Nr projektu: ${h.projectNumber || '—'}`,
     `Część: ${report.partNo || '—'}`,
+    `Dostawca: ${report.supplier || '—'}`,
     `Kategoria wady: ${report.defectCategory || '—'}`,
     `Blokuje montaż: ${report.blocksAssembly ? 'TAK' : 'nie'}`,
     `Zgłaszający: ${h.author || '—'}`,
@@ -113,6 +115,7 @@ export default function ComplaintReport({ navigate, reportId }) {
   const projectNumberSug = useMemo(() => suggestProjectNumbers(), [])
   const partCatalogSug = useMemo(() => suggestPartCatalogNos(), [])
   const authorSug = useMemo(() => suggestAuthors(), [])
+  const supplierSug = useMemo(() => suggestSuppliers(), [])
 
   // Pola nagłówka (lean) — projectNumber/date przeliczają numer raportu REK-...
   const setHeaderField = (k, v) => {
@@ -227,6 +230,14 @@ export default function ComplaintReport({ navigate, reportId }) {
               suggestions={partCatalogSug}
               value={report.partNo}
               onChange={(e) => setReport((r) => ({ ...r, partNo: e.target.value }))} />
+          </div>
+          <div className="min-w-0">
+            <label className="field-label">Dostawca</label>
+            <SuggestInput type="text" className="field-input"
+              placeholder="np. nazwa firmy"
+              suggestions={supplierSug}
+              value={report.supplier || ''}
+              onChange={(e) => setReport((r) => ({ ...r, supplier: e.target.value }))} />
           </div>
           <div className="min-w-0">
             <label className="field-label field-required">Zgłaszający</label>

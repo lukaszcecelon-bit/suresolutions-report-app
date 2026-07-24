@@ -59,6 +59,34 @@ export function typeCategory(type) {
   return CATEGORIES.find((c) => c.types.includes(type))?.key || 'internal'
 }
 
+// === Słowniki wartości pól: klucz zapisany w danych → etykieta ===
+// Dodane w v0.52 dla eksportu analitycznego: arkusz musi nazywać wartości tak
+// samo jak formularz, a jednocześnie wieźć surowy klucz (etykiety się zmieniają,
+// klucze nie). UWAGA: moduły PDF trzymają własne mapy klucz→BADGE (etykieta +
+// kolor) — przy zmianie NAZWY zaktualizuj też odpowiedni plik w utils/pdf/.
+export const VISIT_STATUS_LABELS = {
+  completed: 'Zakończono (maszyna działa)',
+  followup: 'Wymaga spotkania / dalszych działań',
+  parts: 'Maszyna zatrzymana',
+}
+export const PART_PRIORITY_LABELS = { urgent: 'Pilne', planned: 'Planowe', watch: 'Obserwacja' }
+export const TEST_STATUS_LABELS = { pass: 'Zaliczony', fail: 'Niezaliczony', conditional: 'Warunkowo', na: 'N/A' }
+export const PUNCH_PRIORITY_LABELS = { critical: 'Krytyczne', major: 'Istotne', minor: 'Drobne' }
+export const SATFAT_FINAL_LABELS = {
+  accepted: 'Zaakceptowano',
+  conditional: 'Zaakceptowano warunkowo',
+  rejected: 'Odrzucono',
+}
+export const POINT_RESULT_LABELS = { ok: 'OK', nok: 'NOK', cond: 'Warunkowo' }
+export const PROTO_OVERALL_LABELS = { positive: 'Pozytywny', negative: 'Negatywny', conditional: 'Warunkowo pozytywny' }
+export const PROTO_DECISION_LABELS = {
+  implement: 'Wdrożyć rozwiązanie',
+  iterate: 'Poprawki / kolejna iteracja',
+  reject: 'Odrzucić koncepcję',
+}
+export const SAMPLE_METHOD_LABELS = { print3d: 'Druk 3D', cnc: 'Obróbka CNC', other: 'Inne' }
+export const STATUS_LABELS = { draft: 'Roboczy', completed: 'Ukończony' }
+
 // Akcent strefy na kartach listy (kolor lewej krawędzi).
 export const CATEGORY_ACCENT = {
   client: 'border-l-4 border-l-sure-blue',

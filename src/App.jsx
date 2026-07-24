@@ -16,15 +16,16 @@ import UpdatePrompt from './components/common/UpdatePrompt.jsx'
 import OnboardingTour from './components/common/OnboardingTour.jsx'
 import StorageAlerts from './components/common/StorageAlerts.jsx'
 import { sweepOrphanedMedia } from './utils/storage.js'
+import { APP_VERSION } from './utils/version.js'
 import { ToastProvider, useToast, useConfirm } from './components/common/Toast.jsx'
 import { SWProvider, useSW } from './components/common/SWManager.jsx'
 import { ThemeProvider, ThemeToggle } from './components/common/ThemeContext.jsx'
 import ErrorBoundary from './components/common/ErrorBoundary.jsx'
 import logo from './assets/logo.png'
 
-// Jedno źródło numeru wersji (badge + komunikaty). Zgodnie z regułą
-// wersjonowania: bump TUTAJ + w package.json przy każdej zmianie kodu.
-const APP_VERSION = 'v0.51'
+// Numer wersji (badge + komunikaty) mieszka w utils/version.js — potrzebują go
+// też moduły poza drzewem Reacta (eksport analityczny stempluje nim pliki).
+// Zgodnie z regułą wersjonowania: bump TAM + w package.json.
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, '')

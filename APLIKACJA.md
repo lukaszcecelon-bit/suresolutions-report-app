@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v0.51**.
+> Aktualny, kompletny opis aplikacji. Stan na **v0.52**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -75,12 +75,19 @@ SharePointem) tylko po wyraźnej decyzji biznesowej.
   (wcześniej była jedna wielka tablica — autosave przepisywał całą bazę).
 - W pamięci trzymany jest **cache** (czytany raz na sesję; zdarzenie `storage`
   z innej karty go unieważnia).
-- **`SCHEMA_VERSION` = 3** + `migrateReport()` — kumulatywne, idempotentne
+- **`SCHEMA_VERSION` = 4** + `migrateReport()` — kumulatywne, idempotentne
   migracje kształtu danych przy odczycie (trwałe przy najbliższym zapisie):
   - v0→v1: `service.observations` string→lista, `satfat.punchlist` pole `media`;
   - v1→v2: `service.recommendations`, `commissioning.observations` i
     `.conclusions` string→lista rekordów;
-  - v2→v3: `satfat.conclusions` string→lista rekordów.
+  - v2→v3: `satfat.conclusions` string→lista rekordów;
+  - v3→v4 (v0.52): **klient i lokalizacja → `header`** (przedtem `service.visit`
+    i `satfat.info`; uruchomienie/prototyp/lekcja nie miały ich wcale, więc
+    wypadały z analiz „per klient"). Stare klucze są USUWANE, żeby nie powstały
+    dwa źródła prawdy. Resolvery `src/utils/reportFields.js`
+    (`reportClient`, `reportLocation`, `reportTimeRange`, `reportMinutes`)
+    czytają nowe miejsce z fallbackiem na stare — dla paczek `.suresync`
+    zaimportowanych ze starszej wersji apki.
   Helper `strToRecords()` zamienia stare pola tekstowe na listę `[{id,text,media}]`.
 - Plik: `src/utils/storage.js` (`loadAll`, `getById`, `upsert`, `remove`,
   `newId`, `cloneReport`). `cloneReport` (duplikat raportu) dla każdego typu
@@ -176,10 +183,36 @@ projektowa (wnioski/rekomendacje dla konstrukcji).
 
 ### Specyfika raportu serwisowego (service)
 - **„⏱ Teraz"** przy godzinie przyjazdu i odjazdu — jedno tapnięcie wstawia
-  bieżącą godzinę (`nowHHMM()`).
+  bieżącą godzinę (`nowHHMM()` z `utils/time.js`).
 - **Liczba osób obecnych na serwisie** (`visit.attendees`) — w sekcji danych
   wizyty i w PDF.
+- **Ilość sztuk przy elemencie do wymiany** (`parts[].qty`, v0.52) — obok numeru
+  katalogowego, kolumna „Szt." w PDF. Bez niej Pareto zużycia części liczyło
+  tylko wystąpienia, nie sztuki.
 - **Domyślny autor i rola** z Ustawień podpowiadane w nowym raporcie.
+
+### Klient i lokalizacja — pola przekrojowe (v0.52)
+`header.client` i `header.location` są **wspólne dla wszystkich typów**
+(migracja v3→v4, patrz §4). Miejsce edycji zostało tam, gdzie było w UI:
+serwis i SAT/FAT mają je w swojej sekcji A, a uruchomienie, prototyp i lekcja
+dostały opcjonalne pole **„Klient"** we wspólnym nagłówku (`Header` + prop
+`showClient`). Podpowiedzi klienta i lokalizacji (`suggestClients`,
+`suggestLocations`) zbierają się teraz z **wszystkich** typów, nie tylko z
+serwisu. Klient trafił też do PDF uruchomienia, prototypu i lekcji oraz do
+rejestru lekcji XLSX.
+
+### Godziny odbioru i testu (v0.52)
+SAT/FAT (`info.startTime`/`endTime`) i prototyp (to samo w `info`) mają godziny
+„od–do" z przyciskiem „⏱ Teraz" i wyliczonym czasem trwania pod spodem — bez nich
+nie dało się zmierzyć, ile trwa odbiór ani ile czasu zjada iteracja prototypu.
+Arytmetyka czasu (`minutesBetween`, `durationLabel`) mieszka w
+**`src/utils/time.js`** — jedno źródło dla formularzy, PDF-ów, pulpitu i eksportu
+analitycznego (przedtem trzy kopie tej samej funkcji).
+
+### Specyfika reklamacji (complaint)
+- **Dostawca** (`supplier`, v0.52) — pole w Identyfikacji, wiersz w PDF (zawsze
+  widoczny, pusty pokazuje „—") i w treści maila do zakupowca. Bez niego nie dało
+  się zestawić reklamacji per dostawca.
 
 ### Specyfika lekcji projektowej (lesson, v0.40)
 - **Cel:** zamknięcie pętli teren → konstrukcja. Błąd projektowy wykryty przy
@@ -272,6 +305,60 @@ przestawna w Excelu lub Power BI). Silnik: `utils/registerExport.js` + SheetJS
   się po wyłączeniu filtra „Lekcja".
 - **Eksport z zaznaczonych (v0.41):** w trybie multi-select przycisk „📊 Rejestr"
   eksportuje XLSX tylko z zaznaczonych lekcji (`handleExportRegister(subset)`).
+
+### Eksport ANALITYCZNY — cała baza w płaskich tabelach (v0.52)
+Silnik: **`src/utils/analyticsExport.js`**. Wejście z menu ⋯ na zakładce Raporty
+(sekcja „Analiza"): **„📈 Eksport analityczny → Excel"** i **„🧾 … → JSONL"**.
+Zawsze obejmuje WSZYSTKIE raporty (nie zaznaczony podzbiór — sens analizy jest w
+pełnej historii).
+
+**Dlaczego osobna warstwa:** PDF jest dokumentem, a raport w localStorage
+zagnieżdżonym JSON-em — żadne z tego nie wchodzi do tabeli przestawnej. Moduł
+WYLICZA z raportów gwiazdę i jest warstwą **pochodną**: można ją przebudować bez
+migracji i bez ryzyka dla danych z terenu.
+
+Struktura (jedna definicja kolumn → dwa formaty; każda kolumna ma `key` = polski
+nagłówek do XLSX i `id` = ASCII snake_case do JSONL):
+- **`Raporty`** — tabela faktów, 1 wiersz = 1 raport: identyfikacja (report_id,
+  typ, numer, data, rok, miesiąc, projekt, maszyna, klient, lokalizacja, autor,
+  status) + miary wspólne (czas w minutach, zdjęcia, wideo, wpisy opisowe) +
+  bloki per typ: serwis (czynności, części, części pilne, sztuki, rola, osoby
+  obecne, status wizyty), uruchomienie (zatrzymania, czas zatrzymań, najdłuższe,
+  **dostępność %**, **MTBF**, **MTTR**), SAT/FAT (testy pass/fail/cond/na,
+  **FPY %**, usterki, usterki krytyczne, wynik odbioru, uczestnicy), prototyp
+  (podzespół, iteracja, metoda próbki, punkty OK/NOK/warunkowo, ocena, decyzja),
+  lekcja (etap, kategoria, istotność, nr rysunku), reklamacja (część, dostawca,
+  kategoria wady, blokuje montaż).
+- **tabele-dzieci** (pomijane, gdy puste): `Zatrzymania`, `Czynności`, `Części`,
+  `Testy`, `Usterki`, `Punkty prototypu`, `Parametry`, `Notatki` (obserwacje +
+  rekomendacje + wnioski z kolumną „Źródło"). Każdy wiersz dziecka wiezie
+  `report_id` + numer + datę + nr projektu + maszynę + klienta — **redundancja
+  celowa**, żeby każdy arkusz pivotował się samodzielnie, bez relacji.
+- **`Info`** — data eksportu, wersja apki, wersja schematu, liczniki wierszy oraz
+  spis konwencji i definicji wskaźników (dostępność, MTBF/MTTR, FPY).
+
+Konwencje danych (celowe, żeby arkusz dał się analizować też za dwa lata):
+surowe wartości zamiast sformatowanych (**czas w minutach jako liczba**, nie
+„3 h 20 min"), **klucz + etykieta w osobnych kolumnach** (`istotnosc_key=critical`
+obok `Istotność=Krytyczny`), daty `YYYY-MM-DD` i znaczniki ISO 8601, **pusta
+komórka = „nie dotyczy", NIE zero** (inaczej średnie kłamią), autofiltr na każdym
+arkuszu, nazwa pliku z datą i godziną (`analiza-raportow_2026-07-24_1432.xlsx`) —
+eksporty się nie nadpisują, więc folder w OneDrive staje się szeregiem czasowym
+bez backendu.
+
+Definicje wskaźników: **dostępność** = (czas sesji − czas zatrzymań) / czas
+sesji; **MTBF** = czas sesji / liczba zatrzymań; **MTTR** = czas zatrzymań /
+liczba zatrzymań; **FPY** = testy zaliczone / (wszystkie − N/A). Przy
+zatrzymaniach kolumna `Powód` ma podstawiony tekst z „Inne", a `powod_slownik`
+surową wartość — dzięki temu widać udział „Inne" i wiadomo, czym uzupełnić
+słownik w Ustawieniach. Test `tests/smoke.spec.js` weryfikuje te wyliczenia
+end-to-end (dostępność 92,5%, MTTR 4,5, MTBF 60, sumę sztuk części) oraz
+migrację klienta v3→v4.
+
+JSONL: 1 linia = 1 raport z **zagnieżdżonymi** dziećmi, klucze snake_case, każda
+linia stemplowana wersją apki i datą eksportu (samoopisująca się nawet po
+sklejeniu plików z wielu miesięcy). To ścieżka do Power BI / Pythona, więc
+pobiera się wprost, bez okna „udostępnij".
 
 ---
 
@@ -402,8 +489,12 @@ utils/
     service.js commissioning.js prototype.js satfat.js complaint.js lesson.js
     fonts/roboto-regular.js roboto-bold.js   # font base64 (lazy)
   registerExport.js         # eksport rejestru lekcji → XLSX (SheetJS, lazy)
-  reportMeta.js             # typy + strefy (labels/ikony/kategorie/akcenty)
+  analyticsExport.js        # eksport analityczny: gwiazda → XLSX wielozakładkowy + JSONL
+  reportMeta.js             # typy + strefy + słowniki klucz→etykieta (labels/ikony/akcenty)
+  reportFields.js           # pola przekrojowe: reportClient/Location/TimeRange/Minutes
   reportNumber.js           # wspólny computeReportNumber(prefix,projekt,data,prev)
+  time.js                   # nowHHMM + minutesBetween + durationLabel (jedno źródło)
+  version.js                # APP_VERSION — jedno źródło numeru wersji
   text.js                   # slugify + formatBytes (współdzielone, bezzależnościowe)
   suggestions.js            # źródła autouzupełniania
   imageCompressor.js        # kompresja zdjęć
@@ -416,11 +507,17 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 5 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 6 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
-  zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; podgląd PDF w
-  apce renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
+  zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; **eksport
+  analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
+  MTTR, sumy sztuk, migracja klienta v3→v4, „puste ≠ 0"); podgląd PDF w apce
+  renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
+- **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
+  zwraca kod wyjścia z `tail`, NIE z Playwrighta — „exit 0" potrafi zamaskować
+  padnięty test. Czytaj wiersz „N passed/failed" albo sprawdź `$LASTEXITCODE` /
+  `PIPESTATUS` po samym Playwrightcie.
 - **CI/CD:** GitHub Actions buduje, instaluje Chromium, uruchamia smoke testy i
   publikuje na GitHub Pages (deploy bramkowany testami).
 
@@ -429,10 +526,23 @@ assets/logo.png
 ## 12. Wersjonowanie
 
 **Reguła:** każda zmiana kodu trafiająca do użytkownika MUSI podbić numer wersji
-widoczny w `VersionBadge` (`src/App.jsx`) **oraz** w `package.json`. Numer służy
-użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
+w **`src/utils/version.js`** (`APP_VERSION`, od v0.52 — przedtem stała siedziała
+w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
+nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
+eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v0.51.** Skrót ostatnich zmian:
+**Aktualna wersja: v0.52.** Skrót ostatnich zmian:
+- **v0.52** — **wykorzystanie danych z raportów**: (1) **eksport analityczny**
+  (`analyticsExport.js`) — cała baza jako gwiazda: tabela faktów + 8 tabel-dzieci,
+  XLSX wielozakładkowy z autofiltrem i zakładką `Info` oraz JSONL dla Power BI;
+  wyliczane miary (dostępność, MTBF, MTTR, FPY, sumy sztuk, liczniki zdjęć);
+  wejście z menu ⋯ → sekcja „Analiza"; (2) **domknięcie luk w danych**, bez
+  których analiza była niemożliwa: `supplier` w reklamacji (Pareto dostawców),
+  `parts[].qty` w serwisie (sztuki, nie wystąpienia), **klient/lokalizacja w
+  `header` dla wszystkich typów** (migracja `SCHEMA_VERSION` 3→4 + `reportFields.js`),
+  godziny odbioru w SAT/FAT i testu w prototypie; (3) dedup arytmetyki czasu do
+  `utils/time.js` (były trzy kopie) i numeru wersji do `utils/version.js`;
+  (4) słowniki klucz→etykieta w `reportMeta.js`. Nowy smoke test pilnuje wyliczeń.
 - **v0.51** — **uporządkowanie ekranu głównego i listy** (aplikacja rosła przez
   dodawanie — każda nowa funkcja dostawała stały wiersz nad treścią). Zasada:
   **miejsce = częstotliwość użycia**. Start: „+ Nowy raport" i 3 skróty typów na
@@ -567,6 +677,17 @@ użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
   IndexedDB po ~7 dniach nieużywania, chyba że PWA jest dodana do ekranu głównego.
 - **Voice-to-text** wysyła audio do serwera przeglądarki (Google/Apple/MS);
   Firefox nie wspiera Web Speech API (graceful fallback).
+- **Jakość analityki zależy od słowników, nie od formatu eksportu.** Klient,
+  maszyna, nazwa części i parametry prototypu to nadal **wolny tekst** z
+  podpowiedziami z historii — „BSH", „BSH Rzeszów" i „bsh" policzą się jako trzy
+  różne wartości. Eksport przycina spacje, ale nie scala wariantów. Wnioski:
+  (1) korzystaj z podpowiedzi zamiast wpisywać od nowa, (2) na wskaźnikach
+  słownikowych (powody zatrzymań, kategorie lekcji, kategorie wad) można polegać,
+  bo pochodzą z list w Ustawieniach, (3) na polach opisowych — nie.
+- **Reklamacja nie ma klienta** (ma dostawcę) — w analizie „per klient" wypada;
+  spina się z projektem przez `Nr projektu`.
+- **Korelacja parametr↔NOK w prototypie** wymaga spójnych nazw parametrów;
+  `params[].key` jest wolnym tekstem, więc „prędkość" i „predkosc" nie połączą się.
 
 ---
 
@@ -576,8 +697,14 @@ użytkownikowi do potwierdzenia, że PWA pobrała aktualizację.
   na firmowy SharePoint (MS Graph). Wymaga rejestracji w Entra ID — instrukcje w
   `INSTRUKCJA-ENTRA.md`, plan w `PLAN-SHAREPOINT.md`. Najmniej inwazyjny backend
   (używa istniejącego M365, dane nie wypływają na zewnątrz).
-- **Backup/eksport historii** (XLSX, pełny backup bazy) — substytut dashboardu
-  właściciela bez wychodzenia z architektury klienckiej.
+- **Pulpit „Analiza" w apce** — 4–5 kafli liczonych lokalnie (dostępność
+  uruchomień, Pareto zatrzymań, godziny per klient, macierz lekcji kategoria ×
+  etap). Eksport do Excela to friction — w terenie nikt go nie zrobi.
+- **Power BI nad folderem w OneDrive/SharePoint** — kolejne pliki
+  `analiza-raportow_*.jsonl`/`.xlsx` układają się w szereg czasowy; Power BI ma
+  konektor „Folder". To plik w chmurze, nie backend, więc nie łamie architektury.
+- **Słowniki zamiast wolnego tekstu** dla klienta, maszyny i parametrów prototypu
+  (patrz §13) — warunek, żeby liczby z eksportu były wiarygodne.
 - **Subset fontu Roboto** (~168→60 KB) — mikrooptymalizacja precache.
 - **Przełącznik „dołączaj duże zdjęcia do PDF"** / limit rozdzielczości
   załącznika — gdyby waga PDF była problemem.

@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadAll, remove, upsert, cloneReport } from '../utils/storage.js'
 import { buildCommissioningPdf, buildServicePdf, buildPrototypePdf, buildSatFatPdf, buildComplaintPdf, buildLessonPdf } from '../utils/pdfGenerator.js'
 import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
+import { buildAnalyticsXlsx, buildAnalyticsJsonl } from '../utils/analyticsExport.js'
 import { LESSON_SEVERITIES } from '../utils/settings.js'
 import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
+import { reportClient, reportLocation } from '../utils/reportFields.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, backupAllReports } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -52,8 +54,10 @@ function getSearchableText(r) {
   const pushList = (arr) => { if (Array.isArray(arr)) for (const o of arr) push(o?.text) }
   const h = r.header || {}
   push(h.reportNumber); push(h.projectName); push(h.machineName); push(h.author)
+  // Klient/lokalizacja są w header dla KAŻDEGO typu (v0.52) — indeksujemy raz
+  // tutaj, z fallbackiem na stare pola per-typ dla niezmigrowanych paczek.
+  push(reportClient(r)); push(reportLocation(r))
   if (r.type === 'service') {
-    push(r.visit?.client); push(r.visit?.location)
     push(r.receivedBy); push(r.role)
     for (const a of (r.actions || [])) { push(a.description) }
     for (const p of (r.parts || [])) { push(p.name); push(p.catalogNo); push(p.comment) }
@@ -61,7 +65,7 @@ function getSearchableText(r) {
     pushList(r.recommendations)   // nowy model (lista rekordów)
     if (typeof r.observations === 'string') push(r.observations) // wsteczna zgodność
   } else if (r.type === 'complaint') {
-    push(r.partNo); push(r.defectCategory); push(r.description)
+    push(r.partNo); push(r.supplier); push(r.defectCategory); push(r.description)
   } else if (r.type === 'prototype') {
     push(r.info?.component); push(r.info?.goal)
     push(r.observations); push(r.decisionNotes); push(r.conditions?.setup)
@@ -71,7 +75,7 @@ function getSearchableText(r) {
     pushList(r.observations); pushList(r.conclusions)   // nowy model (listy rekordów)
     for (const s of (r.stops || [])) { push(s.comment); push(s.customReason); push(s.reason) }
   } else if (r.type === 'satfat') {
-    push(r.info?.client); push(r.info?.location); push(r.info?.referenceDoc)
+    push(r.info?.referenceDoc)
     pushList(r.conclusions)   // nowy model (lista rekordów)
     for (const t of (r.tests || [])) { push(t.description); push(t.criterion); push(t.notes) }
     for (const p of (r.punchlist || [])) { push(p.description); push(p.notes) }
@@ -101,6 +105,7 @@ export default function Reports({ navigate }) {
   const [importFile, setImportFile] = useState(null)        // wybrany .suresync do importu (modal)
   const [backupBusy, setBackupBusy] = useState(false)
   const [xlsxBusy, setXlsxBusy] = useState(false)           // eksport rejestru lekcji do XLSX
+  const [analyticsBusy, setAnalyticsBusy] = useState(null)  // 'xlsx' | 'jsonl' — eksport analityczny
   // Tryb zaznaczania (multi-select): checkboxy na kartach + pasek akcji
   // zbiorczych (eksport zaznaczonych / usuń zaznaczone) na dole.
   const [selectMode, setSelectMode] = useState(false)
@@ -176,6 +181,28 @@ export default function Reports({ navigate }) {
       else toast.error('Błąd eksportu: ' + (e.message || e))
     } finally {
       setXlsxBusy(false)
+    }
+  }
+
+  // Eksport ANALITYCZNY — cała baza w płaskich tabelach (fakty + zatrzymania +
+  // części + testy + …). Świadomie ZAWSZE wszystkie raporty, nie zaznaczony
+  // podzbiór: sens analizy jest w pełnej historii, a nie w wycinku widoku.
+  //   • XLSX  → tabele przestawne w Excelu (nagłówki po polsku),
+  //   • JSONL → Power BI / Python (klucze snake_case); to plik dla narzędzia,
+  //     więc pobieramy go wprost, bez okna „udostępnij".
+  const handleAnalyticsExport = async (format) => {
+    setAnalyticsBusy(format)
+    try {
+      const build = format === 'jsonl' ? buildAnalyticsJsonl : buildAnalyticsXlsx
+      const { blob, filename, count } = await build(reports)
+      if (format === 'jsonl') downloadBlob(blob, filename)
+      else await shareOrDownload(blob, filename, `Analiza raportów (${count})`)
+      toast.success(`Eksport gotowy — ${count} ${count === 1 ? 'raport' : count < 5 ? 'raporty' : 'raportów'}`)
+    } catch (e) {
+      if (e.code === 'EMPTY') toast.info('Brak raportów do eksportu')
+      else toast.error('Błąd eksportu: ' + (e.message || e))
+    } finally {
+      setAnalyticsBusy(null)
     }
   }
 
@@ -435,6 +462,31 @@ export default function Reports({ navigate }) {
                     >
                       {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr lekcji → Excel'}
                     </button>
+                  )}
+                  {reports.length > 0 && (
+                    <>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      <div className="px-3 pb-1 text-[11px] uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                        Analiza
+                      </div>
+                      <button
+                        role="menuitem"
+                        disabled={!!analyticsBusy}
+                        className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
+                        onClick={() => { setToolsOpen(false); handleAnalyticsExport('xlsx') }}
+                      >
+                        {analyticsBusy === 'xlsx' ? '⏳ Liczenie…' : '📈 Eksport analityczny → Excel'}
+                      </button>
+                      <button
+                        role="menuitem"
+                        disabled={!!analyticsBusy}
+                        className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
+                        onClick={() => { setToolsOpen(false); handleAnalyticsExport('jsonl') }}
+                        title="Plik dla Power BI / Pythona — jedna linia = jeden raport"
+                      >
+                        {analyticsBusy === 'jsonl' ? '⏳ Liczenie…' : '🧾 Eksport analityczny → JSONL'}
+                      </button>
+                    </>
                   )}
                 </div>
               </>

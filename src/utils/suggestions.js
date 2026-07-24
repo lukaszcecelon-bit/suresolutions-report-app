@@ -1,4 +1,5 @@
 import { loadAll } from './storage.js'
+import { reportClient, reportLocation } from './reportFields.js'
 
 // Walks the saved-reports list and returns deduplicated values from the chosen
 // field, ordered by recency (most-recently-seen first). Used to power the native
@@ -40,18 +41,17 @@ export function suggestMachineNames(currentProject) {
   return [...sameProject, ...allMachines.filter((m) => !seen.has(m))]
 }
 
-// ---- Service-specific ----
-export const suggestClients = () => distinctRecent((r) => r.visit?.client, (r) => r.type === 'service')
+// ---- Klient / lokalizacja (od v0.52 wspólne dla WSZYSTKICH typów) ----
+// Wcześniej liczone tylko z raportów serwisowych — teraz klient jest w header,
+// więc podpowiedzi zbierają się też z uruchomień, odbiorów, prototypów i lekcji.
+export const suggestClients = () => distinctRecent((r) => reportClient(r))
 
 // Locations narrowed by client
 export function suggestLocations(currentClient) {
   const sameClient = currentClient
-    ? distinctRecent(
-        (r) => r.visit?.location,
-        (r) => r.type === 'service' && r.visit?.client === currentClient
-      )
+    ? distinctRecent((r) => reportLocation(r), (r) => reportClient(r) === currentClient)
     : []
-  const all = distinctRecent((r) => r.visit?.location, (r) => r.type === 'service')
+  const all = distinctRecent((r) => reportLocation(r))
   const seen = new Set(sameClient)
   return [...sameClient, ...all.filter((m) => !seen.has(m))]
 }
@@ -84,3 +84,7 @@ export function suggestPartCatalogNos() {
 
 // ---- Prototype-specific ----
 export const suggestComponents = () => distinctRecent((r) => r.info?.component, (r) => r.type === 'prototype')
+
+// ---- Reklamacja ----
+// Dostawca (v0.52) — bez niego nie dało się policzyć reklamacji per dostawca.
+export const suggestSuppliers = () => distinctRecent((r) => r.supplier, (r) => r.type === 'complaint')

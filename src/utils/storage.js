@@ -20,7 +20,7 @@ const PREFIX = 'suresolutions.report.v2:'
 // i dopisz krok w migrateReport() — zamiast rozsianych po komponentach
 // "if (Array.isArray(...))". Raporty migrują się przy odczycie, a trwale
 // przy najbliższym zapisie (upsert stempluje aktualną wersję).
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 let cache = null
 
@@ -37,6 +37,9 @@ function strToRecords(v) {
 //  v1→v2: service.recommendations string→lista; commissioning.observations
 //         i .conclusions string→lista (te pola stały się listami rekordów).
 //  v2→v3: satfat.conclusions string→lista rekordów.
+//  v3→v4: klient i lokalizacja z pól per-typ (service.visit, satfat.info) →
+//         wspólny `header`. Przedtem uruchomienie/prototyp/lekcja w ogóle nie
+//         miały klienta, więc żadna analiza „per klient" nie obejmowała ich.
 function migrateReport(r) {
   if (!r || typeof r !== 'object') return r
   if ((r.schemaVersion || 0) >= SCHEMA_VERSION) return r
@@ -52,6 +55,21 @@ function migrateReport(r) {
   if (m.type === 'commissioning') {
     if (!Array.isArray(m.observations)) m.observations = strToRecords(m.observations)
     if (!Array.isArray(m.conclusions)) m.conclusions = strToRecords(m.conclusions)
+  }
+  // Klient/lokalizacja → header. Stare klucze usuwamy, żeby nie powstały dwa
+  // źródła prawdy (edycja w formularzu aktualizowałaby tylko jedno z nich).
+  const legacy = m.type === 'service' ? m.visit : m.type === 'satfat' ? m.info : null
+  if (legacy && (legacy.client || legacy.location)) {
+    m.header = {
+      ...m.header,
+      client: m.header?.client || legacy.client || '',
+      location: m.header?.location || legacy.location || '',
+    }
+    const stripped = { ...legacy }
+    delete stripped.client
+    delete stripped.location
+    if (m.type === 'service') m.visit = stripped
+    else m.info = stripped
   }
   m.schemaVersion = SCHEMA_VERSION
   return m
@@ -277,9 +295,9 @@ export function cloneReport(source) {
         projectNumber,
         reportNumber: computeReportNumber('RPT', projectNumber, date),
       },
+      // Klient i lokalizacja jadą razem z header (spread powyżej) — zwykle ten
+      // sam klient i ten sam obiekt. Tu zostają już tylko godziny tej wizyty.
       visit: {
-        client: source.visit?.client || '',     // keep — recurring client
-        location: source.visit?.location || '', // keep — same site
         arrival: '',                            // reset — this visit
         departure: '',
       },
@@ -306,9 +324,9 @@ export function cloneReport(source) {
       },
       testType,                                            // keep — repeat odbioru same type
       info: {
-        client: source.info?.client || '',                 // keep — same client
-        location: source.info?.location || '',             // keep — same site
         referenceDoc: source.info?.referenceDoc || '',     // keep — same procedure
+        startTime: '',                                     // reset — nowa sesja odbioru
+        endTime: '',
       },
       participants: {
         // Keep participant lists but strip IDs — fresh entries on a new visit
@@ -341,6 +359,7 @@ export function cloneReport(source) {
         reportNumber: computeReportNumber('REK', projectNumber, date),
       },
       partNo: source.partNo || '',
+      supplier: source.supplier || '',   // keep — zwykle ta sama partia/dostawca
       defectCategory: '',
       blocksAssembly: false,
       description: '',
@@ -365,6 +384,8 @@ export function cloneReport(source) {
         sampleMethod: source.info?.sampleMethod || 'print3d',    // keep
         sampleMethodOther: source.info?.sampleMethodOther || '',
         goal: '',                                                // each iteration sets its own
+        startTime: '',                                           // reset — nowy test
+        endTime: '',
         media: [],
       },
       conditions: {

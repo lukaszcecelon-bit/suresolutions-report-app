@@ -16,6 +16,7 @@ import {
 } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
+import { nowHHMM, durationBetweenLabel } from '../../utils/time.js'
 import { getDefaultAuthor, getDefaultRole, ROLE_OPTIONS } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
@@ -45,25 +46,7 @@ const SECTIONS = [
 
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const nowISO = () => new Date().toISOString()
-const nowHHMM = () => {
-  const d = new Date()
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 
-// Łączny czas wizyty z godzin przyjazdu/odjazdu (HH:MM). Obsługuje przejście
-// przez północ (odjazd następnego dnia). Zwraca czytelną etykietę lub null.
-function visitDurationLabel(arrival, departure) {
-  if (!arrival || !departure) return null
-  const [ah, am] = arrival.split(':').map(Number)
-  const [dh, dm] = departure.split(':').map(Number)
-  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return null
-  let mins = (dh * 60 + dm) - (ah * 60 + am)
-  if (mins < 0) mins += 24 * 60
-  if (mins === 0) return null
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return h > 0 ? `${h} h ${m} min` : `${m} min`
-}
 
 function defaultReport() {
   return {
@@ -79,8 +62,10 @@ function defaultReport() {
       machineName: '',
       date: todayISO(),
       author: getDefaultAuthor(),   // domyślny autor z Ustawień (per urządzenie)
+      client: '',                   // od v0.52 klient/lokalizacja w header
+      location: '',                 // (edytowane w sekcji A — patrz reportFields.js)
     },
-    visit: { client: '', location: '', arrival: '', departure: '', attendees: '' },
+    visit: { arrival: '', departure: '', attendees: '' },
     role: getDefaultRole(),         // domyślna rola z Ustawień
     actions: [],
     parts: [],
@@ -110,7 +95,7 @@ export default function ServiceReport({ navigate, reportId }) {
   // Źródła autouzupełniania — memoizowane, żeby nie przeliczać całego localStorage
   // przy każdym renderze (a part-suggestions były liczone PER część PER render).
   const clientSug = useMemo(() => suggestClients(), [])
-  const locationSug = useMemo(() => suggestLocations(report.visit.client), [report.visit.client])
+  const locationSug = useMemo(() => suggestLocations(report.header.client), [report.header.client])
   const partNameSug = useMemo(() => suggestPartNames(), [])
   const partCatalogSug = useMemo(() => suggestPartCatalogNos(), [])
 
@@ -122,6 +107,9 @@ export default function ServiceReport({ navigate, reportId }) {
     }))
   }
   const updateVisit = (k, v) => setReport((r) => ({ ...r, visit: { ...r.visit, [k]: v } }))
+  // Klient i lokalizacja mieszkają w header (v0.52) — zapis idzie przez
+  // updateHeader, żeby numer raportu przeliczył się tak samo jak przy resztach.
+  const updateHeaderField = (k, v) => updateHeader({ ...report.header, [k]: v })
 
   // ---- Czynności ----
   const addAction = () => {
@@ -142,7 +130,7 @@ export default function ServiceReport({ navigate, reportId }) {
   const addPart = () => {
     setReport((r) => ({
       ...r,
-      parts: [...r.parts, { id: newId(), name: '', catalogNo: '', priority: 'planned', comment: '', media: [] }],
+      parts: [...r.parts, { id: newId(), name: '', catalogNo: '', qty: '', priority: 'planned', comment: '', media: [] }],
     }))
   }
   const updatePart = (id, patch) => {
@@ -153,7 +141,7 @@ export default function ServiceReport({ navigate, reportId }) {
     setReport((r) => ({ ...r, parts: r.parts.filter((p) => p.id !== id) }))
   }
 
-  const totalTime = visitDurationLabel(report.visit.arrival, report.visit.departure)
+  const totalTime = durationBetweenLabel(report.visit.arrival, report.visit.departure)
 
   return (
     <div className="space-y-4 pb-4">
@@ -181,15 +169,15 @@ export default function ServiceReport({ navigate, reportId }) {
             <label className="field-label">Nazwa klienta</label>
             <SuggestInput type="text" className="field-input"
               suggestions={clientSug}
-              value={report.visit.client}
-              onChange={(e) => updateVisit('client', e.target.value)} />
+              value={report.header.client || ''}
+              onChange={(e) => updateHeaderField('client', e.target.value)} />
           </div>
           <div className="min-w-0">
             <label className="field-label">Lokalizacja / adres obiektu</label>
             <SuggestInput type="text" className="field-input"
               suggestions={locationSug}
-              value={report.visit.location}
-              onChange={(e) => updateVisit('location', e.target.value)} />
+              value={report.header.location || ''}
+              onChange={(e) => updateHeaderField('location', e.target.value)} />
           </div>
           <div className="min-w-0">
             <label className="field-label">Rola</label>
@@ -328,11 +316,22 @@ export default function ServiceReport({ navigate, reportId }) {
                   aria-label="Usuń element"
                 >✕</button>
               </div>
-              <SuggestInput type="text" className="field-input"
-                placeholder="Numer katalogowy (opcjonalny)"
-                suggestions={partCatalogSug}
-                value={p.catalogNo}
-                onChange={(e) => updatePart(p.id, { catalogNo: e.target.value })} />
+              {/* Ilość obok numeru katalogowego — bez niej Pareto zużycia części
+                  liczyło tylko wystąpienia, nie sztuki (v0.52). */}
+              <div className="flex gap-2">
+                <SuggestInput type="text" className="field-input flex-1 min-w-0"
+                  placeholder="Numer katalogowy (opcjonalny)"
+                  suggestions={partCatalogSug}
+                  value={p.catalogNo}
+                  onChange={(e) => updatePart(p.id, { catalogNo: e.target.value })} />
+                <input type="number" inputMode="numeric" min="0" step="1"
+                  className="field-input w-20 shrink-0"
+                  placeholder="Szt."
+                  title="Ilość (sztuki)"
+                  aria-label="Ilość sztuk"
+                  value={p.qty ?? ''}
+                  onChange={(e) => updatePart(p.id, { qty: e.target.value })} />
+              </div>
               <ToggleGroup
                 size="sm"
                 items={PRIORITY_ITEMS}

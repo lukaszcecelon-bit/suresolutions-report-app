@@ -7,6 +7,7 @@ import {
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawTextBlock, drawThumbsRow, drawEmpty, drawPhotoAppendix,
 } from './core.js'
+import { reportClient } from '../reportFields.js'
 
 // Istotność → badge (te same kolory co reszta apki).
 const SEVERITY_BADGE = {
@@ -38,7 +39,7 @@ function buildPdf(ctx, report, photos) {
   drawMetaTable(ctx, [
     [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
     [{ label: 'Autor', value: h.author || '—' }, { label: 'Etap wykrycia', value: report.stage || '—' }, { label: 'Nr rysunku / DTR', value: report.drawingNo || '—' }],
-    [{ label: 'Kategoria błędu', value: report.category || '—', colspan: 2 }, sevCell],
+    [{ label: 'Kategoria błędu', value: report.category || '—' }, { label: 'Klient', value: reportClient(report) || '—' }, sevCell],
   ])
 
   drawSectionHeader(ctx, 'Opis błędu projektowego')

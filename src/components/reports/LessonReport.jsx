@@ -95,7 +95,7 @@ export default function LessonReport({ navigate, reportId }) {
       <fieldset disabled={locked} className="space-y-4 min-w-0">
 
       <div id="sec-header">
-        <Header header={report.header} onChange={updateHeader} reportType="lesson" />
+        <Header header={report.header} onChange={updateHeader} reportType="lesson" showClient />
       </div>
 
       <div id="sec-a" className="card">

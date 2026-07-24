@@ -46,8 +46,10 @@ function buildChecks(report) {
   for (const r of COMMON_HEADER) req(get(report, r.field), r.label, r.sectionId)
 
   if (report.type === 'service') {
-    req(report.visit?.client, 'Nazwa klienta', 'sec-a')
-    req(report.visit?.location, 'Lokalizacja', 'sec-a')
+    // Klient/lokalizacja od v0.52 w header (edytowane w sekcji A) — sectionId
+    // celowo zostaje 'sec-a', bo tam użytkownik je wpisuje.
+    req(report.header?.client, 'Nazwa klienta', 'sec-a')
+    req(report.header?.location, 'Lokalizacja', 'sec-a')
     req(report.actions, 'Co najmniej 1 czynność (sekcja B)', 'sec-b')
   }
   if (report.type === 'commissioning') {
@@ -59,8 +61,8 @@ function buildChecks(report) {
     req(report.points, 'Co najmniej 1 punkt kontrolny (sekcja C)', 'sec-c')
   }
   if (report.type === 'satfat') {
-    req(report.info?.client, 'Klient / Zamawiający', 'sec-a')
-    req(report.info?.location, 'Lokalizacja', 'sec-a')
+    req(report.header?.client, 'Klient / Zamawiający', 'sec-a')
+    req(report.header?.location, 'Lokalizacja', 'sec-a')
     req(report.tests, 'Co najmniej 1 test (sekcja C)', 'sec-c')
   }
   if (report.type === 'lesson') {

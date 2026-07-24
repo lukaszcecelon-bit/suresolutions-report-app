@@ -6,6 +6,7 @@ import {
   drawReportHeader, drawMetaTable, drawSectionHeader, drawStatCards,
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawPhotoAppendix, drawEmpty,
 } from './core.js'
+import { reportClient } from '../reportFields.js'
 
 function collectMedia(report) {
   const { push, finalize } = mediaCollector()
@@ -50,7 +51,7 @@ function buildPdf(ctx, report, photos, videos) {
 
   drawMetaTable(ctx, [
     [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
-    [{ label: 'Autor', value: h.author || '—', colspan: 2 }, { label: 'Sesja', value: `${timeHHMM(report.sessionStartAt)} — ${timeHHMM(report.sessionEndAt)}` }],
+    [{ label: 'Autor', value: h.author || '—' }, { label: 'Klient', value: reportClient(report) || '—' }, { label: 'Sesja', value: `${timeHHMM(report.sessionStartAt)} — ${timeHHMM(report.sessionEndAt)}` }],
   ])
 
   drawSectionHeader(ctx, 'Podsumowanie statystyk')

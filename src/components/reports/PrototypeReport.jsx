@@ -12,6 +12,7 @@ import { MicTextarea, MicInput } from '../common/VoiceMic.jsx'
 import { suggestComponents } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
+import { nowHHMM, durationBetweenLabel } from '../../utils/time.js'
 import { getDefaultAuthor } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildPrototypePackage, buildPrototypePdf } from '../../utils/pdfGenerator.js'
@@ -68,6 +69,7 @@ function defaultReport() {
     info: {
       component: '', iteration: 1,
       sampleMethod: 'print3d', sampleMethodOther: '', goal: '',
+      startTime: '', endTime: '',   // v0.52 — czas trwania testu do analizy
       media: [],
     },
     conditions: { setup: '', params: [] },
@@ -175,7 +177,7 @@ export default function PrototypeReport({ navigate, reportId }) {
       <fieldset disabled={locked} className="space-y-4 min-w-0">
 
       <div id="sec-header">
-        <Header header={report.header} onChange={updateHeader} reportType="prototype" />
+        <Header header={report.header} onChange={updateHeader} reportType="prototype" showClient />
       </div>
 
       <div id="sec-a" className="card">
@@ -209,6 +211,36 @@ export default function PrototypeReport({ navigate, reportId }) {
               onChange={(e) => setInfo('sampleMethodOther', e.target.value)} />
           )}
         </div>
+        {/* Godziny testu (v0.52) — pozwalają policzyć, ile czasu zjada iteracja. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+          <div className="min-w-0">
+            <label className="field-label">Start testu</label>
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.info.startTime || ''}
+                onChange={(e) => setInfo('startTime', e.target.value)} />
+              <button type="button" onClick={() => setInfo('startTime', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <label className="field-label">Koniec testu</label>
+            <div className="flex gap-2">
+              <input type="time" className="field-input flex-1 min-w-0"
+                value={report.info.endTime || ''}
+                onChange={(e) => setInfo('endTime', e.target.value)} />
+              <button type="button" onClick={() => setInfo('endTime', nowHHMM())}
+                className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 shrink-0 whitespace-nowrap"
+                title="Wstaw aktualną godzinę">⏱ Teraz</button>
+            </div>
+          </div>
+        </div>
+        {durationBetweenLabel(report.info.startTime, report.info.endTime) && (
+          <div className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            Czas testu: <strong className="text-sure-dark dark:text-gray-100">{durationBetweenLabel(report.info.startTime, report.info.endTime)}</strong>
+          </div>
+        )}
         <div className="mt-3">
           <label className="field-label">Cel testu</label>
           <MicTextarea

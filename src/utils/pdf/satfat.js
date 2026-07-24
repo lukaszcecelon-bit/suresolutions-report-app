@@ -6,6 +6,8 @@ import {
   drawTable, drawTextBlock, drawThumbsRow, drawSignatures, drawBadge,
   drawVideosTable, drawEmpty, drawPhotoAppendix,
 } from './core.js'
+import { durationBetweenLabel } from '../time.js'
+import { reportClient, reportLocation } from '../reportFields.js'
 
 const TITLES = { fat: 'RAPORT ODBIORU FABRYCZNEGO (FAT)', sat: 'RAPORT ODBIORU NA OBIEKCIE (SAT)' }
 
@@ -103,7 +105,11 @@ function buildPdf(ctx, report, photos, videos) {
 
   drawSectionHeader(ctx, 'A. Kontekst odbioru')
   drawMetaTable(ctx, [
-    [{ label: 'Klient', value: info.client || '—' }, { label: 'Lokalizacja', value: info.location || '—' }],
+    [{ label: 'Klient', value: reportClient(report) || '—' }, { label: 'Lokalizacja', value: reportLocation(report) || '—' }],
+    [
+      { label: 'Godziny odbioru', value: [info.startTime, info.endTime].filter(Boolean).join(' – ') || '—' },
+      { label: 'Czas odbioru', value: durationBetweenLabel(info.startTime, info.endTime) || '—' },
+    ],
     [{ label: 'Dokument referencyjny', value: info.referenceDoc || '—', colspan: 2 }],
   ])
 

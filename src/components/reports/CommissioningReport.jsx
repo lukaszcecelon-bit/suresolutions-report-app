@@ -301,6 +301,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             onChange={updateHeader}
             reportType="commissioning"
             showErrors={attemptedStart}
+            showClient
           />
           <div className="card text-center">
             <p className="text-gray-600 dark:text-gray-300 mb-4">
@@ -464,7 +465,7 @@ export default function CommissioningReport({ navigate, reportId }) {
             </div>
           </div>
 
-          <Header header={report.header} onChange={updateHeader} reportType="commissioning" />
+          <Header header={report.header} onChange={updateHeader} reportType="commissioning" showClient />
 
           {report.stops.length > 0 && (
             <div className="card">

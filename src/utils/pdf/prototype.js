@@ -6,6 +6,8 @@ import {
   drawTable, drawTextBlock, drawThumbsRow, drawVideosTable, drawBadge,
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
+import { durationBetweenLabel } from '../time.js'
+import { reportClient } from '../reportFields.js'
 
 const SAMPLE_METHOD_LABELS = { print3d: 'Druk 3D', cnc: 'Obróbka CNC', other: 'Inne' }
 const OVERALL_RESULT_LABELS = { positive: 'Pozytywny', negative: 'Negatywny', conditional: 'Warunkowo pozytywny' }
@@ -53,11 +55,18 @@ function buildPdf(ctx, report, photos, videos) {
   ])
 
   drawSectionHeader(ctx, 'A. Informacje o teście')
-  drawMetaTable(ctx, [[
-    { label: 'Podzespół', value: info.component || '—' },
-    { label: 'Iteracja', value: 'Test #' + iter },
-    { label: 'Metoda próbki', value: sampleMethod },
-  ]])
+  drawMetaTable(ctx, [
+    [
+      { label: 'Podzespół', value: info.component || '—' },
+      { label: 'Iteracja', value: 'Test #' + iter },
+      { label: 'Metoda próbki', value: sampleMethod },
+    ],
+    [
+      { label: 'Klient', value: reportClient(report) || '—' },
+      { label: 'Godziny testu', value: [info.startTime, info.endTime].filter(Boolean).join(' – ') || '—' },
+      { label: 'Czas testu', value: durationBetweenLabel(info.startTime, info.endTime) || '—' },
+    ],
+  ])
   drawTextBlock(ctx, info.goal, { label: 'Cel testu:' })
   drawThumbsRow(ctx, thumbDescriptors(info.media))
 

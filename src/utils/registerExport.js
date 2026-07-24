@@ -3,6 +3,7 @@
 // arkusz to filtrowalna baza — sortowanie/filtry/tabela przestawna w Excelu lub
 // Power BI. SheetJS (xlsx) ładowany LENIWIE (ciężki) — dopiero przy eksporcie.
 import { LESSON_SEVERITIES } from './settings.js'
+import { reportClient } from './reportFields.js'
 
 const SEV_LABEL = Object.fromEntries(LESSON_SEVERITIES.map((s) => [s.key, s.label]))
 
@@ -21,6 +22,7 @@ const COLUMNS = [
   { key: 'Data',          width: 11, get: (r) => r.header?.date || '' },
   { key: 'Nr projektu',   width: 12, get: (r) => r.header?.projectNumber || '' },
   { key: 'Projekt',       width: 22, get: (r) => r.header?.projectName || '' },
+  { key: 'Klient',        width: 18, get: (r) => reportClient(r) },
   { key: 'Maszyna',       width: 20, get: (r) => r.header?.machineName || '' },
   { key: 'Nr rysunku',    width: 14, get: (r) => r.drawingNo || '' },
   { key: 'Etap wykrycia', width: 14, get: (r) => r.stage || '' },

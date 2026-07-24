@@ -6,6 +6,7 @@ import { backupAllReports } from '../utils/syncPackage.js'
 import { useToast } from '../components/common/Toast.jsx'
 import EmptyState from '../components/common/EmptyState.jsx'
 import { TYPE_LABELS, TYPE_SHORT, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
+import { reportClient, reportMinutes } from '../utils/reportFields.js'
 
 // Ekran startowy — pulpit „co teraz zrobić" (przebudowany w v0.51).
 // Kolejność wynika z częstotliwości użycia: najpierw akcja (nowy raport +
@@ -13,17 +14,6 @@ import { TYPE_LABELS, TYPE_SHORT, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } fr
 // (3 ostatnie raporty), a metryki miesiąca — jako jeden cienki wiersz na dole
 // (nic się z nimi nie robi, więc nie zajmują miejsca nad akcją).
 // Pełna lista z wyszukiwarką, filtrami i archiwum mieszka w zakładce Raporty.
-
-// Czas wizyty serwisowej w minutach (HH:MM, z przejściem przez północ).
-function visitMinutes(arrival, departure) {
-  if (!arrival || !departure) return 0
-  const [ah, am] = String(arrival).split(':').map(Number)
-  const [dh, dm] = String(departure).split(':').map(Number)
-  if ([ah, am, dh, dm].some((n) => Number.isNaN(n))) return 0
-  let mins = (dh * 60 + dm) - (ah * 60 + am)
-  if (mins < 0) mins += 24 * 60
-  return mins
-}
 
 // Statystyki bieżącego miesiąca: liczba raportów, czas u klientów
 // (wizyty serwisowe + sesje uruchomień), najczęstszy klient.
@@ -36,12 +26,13 @@ function monthStats(reports) {
   let minutes = 0
   const clientCount = new Map()
   for (const r of inMonth) {
-    if (r.type === 'service') {
-      minutes += visitMinutes(r.visit?.arrival, r.visit?.departure)
-    } else if (r.type === 'commissioning' && r.sessionStartAt && r.sessionEndAt) {
-      minutes += Math.max(0, (new Date(r.sessionEndAt) - new Date(r.sessionStartAt)) / 60000)
+    // „U klientów" = wizyty serwisowe + sesje uruchomień (reportMinutes zna
+    // różnicę: godziny HH:MM vs znaczniki sesji). Odbiory i testy prototypu
+    // mają teraz też godziny, ale to nie jest czas „u klienta".
+    if (r.type === 'service' || r.type === 'commissioning') {
+      minutes += reportMinutes(r) || 0
     }
-    const client = (r.visit?.client || r.info?.client || '').trim()
+    const client = reportClient(r)
     if (client) clientCount.set(client, (clientCount.get(client) || 0) + 1)
   }
   let topClient = null
