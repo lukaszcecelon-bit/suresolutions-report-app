@@ -11,12 +11,13 @@ import NotesList from '../common/NotesList.jsx'
 import { MicTextarea, MicInput } from '../common/VoiceMic.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
 import {
-  suggestClients, suggestLocations,
+  suggestClients, suggestLocations, suggestTravelKm,
   suggestPartNames, suggestPartCatalogNos,
 } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
 import { nowHHMM, durationBetweenLabel } from '../../utils/time.js'
+import { travelKmLabel } from '../../utils/reportFields.js'
 import { getDefaultAuthor, getDefaultRole, ROLE_OPTIONS } from '../../utils/settings.js'
 import { useReportPage } from '../../utils/useReportPage.js'
 import { buildServicePackage, buildServicePdf } from '../../utils/pdfGenerator.js'
@@ -65,7 +66,7 @@ function defaultReport() {
       client: '',                   // od v0.52 klient/lokalizacja w header
       location: '',                 // (edytowane w sekcji A — patrz reportFields.js)
     },
-    visit: { arrival: '', departure: '', attendees: '' },
+    visit: { arrival: '', departure: '', attendees: '', travelKm: '' },
     role: getDefaultRole(),         // domyślna rola z Ustawień
     actions: [],
     parts: [],
@@ -96,6 +97,7 @@ export default function ServiceReport({ navigate, reportId }) {
   // przy każdym renderze (a part-suggestions były liczone PER część PER render).
   const clientSug = useMemo(() => suggestClients(), [])
   const locationSug = useMemo(() => suggestLocations(report.header.client), [report.header.client])
+  const kmSug = useMemo(() => suggestTravelKm(report.header.client), [report.header.client])
   const partNameSug = useMemo(() => suggestPartNames(), [])
   const partCatalogSug = useMemo(() => suggestPartCatalogNos(), [])
 
@@ -142,6 +144,7 @@ export default function ServiceReport({ navigate, reportId }) {
   }
 
   const totalTime = durationBetweenLabel(report.visit.arrival, report.visit.departure)
+  const kmLabel = travelKmLabel(report)
 
   return (
     <div className="space-y-4 pb-4">
@@ -219,10 +222,29 @@ export default function ServiceReport({ navigate, reportId }) {
                 title="Wstaw aktualną godzinę">⏱ Teraz</button>
             </div>
           </div>
+          {/* Kilometry dojazdu (v0.53). Świadomie POLE, nie suwak: wartość idzie
+              do rozliczenia, więc musi być dokładna co do kilometra, a suwak od
+              0 do kilkuset km daje na telefonie błąd rzędu ±10 km. Wygodę robią
+              chipy z historii — dystans do danego klienta jest stały. */}
+          <div className="min-w-0">
+            <label className="field-label" htmlFor="visit-travel-km">Kilometry dojazdu (w obie strony)</label>
+            <SuggestInput id="visit-travel-km" type="number" inputMode="numeric" min="0" step="1"
+              className="field-input"
+              placeholder="np. 128"
+              suggestions={kmSug}
+              value={report.visit.travelKm ?? ''}
+              onChange={(e) => updateVisit('travelKm', e.target.value)} />
+          </div>
         </div>
-        {totalTime && (
+        {(totalTime || kmLabel) && (
           <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-            Łączny czas wizyty: <strong className="text-sure-dark dark:text-gray-100">{totalTime}</strong>
+            {totalTime && (
+              <>Łączny czas wizyty: <strong className="text-sure-dark dark:text-gray-100">{totalTime}</strong></>
+            )}
+            {totalTime && kmLabel && <span className="mx-2 text-gray-400 dark:text-gray-500">·</span>}
+            {kmLabel && (
+              <>Dojazd: <strong className="text-sure-dark dark:text-gray-100">{kmLabel}</strong></>
+            )}
           </div>
         )}
       </div>

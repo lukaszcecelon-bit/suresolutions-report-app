@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v0.52**.
+> Aktualny, kompletny opis aplikacji. Stan na **v0.53**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -189,7 +189,34 @@ projektowa (wnioski/rekomendacje dla konstrukcji).
 - **Ilość sztuk przy elemencie do wymiany** (`parts[].qty`, v0.52) — obok numeru
   katalogowego, kolumna „Szt." w PDF. Bez niej Pareto zużycia części liczyło
   tylko wystąpienia, nie sztuki.
+- **Kilometry dojazdu** (`visit.travelKm`, v0.53) — patrz niżej.
 - **Domyślny autor i rola** z Ustawień podpowiadane w nowym raporcie.
+
+### Kilometry dojazdu (v0.53)
+`visit.travelKm` przechowuje **łączny dystans w obie strony** — to ta liczba idzie
+do rozliczenia, więc jedna wartość zamiast pary „w jedną stronę + przelicznik"
+(dwa pola = dwa stany do pilnowania i niejasność w PDF, co właściwie znaczy
+liczba). Odczyt i formatowanie w jednym miejscu: `travelKm()` / `travelKmLabel()`
+w `utils/reportFields.js` — używają ich formularz, PDF i eksport.
+
+**Dlaczego pole, a nie suwak.** Wartość jest rozliczeniowa, więc musi być dokładna
+co do kilometra, a zakres to 0–kilkaset km: suwak na telefonie daje błąd rzędu
+±10 km, nie pozwala wpisać liczby z klawiatury i i tak wymaga pokazania wartości
+obok. Wygodę robią zamiast tego **chipy z historii** (`suggestTravelKm(client)`) —
+dystans do danego klienta jest stały, więc druga i każda kolejna wizyta u niego to
+jedno tapnięcie; najpierw wartości z wizyt u TEGO klienta, potem pozostałe.
+Przycisk „×2" (podwajanie odległości w jedną stronę) był w propozycji, ale
+**użytkownik uznał go za zbędny** — nie wracać do pomysłu.
+
+Pod sekcją A wartość wraca echem obok czasu wizyty („Łączny czas wizyty: 2 h 30 min
+· Dojazd: 128 km"). W PDF stoi jako **czwarta komórka** wiersza z godzinami
+(`PRZYJAZD | ODJAZD | ŁĄCZNY CZAS | DOJAZD`) — `drawMetaTable` liczy szerokości
+per wiersz, więc wiersz może mieć dowolną liczbę komórek. W eksporcie
+analitycznym: kolumna `Dojazd [km]` / `dojazd_km` jako **liczba bez jednostki**
+(jednostka w nagłówku), pusta gdy nie podano. Pole jest **opcjonalne** — nie
+wchodzi do bramki kompletności, żeby nie unieważniać raportów tych, którzy km nie
+rozliczają. `cloneReport` (duplikat wizyty) **zachowuje** kilometry, bo dystans do
+tego samego klienta się nie zmienia.
 
 ### Klient i lokalizacja — pola przekrojowe (v0.52)
 `header.client` i `header.location` są **wspólne dla wszystkich typów**
@@ -323,7 +350,7 @@ nagłówek do XLSX i `id` = ASCII snake_case do JSONL):
   typ, numer, data, rok, miesiąc, projekt, maszyna, klient, lokalizacja, autor,
   status) + miary wspólne (czas w minutach, zdjęcia, wideo, wpisy opisowe) +
   bloki per typ: serwis (czynności, części, części pilne, sztuki, rola, osoby
-  obecne, status wizyty), uruchomienie (zatrzymania, czas zatrzymań, najdłuższe,
+  obecne, **dojazd [km]**, status wizyty), uruchomienie (zatrzymania, czas zatrzymań, najdłuższe,
   **dostępność %**, **MTBF**, **MTTR**), SAT/FAT (testy pass/fail/cond/na,
   **FPY %**, usterki, usterki krytyczne, wynik odbioru, uczestnicy), prototyp
   (podzespół, iteracja, metoda próbki, punkty OK/NOK/warunkowo, ocena, decyzja),
@@ -359,6 +386,14 @@ JSONL: 1 linia = 1 raport z **zagnieżdżonymi** dziećmi, klucze snake_case, ka
 linia stemplowana wersją apki i datą eksportu (samoopisująca się nawet po
 sklejeniu plików z wielu miesięcy). To ścieżka do Power BI / Pythona, więc
 pobiera się wprost, bez okna „udostępnij".
+
+**Stan wątku:** to komplet tego, co zaplanowano na tym etapie — pulpit „Analiza"
+w apce i Power BI nad folderem w OneDrive są świadomie odłożone (patrz §14).
+**Uwaga przy pierwszym eksporcie:** historyczne raporty nie mają pól dodanych w
+v0.52 i v0.53 (dostawca, sztuki, godziny odbioru/testu, kilometry dojazdu) — te
+kolumny będą puste i zapełnią się dopiero nowymi raportami. Klient dla serwisu i SAT/FAT zmigrował
+się automatycznie (v3→v4), więc historia „per klient" działa wstecz dla tych
+dwóch typów.
 
 ---
 
@@ -511,7 +546,8 @@ assets/logo.png
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
-  MTTR, sumy sztuk, migracja klienta v3→v4, „puste ≠ 0"); podgląd PDF w apce
+  MTTR, sumy sztuk, kilometry jako liczba, migracja klienta v3→v4, „puste ≠ 0");
+  podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
 - **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
@@ -531,7 +567,14 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v0.52.** Skrót ostatnich zmian:
+**Aktualna wersja: v0.53.** Skrót ostatnich zmian:
+- **v0.53** — **kilometry dojazdu w raporcie serwisowym** (`visit.travelKm`):
+  pole liczbowe (nie suwak — wartość rozliczeniowa musi być dokładna co do
+  kilometra), a wygodę robią chipy z historii per klient (`suggestTravelKm`).
+  Echo obok czasu wizyty, czwarta
+  komórka w wierszu godzin w PDF, kolumna `Dojazd [km]` w eksporcie
+  analitycznym, zachowywane przy duplikowaniu wizyty. Bez migracji — pole
+  opcjonalne, poza bramką kompletności. Szczegóły w §5.
 - **v0.52** — **wykorzystanie danych z raportów**: (1) **eksport analityczny**
   (`analyticsExport.js`) — cała baza jako gwiazda: tabela faktów + 8 tabel-dzieci,
   XLSX wielozakładkowy z autofiltrem i zakładką `Info` oraz JSONL dla Power BI;
@@ -697,14 +740,26 @@ eksport analityczny stempluje nim pliki.
   na firmowy SharePoint (MS Graph). Wymaga rejestracji w Entra ID — instrukcje w
   `INSTRUKCJA-ENTRA.md`, plan w `PLAN-SHAREPOINT.md`. Najmniej inwazyjny backend
   (używa istniejącego M365, dane nie wypływają na zewnątrz).
-- **Pulpit „Analiza" w apce** — 4–5 kafli liczonych lokalnie (dostępność
-  uruchomień, Pareto zatrzymań, godziny per klient, macierz lekcji kategoria ×
-  etap). Eksport do Excela to friction — w terenie nikt go nie zrobi.
-- **Power BI nad folderem w OneDrive/SharePoint** — kolejne pliki
-  `analiza-raportow_*.jsonl`/`.xlsx` układają się w szereg czasowy; Power BI ma
-  konektor „Folder". To plik w chmurze, nie backend, więc nie łamie architektury.
-- **Słowniki zamiast wolnego tekstu** dla klienta, maszyny i parametrów prototypu
-  (patrz §13) — warunek, żeby liczby z eksportu były wiarygodne.
+- **Analiza danych — wątek ZAMKNIĘTY na Fazie A+B (v0.52).** Plan miał cztery
+  fazy; wdrożone zostały dwie pierwsze (eksport + domknięcie pól), a kolejne
+  **odłożone decyzją użytkownika (2026-07-29: „na razie kończymy z opcją
+  analizy")**. Nie są porzucone — czekają na sygnał z realnego użycia eksportu:
+  - **Faza C — pulpit „Analiza" w apce**: 4–5 kafli liczonych lokalnie
+    (dostępność uruchomień, Pareto zatrzymań, godziny per klient, macierz lekcji
+    kategoria × etap). Uzasadnienie: eksport do Excela to friction — w terenie
+    nikt go nie zrobi. Dane są już policzone w `analyticsExport.js`, więc pulpit
+    to głównie warstwa prezentacji.
+  - **Faza D — Power BI nad folderem w OneDrive/SharePoint**: kolejne pliki
+    `analiza-raportow_*.xlsx`/`.jsonl` układają się w szereg czasowy (nazwa z
+    datą i godziną, nic się nie nadpisuje); Power BI ma konektor „Folder". To
+    plik w chmurze, nie backend, więc nie łamie architektury klient-only.
+  - **Słowniki zamiast wolnego tekstu** dla klienta, maszyny i parametrów
+    prototypu (patrz §13) — warunek, żeby liczby z pól opisowych były
+    wiarygodne. Najtańszy krok, gdyby pierwszy eksport pokazał rozjechane
+    warianty nazw.
+  Naturalny moment powrotu: po pierwszym eksporcie na realnych danych — wtedy
+  wiadomo, których przekrojów faktycznie brakuje (i czy nie trzeba raczej
+  poprawić kolumn niż budować pulpit).
 - **Subset fontu Roboto** (~168→60 KB) — mikrooptymalizacja precache.
 - **Przełącznik „dołączaj duże zdjęcia do PDF"** / limit rozdzielczości
   załącznika — gdyby waga PDF była problemem.

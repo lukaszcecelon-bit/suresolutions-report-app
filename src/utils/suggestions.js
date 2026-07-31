@@ -56,6 +56,24 @@ export function suggestLocations(currentClient) {
   return [...sameClient, ...all.filter((m) => !seen.has(m))]
 }
 
+// ---- Kilometry dojazdu (serwis, v0.53) ----
+// Dystans do danego klienta jest STAŁY, więc druga i każda kolejna wizyta
+// powinna kosztować jedno tapnięcie w chip, a nie wpisywanie liczby. Najpierw
+// wartości z wizyt u TEGO klienta (zwykle jedna), potem pozostałe jako zapas.
+export function suggestTravelKm(currentClient) {
+  const km = (r) => {
+    const v = r.visit?.travelKm
+    return v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? null : String(v)
+  }
+  const isService = (r) => r.type === 'service'
+  const sameClient = currentClient
+    ? distinctRecent(km, (r) => isService(r) && reportClient(r) === currentClient)
+    : []
+  const all = distinctRecent(km, isService)
+  const seen = new Set(sameClient)
+  return [...sameClient, ...all.filter((v) => !seen.has(v))]
+}
+
 export function suggestPartNames() {
   const out = new Map()
   for (const r of loadAll().filter((r) => r.type === 'service')) {

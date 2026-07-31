@@ -68,7 +68,7 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
     id: 'r_test_pdf', type: 'service', status: 'draft', schemaVersion: 1,
     createdAt: '2026-06-19T08:00:00.000Z', updatedAt: '2026-06-19T08:00:00.000Z',
     header: { reportNumber: 'RPT-99-996-2026-06-19', projectName: 'Projekt 99-996', machineName: 'Maszyna X', date: '2026-06-19', author: 'Jan Testowy' },
-    visit: { client: 'Klient', location: 'Hala 1', arrival: '08:00', departure: '10:00' },
+    visit: { client: 'Klient', location: 'Hala 1', arrival: '08:00', departure: '10:00', travelKm: '128' },
     role: 'serwisant', visitStatus: 'completed',
     actions: [{ id: 'a1', description: 'Wymiana czujnika', media: [{ id: 'm1', kind: 'image', photoId: 'p1', dataUrl }] }],
     parts: [], observations: [], recommendations: 'Zalecana kontrola za miesiąc', receivedBy: 'Klient',
@@ -96,6 +96,9 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
   // Załącznik fotograficzny obecny jako tekst + podpis zdjęcia z kontekstem.
   expect(pdfData.text).toContain('ZAŁĄCZNIK')
   expect(pdfData.text).toMatch(/Zdjęcie 1/)
+  // Kilometry dojazdu w tabeli wizyty (v0.53) — 4. komórka wiersza z godzinami.
+  expect(pdfData.text).toContain('DOJAZD')
+  expect(pdfData.text).toMatch(/128\s*km/)
   // Plik PDF realnie zawiera osadzony obraz (duże zdjęcie zwiększa rozmiar).
   expect(pdfBuf.length).toBeGreaterThan(15_000)
 
@@ -163,7 +166,7 @@ test('eksport analityczny: XLSX z zakładkami + JSONL z wyliczonymi miarami (v0.
     id: 'r_an_service', type: 'service', status: 'completed', schemaVersion: 1,
     createdAt: '2026-06-19T06:00:00.000Z', updatedAt: '2026-06-19T06:00:00.000Z',
     header: { reportNumber: 'RPT-99-981-2026-06-19', projectNumber: '99-981', projectName: 'Projekt', machineName: 'Prasa', date: '2026-06-19', author: 'Jan' },
-    visit: { client: 'BSH', location: 'Hala 1', arrival: '08:00', departure: '10:30', attendees: '2' },
+    visit: { client: 'BSH', location: 'Hala 1', arrival: '08:00', departure: '10:30', attendees: '2', travelKm: '128' },
     role: 'Technik serwisu', visitStatus: 'completed',
     actions: [{ id: 'a1', description: 'Wymiana czujnika', media: [] }],
     parts: [
@@ -239,9 +242,11 @@ test('eksport analityczny: XLSX z zakładkami + JSONL z wyliczonymi miarami (v0.
   expect(srv.czesci_szt).toBe(5)          // 2 + 3 sztuki
   expect(srv.czesci_pilne).toBe(1)
   expect(srv.czesci).toHaveLength(2)
+  expect(srv.dojazd_km).toBe(128)         // liczba, nie „128 km" (v0.53)
   // Kolumny nie dotyczące typu muszą być PUSTE, nie zerowe (inaczej średnie kłamią).
   expect(srv.dostepnosc_pct).toBe('')
   expect(comm.czesci_szt).toBe('')
+  expect(comm.dojazd_km).toBe('')
 })
 
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {

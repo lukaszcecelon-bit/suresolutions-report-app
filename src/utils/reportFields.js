@@ -27,6 +27,22 @@ export function reportTimeRange(r) {
   return { from: '', to: '' }
 }
 
+// Kilometry dojazdu (serwis, v0.53) — przechowywane jako ŁĄCZNY dystans w obie
+// strony, bo to ta liczba idzie do rozliczenia. Jedna reguła odczytu i
+// formatowania dla formularza, PDF i eksportu, żeby „128 km" nie rozjechało się
+// między miejscami. Zwraca null przy braku danych (0 km to inna informacja).
+export function travelKm(r) {
+  const v = r?.visit?.travelKm
+  if (v === '' || v === null || v === undefined) return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+export function travelKmLabel(r) {
+  const n = travelKm(r)
+  return n === null ? '' : `${String(n).replace('.', ',')} km`
+}
+
 // Czas trwania raportu w minutach, albo null gdy nie da się go ustalić.
 // Uruchomienie liczy się ze znaczników sesji (przycisk start/stop), pozostałe
 // typy z godzin wpisanych ręcznie. Reklamacja i lekcja nie mają czasu trwania.

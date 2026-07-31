@@ -300,6 +300,9 @@ export function cloneReport(source) {
       visit: {
         arrival: '',                            // reset — this visit
         departure: '',
+        // Kilometry ZOSTAJĄ (v0.53) — dystans do tego samego klienta się nie
+        // zmienia, więc duplikat wizyty ma je już wpisane.
+        travelKm: source.visit?.travelKm ?? '',
       },
       role: source.role || '',                   // keep — zwykle ten sam serwisant
       actions: [],

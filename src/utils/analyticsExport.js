@@ -20,7 +20,7 @@
 // tabel przestawnych) oraz JSONL (klucze ASCII snake_case — dla Power BI /
 // Pythona). Każda kolumna zna oba nazewnictwa: `key` (PL) i `id` (snake).
 import { collectMediaIds, SCHEMA_VERSION } from './storage.js'
-import { reportClient, reportLocation, reportTimeRange, reportMinutes } from './reportFields.js'
+import { reportClient, reportLocation, reportTimeRange, reportMinutes, travelKm } from './reportFields.js'
 import { APP_VERSION } from './version.js'
 import { LESSON_SEVERITIES } from './settings.js'
 import {
@@ -152,6 +152,9 @@ const FACT_COLUMNS = [
   // — serwis —
   { key: 'Rola',           id: 'rola',             width: 16, get: (r) => (r.type === 'service' ? txt(r.role) : '') },
   { key: 'Osoby obecne',   id: 'osoby_obecne',     width: 12, get: (r) => (r.type === 'service' && isNum(r.visit?.attendees) ? Number(r.visit.attendees) : '') },
+  // Liczba bez jednostki (jednostka w nagłówku) — inaczej suma po kolumnie w
+  // Excelu nie zadziała. Łączny dystans w obie strony, patrz reportFields.js.
+  { key: 'Dojazd [km]',    id: 'dojazd_km',        width: 12, get: (r) => travelKm(r) ?? '' },
   { key: 'Status wizyty',  id: 'status_wizyty',    width: 24, get: (r) => (r.type === 'service' ? label(VISIT_STATUS_LABELS, r.visitStatus) : '') },
   { key: 'wizyta_key',     id: 'status_wizyty_key', width: 11, get: (r) => (r.type === 'service' ? txt(r.visitStatus) : '') },
   { key: 'Czynności',      id: 'czynnosci',        width: 10, get: (r, m) => m.actions ?? '' },

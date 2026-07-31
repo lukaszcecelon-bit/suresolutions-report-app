@@ -8,7 +8,7 @@ import {
   drawEmpty, drawPhotoAppendix,
 } from './core.js'
 import { durationBetweenLabel } from '../time.js'
-import { reportClient, reportLocation } from '../reportFields.js'
+import { reportClient, reportLocation, travelKmLabel } from '../reportFields.js'
 
 const PRIORITY_BADGE = {
   urgent: { text: 'Pilne', kind: 'rejected' },
@@ -58,7 +58,8 @@ function buildPdf(ctx, report, photos) {
   drawSectionHeader(ctx, 'A. Dane wizyty')
   drawMetaTable(ctx, [
     [{ label: 'Klient', value: reportClient(report) || '—' }, { label: 'Lokalizacja', value: reportLocation(report) || '—' }, { label: 'Osoby obecne', value: v.attendees ? String(v.attendees) : '—' }],
-    [{ label: 'Przyjazd', value: v.arrival || '—' }, { label: 'Odjazd', value: v.departure || '—' }, { label: 'Łączny czas', value: totalTime || '—' }],
+    // Dojazd stoi przy godzinach, bo to ta sama informacja: koszt dotarcia.
+    [{ label: 'Przyjazd', value: v.arrival || '—' }, { label: 'Odjazd', value: v.departure || '—' }, { label: 'Łączny czas', value: totalTime || '—' }, { label: 'Dojazd', value: travelKmLabel(report) || '—' }],
     [{ label: 'Odbiór prac (kto odebrał)', value: report.receivedBy || '—', colspan: 3 }],
   ])
 
