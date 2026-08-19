@@ -51,6 +51,11 @@ const HOW_IT_WORKS = [
     body: 'Kliknij „+ Nowy raport" i wybierz typ. Wypełniaj sekcje po kolei — wszystko zapisuje się automatycznie (widzisz „Zapisano”). Możesz wyjść i wrócić: raport czeka w zakładce 🗂 Raporty na dolnym pasku.',
   },
   {
+    icon: '⌨',
+    title: 'Uruchomienie bez stopera (awaryjnie)',
+    body: 'Domyślnie sesję uruchomienia mierzy appka: START, zatrzymania na żywo, koniec sesji. Gdy się nie da — telefon padł, obserwację prowadziłeś na kartce — pod przyciskiem START jest mały kafelek „⌨ Wypełnij ręcznie". Wtedy godziny pracy maszyny i wszystkie zatrzymania wpisujesz z ręki, a raport dostaje adnotację „wypełniony ręcznie”. Godziny sesji możesz też poprawić w podsumowaniu każdego raportu.',
+  },
+  {
     icon: '📷',
     title: 'Zdjęcia i adnotacje',
     body: 'Dodaj zdjęcie aparatem telefonu. Tap w miniaturę otwiera edytor — narysuj strzałkę, kółko albo dopisz tekst, żeby wskazać problem. Adnotacje możesz później przesuwać, skalować i usuwać. W PDF zdjęcia trafiają jako miniaturki przy opisie, a pełne pliki w paczce ZIP.',

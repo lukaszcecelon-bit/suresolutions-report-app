@@ -249,6 +249,50 @@ test('eksport analityczny: XLSX z zakładkami + JSONL z wyliczonymi miarami (v0.
   expect(comm.dojazd_km).toBe('')
 })
 
+test('uruchomienie: powrót do zatrzymanej maszyny daje wznowienie + tryb ręczny (v1.0)', async ({ page }) => {
+  // Raport porzucony w trakcie ZATRZYMANIA — dokładnie stan z terenu: telefon
+  // przeładował PWA, inżynier wrócił do raportu i utknął na czerwonym ekranie
+  // bez przycisku wznowienia (modal siedział w nieutrwalonym stanie Reacta).
+  const stuck = {
+    id: 'r_stuck', type: 'commissioning', status: 'draft', schemaVersion: 4,
+    createdAt: '2026-08-18T05:00:00.000Z', updatedAt: '2026-08-18T05:00:00.000Z',
+    header: { reportNumber: 'URU-25-201-2026-08-18', projectNumber: '25-201', projectName: 'Linia', machineName: 'Wtryskarka', date: '2026-08-18', author: 'Jan' },
+    phase: 'stopped',
+    sessionStartAt: '2026-08-18T05:35:00.000Z', sessionEndAt: null,
+    activeStop: { startAt: '2026-08-18T10:45:00.000Z' },   // stary kształt: sama godzina
+    stops: [], observations: [], conclusions: [], generalMedia: [],
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, stuck)
+
+  await page.goto('/#/commissioning/r_stuck')
+
+  // Modal odtwarza się z danych raportu → maszynę da się wznowić.
+  const resume = page.getByRole('button', { name: /Zapisz i wznów/ })
+  await expect(resume).toBeVisible()
+  await resume.click()
+  await expect(page.getByText(/Log zatrzymań \(1\)/)).toBeVisible()
+
+  // --- tryb ręczny: kafelek w fazie 1 → godziny sesji wpisywane z ręki ---
+  // reload, bo sama zmiana hasha nie przemontowuje komponentu raportu (stan
+  // poprzedniego raportu zostałby w pamięci).
+  await page.goto('/#/commissioning')
+  await page.reload()
+  await page.getByRole('button', { name: /Wypełnij ręcznie/ }).click()
+  await page.getByRole('button', { name: 'Wypełniam ręcznie' }).click()
+
+  await page.locator('#sess-start').fill('08:00')
+  await page.locator('#sess-end').fill('16:30')
+  // Statystyka liczy się z wpisanych godzin (8 h 30 min pracy) — wartość jest
+  // i w kaflu podsumowania, i pod polami godzin, stąd .first().
+  await expect(page.getByText('08:30:00').first()).toBeVisible()
+
+  // …a zatrzymania dopisuje się ręcznie także w podsumowaniu.
+  await page.getByRole('button', { name: /Dodaj zatrzymanie ręcznie/ }).click()
+  await expect(page.getByText('Edytuj zatrzymanie')).toBeVisible()
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()

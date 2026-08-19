@@ -51,7 +51,9 @@ function buildPdf(ctx, report, photos, videos) {
 
   drawMetaTable(ctx, [
     [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
-    [{ label: 'Autor', value: h.author || '—' }, { label: 'Klient', value: reportClient(report) || '—' }, { label: 'Sesja', value: `${timeHHMM(report.sessionStartAt)} — ${timeHHMM(report.sessionEndAt)}` }],
+    // Przy raporcie z trybu ręcznego dopisujemy adnotację — czytelnik musi
+    // wiedzieć, że godziny wpisano z ręki, a nie zmierzono stoperem.
+    [{ label: 'Autor', value: h.author || '—' }, { label: 'Klient', value: reportClient(report) || '—' }, { label: 'Sesja', value: `${timeHHMM(report.sessionStartAt)} — ${timeHHMM(report.sessionEndAt)}${report.manual ? ' (wpisane ręcznie)' : ''}` }],
   ])
 
   drawSectionHeader(ctx, 'Podsumowanie statystyk')

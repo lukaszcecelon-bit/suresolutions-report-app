@@ -163,6 +163,9 @@ const FACT_COLUMNS = [
   { key: 'Części [szt.]',  id: 'czesci_szt',       width: 12, get: (r, m) => m.partsQty ?? '' },
   { key: 'Odbiór prac',    id: 'odbior_prac',      width: 18, get: (r) => (r.type === 'service' ? txt(r.receivedBy) : '') },
   // — uruchomienie —
+  // Godziny wpisane ręcznie vs zmierzone stoperem — bez tego nie da się
+  // odsiać sesji odtwarzanych z pamięci przy liczeniu dostępności czy MTBF.
+  { key: 'Wypełniony ręcznie', id: 'recznie',      width: 16, get: (r) => (r.type === 'commissioning' ? (r.manual ? 'tak' : 'nie') : '') },
   { key: 'Start sesji',    id: 'start_sesji',      width: 20, get: (r) => (r.type === 'commissioning' ? txt(r.sessionStartAt) : '') },
   { key: 'Koniec sesji',   id: 'koniec_sesji',     width: 20, get: (r) => (r.type === 'commissioning' ? txt(r.sessionEndAt) : '') },
   { key: 'Zatrzymania',    id: 'zatrzymania',      width: 12, get: (r, m) => m.stops ?? '' },

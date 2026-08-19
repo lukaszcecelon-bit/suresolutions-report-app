@@ -63,9 +63,15 @@ function defaultReport() {
       author: getDefaultAuthor(),   // domyślny autor z Ustawień
     },
     phase: 'setup', // setup | running | stopped | finished
+    manual: false,  // true = raport wypełniany ręcznie (tryb awaryjny, v1.0)
     sessionStartAt: null,
     sessionEndAt: null,
-    activeStop: null, // { startAt }
+    // Szkic trwającego zatrzymania — TRZYMANY W RAPORCIE, nie w stanie
+    // komponentu. Przedtem powód/komentarz/media siedziały w useState modala,
+    // więc powrót do raportu (przeładowanie PWA, wejście z listy) gubił modal i
+    // maszyny NIE DAŁO SIĘ wznowić — jedyny przycisk „Zapisz i wznów" był w tym
+    // modalu. { startAt, reason, customReason, comment, media }
+    activeStop: null,
     stops: [], // { id, startAt, endAt, durationMs, reason, customReason, comment, media: [] }
     observations: [], // lista rekordów {id, text, media} (jak obserwacje w serwisie)
     conclusions: [],  // lista rekordów {id, text, media} — wnioski/rekomendacje
@@ -133,36 +139,43 @@ export default function CommissioningReport({ navigate, reportId }) {
   }
 
   // ==== PHASE 2: STOPPAGE LOG (tworzenie nowego zatrzymania na żywo) ====
-  const [stopModal, setStopModal] = useState(null) // { reason, customReason, comment, media }
+  // Modal jest POCHODNĄ danych raportu (`phase === 'stopped' && activeStop`),
+  // a nie osobnym stanem — dzięki temu odtwarza się po każdym powrocie do
+  // raportu i nie da się utknąć na czerwonym ekranie bez przycisku wznowienia.
+  const activeStop = report.activeStop
+  const patchActiveStop = (patch) =>
+    setReport((r) => ({ ...r, activeStop: { ...r.activeStop, ...patch } }))
 
   const openStop = () => {
     setReport((r) => ({
       ...r,
       phase: 'stopped',
-      activeStop: { startAt: nowISO() },
+      activeStop: { startAt: nowISO(), reason: STOP_REASONS[0], customReason: '', comment: '', media: [] },
     }))
-    setStopModal({ reason: STOP_REASONS[0], customReason: '', comment: '', media: [] })
   }
 
   const cancelStop = () => {
     // user changed mind — discard active stop
     setReport((r) => ({ ...r, phase: 'running', activeStop: null }))
-    setStopModal(null)
   }
 
   const saveStopAndResume = () => {
-    const startAt = report.activeStop.startAt
+    const as = report.activeStop || {}
+    const startAt = as.startAt || nowISO()
     const endAt = nowISO()
-    const durationMs = new Date(endAt) - new Date(startAt)
+    const durationMs = Math.max(0, new Date(endAt) - new Date(startAt))
+    // `reason` z fallbackiem — zatrzymania rozpoczęte przed v1.0 miały w
+    // `activeStop` samą godzinę, bez pól szkicu.
+    const reason = as.reason || STOP_REASONS[0]
     const stop = {
       id: newId(),
       startAt,
       endAt,
       durationMs,
-      reason: stopModal.reason,
-      customReason: stopModal.reason === 'Inne' ? stopModal.customReason : '',
-      comment: stopModal.comment,
-      media: stopModal.media || [],
+      reason,
+      customReason: reason === 'Inne' ? (as.customReason || '') : '',
+      comment: as.comment || '',
+      media: as.media || [],
     }
     setReport((r) => ({
       ...r,
@@ -170,7 +183,34 @@ export default function CommissioningReport({ navigate, reportId }) {
       activeStop: null,
       stops: [...r.stops, stop],
     }))
-    setStopModal(null)
+  }
+
+  // ==== TRYB RĘCZNY (awaryjny) ====
+  // Wejście świadomie dyskretne: domyślną ścieżką ma zostać pomiar na żywo.
+  // Sesja ląduje od razu w podsumowaniu, gdzie godziny i zatrzymania wpisuje
+  // się z ręki (np. gdy telefon padł albo obserwację prowadzono na kartce).
+  const startManual = async () => {
+    if (!(await confirm(
+      'Godziny pracy maszyny i wszystkie zatrzymania wpiszesz ręcznie — bez pomiaru na żywo. ' +
+      'Raport zostanie oznaczony jako wypełniony ręcznie. Używaj tego tylko awaryjnie.',
+      { title: 'Tryb ręczny', confirmLabel: 'Wypełniam ręcznie' }
+    ))) return
+    setReport((r) => ({ ...r, manual: true, phase: 'finished' }))
+  }
+
+  // Godziny sesji wpisywane z ręki. Trzymamy pełne znaczniki ISO (jak przy
+  // pomiarze), więc PDF, statystyki i eksport liczą się tą samą ścieżką.
+  const setSessionTime = (which, hhmm) => {
+    if (!hhmm) return
+    setReport((r) => {
+      const base = which === 'start' ? r.sessionStartAt : r.sessionEndAt
+      let next = setTimeOnISO(base || `${r.header?.date || todayISO()}T00:00:00`, hhmm)
+      // Sesja przez północ: koniec wcześniejszy od startu = następna doba.
+      if (which === 'end' && r.sessionStartAt && new Date(next) <= new Date(r.sessionStartAt)) {
+        next = new Date(new Date(next).getTime() + 24 * 3600 * 1000).toISOString()
+      }
+      return which === 'start' ? { ...r, sessionStartAt: next } : { ...r, sessionEndAt: next }
+    })
   }
 
   // Ręczne dodanie zatrzymania — gdy inżynier zapomniał kliknąć „ZATRZYMANIE"
@@ -178,7 +218,10 @@ export default function CommissioningReport({ navigate, reportId }) {
   // gdzie koryguje godzinę, czas trwania i powód (reużycie całej maszynerii
   // edycji — zero nowego kodu formularza).
   const addManualStop = () => {
-    const startAt = nowISO()
+    // Punkt odniesienia = początek sesji, nie „teraz". Przy raporcie
+    // uzupełnianym po fakcie (tryb ręczny) „teraz" wsadziłoby zatrzymanie w
+    // dzisiejszą datę, a korekta w modalu zmienia tylko godzinę, nie dzień.
+    const startAt = report.sessionStartAt || nowISO()
     const stop = {
       id: newId(), startAt, endAt: startAt, durationMs: 0,
       reason: STOP_REASONS[0], customReason: '', comment: '', media: [],
@@ -323,6 +366,20 @@ export default function CommissioningReport({ navigate, reportId }) {
               <p className="text-sm text-amber-600 mt-3">Uzupełnij wszystkie pola nagłówka oznaczone *</p>
             )}
           </div>
+
+          {/* Wejście awaryjne — celowo małe i na końcu, żeby domyślną ścieżką
+              został pomiar na żywo. Potrzebne, gdy telefon padł w trakcie sesji
+              albo obserwację prowadzono na kartce. */}
+          <button
+            type="button"
+            onClick={startManual}
+            className="w-full text-left px-4 py-3 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition"
+          >
+            <span className="text-sm font-medium">⌨ Wypełnij ręcznie (tryb awaryjny)</span>
+            <span className="block text-xs mt-0.5">
+              Bez pomiaru na żywo — godziny pracy i zatrzymania wpisujesz z ręki.
+            </span>
+          </button>
         </>
       )}
 
@@ -390,14 +447,15 @@ export default function CommissioningReport({ navigate, reportId }) {
             </button>
           )}
 
-          {/* Stop modal (nowe zatrzymanie na żywo) */}
-          {stopModal && (
+          {/* Stop modal (nowe zatrzymanie na żywo) — sterowany danymi raportu,
+              więc wraca po każdym ponownym otwarciu raportu. */}
+          {report.phase === 'stopped' && activeStop && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-4 overflow-y-auto">
               <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-md p-5 space-y-4 my-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
                 <div>
                   <h3 className="text-lg font-bold dark:text-gray-100">Zatrzymanie maszyny</h3>
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Godzina: <span className="font-mono">{timeHHMM(report.activeStop.startAt)}</span>
+                    Godzina: <span className="font-mono">{timeHHMM(activeStop.startAt)}</span>
                     {' · Trwa: '}
                     <span className="font-mono">{formatDurationShort(activeStopMs)}</span>
                   </p>
@@ -406,36 +464,36 @@ export default function CommissioningReport({ navigate, reportId }) {
                   <label className="field-label">Powód zatrzymania</label>
                   <select
                     className="field-input"
-                    value={stopModal.reason}
-                    onChange={(e) => setStopModal({ ...stopModal, reason: e.target.value })}
+                    value={activeStop.reason || STOP_REASONS[0]}
+                    onChange={(e) => patchActiveStop({ reason: e.target.value })}
                   >
                     {STOP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
-                {stopModal.reason === 'Inne' && (
+                {activeStop.reason === 'Inne' && (
                   <div>
                     <label className="field-label">Opisz powód</label>
                     <input
                       type="text"
                       className="field-input"
-                      value={stopModal.customReason}
-                      onChange={(e) => setStopModal({ ...stopModal, customReason: e.target.value })}
+                      value={activeStop.customReason || ''}
+                      onChange={(e) => patchActiveStop({ customReason: e.target.value })}
                     />
                   </div>
                 )}
                 <div>
                   <label className="field-label">Komentarz</label>
                   <MicTextarea
-                    value={stopModal.comment}
-                    onChange={(e) => setStopModal({ ...stopModal, comment: e.target.value })}
+                    value={activeStop.comment || ''}
+                    onChange={(e) => patchActiveStop({ comment: e.target.value })}
                     placeholder="Krótki opis sytuacji…"
                   />
                 </div>
                 <div>
                   <label className="field-label">Dokumentacja foto / wideo</label>
                   <MediaUploader
-                    media={stopModal.media}
-                    onChange={(m) => setStopModal({ ...stopModal, media: m })}
+                    media={activeStop.media || []}
+                    onChange={(m) => patchActiveStop({ media: m })}
                   />
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -456,7 +514,14 @@ export default function CommissioningReport({ navigate, reportId }) {
       {report.phase === 'finished' && (
         <>
           <div className="card bg-sure-dark text-white">
-            <h3 className="text-lg font-semibold mb-4">Podsumowanie sesji</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              Podsumowanie sesji
+              {report.manual && (
+                <span className="ml-2 align-middle text-xs font-normal bg-white/15 rounded-full px-2 py-0.5">
+                  wypełniony ręcznie
+                </span>
+              )}
+            </h3>
             <div className="grid grid-cols-2 gap-4">
               <Stat label="Całkowity czas pracy" value={formatDuration(stats.totalRunMs)} mono />
               <Stat label="Liczba zatrzymań" value={String(stats.stopCount)} />
@@ -465,14 +530,60 @@ export default function CommissioningReport({ navigate, reportId }) {
             </div>
           </div>
 
+          {/* Godziny sesji do wpisania/korekty. Dostępne także dla sesji
+              mierzonych na żywo — po awarii telefonu koniec sesji bywa zapisany
+              w złym momencie i musi dać się poprawić. */}
+          <div className="card">
+            <h3 className="section-title">Czas pracy maszyny</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="field-label" htmlFor="sess-start">Rozpoczęcie</label>
+                <input id="sess-start" type="time" className="field-input"
+                  value={report.sessionStartAt ? timeHHMM(report.sessionStartAt) : ''}
+                  onChange={(e) => setSessionTime('start', e.target.value)} />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="sess-end">Zakończenie</label>
+                <input id="sess-end" type="time" className="field-input"
+                  value={report.sessionEndAt ? timeHHMM(report.sessionEndAt) : ''}
+                  onChange={(e) => setSessionTime('end', e.target.value)} />
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+              {report.sessionStartAt && report.sessionEndAt ? (
+                <>Czas pracy: <strong className="text-sure-dark dark:text-gray-100">{formatDuration(stats.totalRunMs)}</strong></>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">
+                  Podaj obie godziny — bez nich raport nie ma czasu pracy maszyny.
+                </span>
+              )}
+              <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Data z nagłówka: {report.header?.date || '—'}. Koniec wcześniejszy niż start = sesja przez północ.
+              </span>
+            </p>
+          </div>
+
           <Header header={report.header} onChange={updateHeader} reportType="commissioning" showClient />
 
-          {report.stops.length > 0 && (
-            <div className="card">
-              <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
+          {/* Log zatrzymań pokazywany zawsze — w podsumowaniu trzeba móc dopisać
+              zatrzymanie, którego nie zalogowano na żywo (albo całą listę, gdy
+              raport powstaje w trybie ręcznym). */}
+          <div className="card">
+            <h3 className="section-title">Log zatrzymań ({report.stops.length})</h3>
+            {report.stops.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 italic">
+                Brak zatrzymań — maszyna pracowała bez przestojów.
+              </p>
+            ) : (
               <StopsTable stops={report.stops} onEdit={setEditStopId} />
-            </div>
-          )}
+            )}
+            <button
+              onClick={addManualStop}
+              className="btn-sm w-full mt-3 bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+            >
+              + Dodaj zatrzymanie ręcznie
+            </button>
+          </div>
 
           <NotesSection report={report} setReport={setReport} confirm={confirm} />
 
@@ -487,7 +598,9 @@ export default function CommissioningReport({ navigate, reportId }) {
             />
           </div>
 
-          <ReportActionBar page={page} status={report.status} navigate={navigate} showFinish={false} />
+          {/* Raport ręczny nie ma „zakończenia sesji", które w trybie live
+              ustawia status — dlatego tylko tu pokazujemy „Oznacz ukończony". */}
+          <ReportActionBar page={page} status={report.status} navigate={navigate} showFinish={!!report.manual} />
         </>
       )}
 

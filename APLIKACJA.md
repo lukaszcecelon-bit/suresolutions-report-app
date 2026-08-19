@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v0.53**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.0**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -177,9 +177,48 @@ projektowa (wnioski/rekomendacje dla konstrukcji).
   na żywo (auto-zapis), spójnie z resztą apki (`StopsTable` + modal edycji).
 - **Ręczne dodanie zatrzymania** (v0.49) — „+ Dodaj zatrzymanie ręcznie" tworzy
   rekord i otwiera modal korekty czasu/powodu (gdy inżynier zapomni kliknąć na
-  żywo).
+  żywo). Od v1.0 dostępne także w podsumowaniu, a punktem odniesienia jest
+  **początek sesji**, nie „teraz" — inaczej raport uzupełniany po fakcie dostawał
+  zatrzymania z dzisiejszą datą (modal koryguje godzinę, nie dzień).
 - **Wake Lock** (v0.48, `useWakeLock`) — w fazach `running`/`stopped` ekran nie
   gaśnie podczas obserwacji maszyny z live-timerem.
+
+#### Szkic zatrzymania mieszka w raporcie (v1.0 — fix pułapki)
+Powód, komentarz i media trwającego zatrzymania trzymane są w
+`report.activeStop`, a modal jest **pochodną danych**
+(`phase === 'stopped' && activeStop`), nie osobnym stanem komponentu.
+
+Przedtem szkic siedział w `useState` modala, a jedyny przycisk „Zapisz i wznów
+maszynę" był w środku tego modala. Każdy powrót do raportu w fazie `stopped` —
+przeładowanie PWA przez iOS, aktualizacja apki, zwykłe wejście w raport z listy
+— montował komponent bez modala i **maszyny nie dało się wznowić**: faza
+`stopped` nie renderuje ani „ZATRZYMANIE MASZYNY", ani „ZAKOŃCZ SESJĘ", ani
+dodawania zatrzymań. Zostawał czerwony ekran z rosnącym licznikiem. Zgłoszone
+z terenu (sesja stała 5 h 50 min, zatrzymanie 39 min). Teraz modal odtwarza się
+z danych, a wraz z nim wpisany wcześniej powód i komentarz. Zatrzymania
+rozpoczęte przed v1.0 mają w `activeStop` samą godzinę — powód wpada wtedy na
+pierwszy ze słownika (fallback), więc stare, zablokowane raporty też się
+odblokowują.
+
+#### Tryb ręczny (awaryjny, v1.0)
+`report.manual === true`. Wejście: **dyskretny kafelek pod przyciskiem START**
+w fazie 1 („⌨ Wypełnij ręcznie (tryb awaryjny)") — celowo mały i na końcu, żeby
+domyślną ścieżką został pomiar na żywo; potwierdzenie tłumaczy konsekwencje.
+Raport przechodzi od razu do podsumowania, gdzie:
+- **godziny sesji wpisuje się z ręki** (pola „Rozpoczęcie"/„Zakończenie" +
+  wyliczony czas pracy); zapisywane są jako pełne znaczniki ISO na dacie z
+  nagłówka, więc statystyki, PDF i eksport liczą się tą samą ścieżką co przy
+  pomiarze. Koniec wcześniejszy od startu = sesja przez północ (+24 h),
+- **zatrzymania dodaje się ręcznie** (log widoczny nawet gdy pusty),
+- pasek akcji dostaje „✓ Oznacz ukończony" (w trybie live status ustawia
+  zakończenie sesji, którego tu nie ma).
+
+Karta godzin jest widoczna **w każdym podsumowaniu**, nie tylko w trybie ręcznym
+— po awarii telefonu koniec sesji bywa zapisany w złym momencie i musi dać się
+poprawić. Znacznik „wypełniony ręcznie" pojawia się w podsumowaniu, w PDF (przy
+godzinach sesji) i jako kolumna `Wypełniony ręcznie` / `recznie` w eksporcie
+analitycznym — bez tego nie dałoby się odsiać sesji odtwarzanych z pamięci przy
+liczeniu dostępności czy MTBF.
 
 ### Specyfika raportu serwisowego (service)
 - **„⏱ Teraz"** przy godzinie przyjazdu i odjazdu — jedno tapnięcie wstawia
@@ -542,11 +581,12 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 6 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 7 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
   MTTR, sumy sztuk, kilometry jako liczba, migracja klienta v3→v4, „puste ≠ 0");
+  **uruchomienie: wznowienie maszyny po powrocie do raportu + tryb ręczny**;
   podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
@@ -567,7 +607,17 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v0.53.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.0.** Skrót ostatnich zmian:
+- **v1.0** — **tryb ręczny raportu uruchomienia + koniec pułapki „maszyna
+  zatrzymana"**. (1) Szkic trwającego zatrzymania przeniesiony z `useState`
+  modala do `report.activeStop`, a modal stał się pochodną danych — powrót do
+  raportu w fazie `stopped` odtwarza przycisk „Zapisz i wznów maszynę" (zgłoszone
+  z terenu: raport bez możliwości wznowienia maszyny). (2) **Tryb ręczny**
+  (`manual`) — dyskretny kafelek pod przyciskiem START: godziny sesji i
+  zatrzymania wpisywane z ręki, znacznik „wypełniony ręcznie" w podsumowaniu, PDF
+  i eksporcie. (3) Karta godzin sesji w każdym podsumowaniu (korekta po awarii),
+  ręczne zatrzymania także po zakończeniu sesji i liczone od początku sesji, nie
+  od „teraz". Nowy smoke test odtwarza oba scenariusze. Szczegóły w §5.
 - **v0.53** — **kilometry dojazdu w raporcie serwisowym** (`visit.travelKm`):
   pole liczbowe (nie suwak — wartość rozliczeniowa musi być dokładna co do
   kilometra), a wygodę robią chipy z historii per klient (`suggestTravelKm`).
@@ -715,6 +765,11 @@ eksport analityczny stempluje nim pliki.
   podgląd/eksport rejestru pokaże błąd; sama praca nad raportami działa offline.
 - **Duże raporty** — wiele zdjęć w załączniku zwiększa rozmiar PDF (kompromis:
   samowystarczalny plik vs waga).
+- **Przejście między dwoma raportami samą zmianą hasha** (`#/typ/id1` → `#/typ/id2`
+  wpisane w pasku adresu) nie przemontowuje komponentu, więc zostaje stan
+  poprzedniego raportu. Z poziomu UI nie da się tego zrobić — do innego raportu
+  wchodzi się przez listę, która najpierw odmontowuje stronę — ale w testach
+  wymaga to `page.reload()`. Docelowo `key={reportId}` na stronach raportów.
 - **Dane lokalne** — wyczyszczenie danych przeglądarki = utrata raportów.
   Do przenoszenia/backupu służy paczka `.suresync`. iOS Safari potrafi czyścić
   IndexedDB po ~7 dniach nieużywania, chyba że PWA jest dodana do ekranu głównego.
