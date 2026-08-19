@@ -17,6 +17,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Bez limitu zawieszony krok blokuje publikację godzinami: 2026-08-19
+    # `playwright install` stał 3,5 h bez postępu i deploy v1.0 nie wyszedł,
+    # a nikt tego nie widział. Lepiej szybka porażka niż cicha cisza.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -27,8 +31,14 @@ jobs:
       - run: npm run build
       # Smoke test E2E przeciwko zbudowanej apce (vite preview) — łapie
       # regresje storage/routingu/generowania PDF PRZED publikacją.
-      - run: npx playwright install --with-deps chromium
+      # BEZ `--with-deps`: ten wariant odpala apt-get i to on się zawieszał.
+      # Obraz ubuntu-latest ma biblioteki systemowe Chromium na pokładzie, więc
+      # pobieramy samą przeglądarkę. Gdyby zaczęło brakować bibliotek, test
+      # padnie od razu z jasnym błędem — wtedy wraca `--with-deps`.
+      - run: npx playwright install chromium
+        timeout-minutes: 5
       - run: npm run test:e2e
+        timeout-minutes: 6
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
