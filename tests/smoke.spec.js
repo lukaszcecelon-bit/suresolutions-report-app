@@ -282,15 +282,46 @@ test('uruchomienie: powrót do zatrzymanej maszyny daje wznowienie + tryb ręczn
   await page.getByRole('button', { name: /Wypełnij ręcznie/ }).click()
   await page.getByRole('button', { name: 'Wypełniam ręcznie' }).click()
 
+  await page.locator('#sess-date').fill('2026-08-20')
   await page.locator('#sess-start').fill('08:00')
   await page.locator('#sess-end').fill('16:30')
   // Statystyka liczy się z wpisanych godzin (8 h 30 min pracy) — wartość jest
   // i w kaflu podsumowania, i pod polami godzin, stąd .first().
   await expect(page.getByText('08:30:00').first()).toBeVisible()
 
+  // Godzina wcześniejsza od startu NIE dosuwa doby (v1.1) — ostrzega.
+  await page.locator('#sess-end').fill('07:00')
+  await expect(page.getByText(/Zakończenie jest wcześniejsze/)).toBeVisible()
+  await page.locator('#sess-end').fill('16:30')
+
   // …a zatrzymania dopisuje się ręcznie także w podsumowaniu.
   await page.getByRole('button', { name: /Dodaj zatrzymanie ręcznie/ }).click()
   await expect(page.getByText('Edytuj zatrzymanie')).toBeVisible()
+})
+
+test('uruchomienie ręczne: jeden dzień — koniec sesji nie ucieka o dobę (v1.1)', async ({ page }) => {
+  // Raport zapisany przez v1.0 z koniecem sesji dosuniętym o dobę: 07:25 →
+  // 14:50 następnego dnia dawało „31:25:00" zamiast „07:25:00" (zgłoszone ze
+  // zrzutu ekranu). Otwarcie raportu ma to naprawić samo.
+  const drifted = {
+    id: 'r_drift', type: 'commissioning', status: 'draft', schemaVersion: 4,
+    createdAt: '2026-08-20T05:00:00.000Z', updatedAt: '2026-08-20T05:00:00.000Z',
+    header: { reportNumber: 'URU-25-201-2026-08-20', projectNumber: '25-201', projectName: 'Linia', machineName: 'Wtryskarka', date: '2026-08-20', author: 'Jan' },
+    phase: 'finished', manual: true,
+    sessionStartAt: new Date('2026-08-20T07:25:00').toISOString(),
+    sessionEndAt: new Date('2026-08-21T14:50:00').toISOString(),   // ← doba w plecy
+    activeStop: null, stops: [], observations: [], conclusions: [], generalMedia: [],
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, drifted)
+
+  await page.goto('/#/commissioning/r_drift')
+
+  await expect(page.getByText('07:25:00').first()).toBeVisible()
+  await expect(page.getByText('31:25:00')).toHaveCount(0)
+  // Data jest widoczna i edytowalna — bez niej rozjazdu nie dało się zauważyć.
+  await expect(page.locator('#sess-date')).toHaveValue('2026-08-20')
 })
 
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {

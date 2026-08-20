@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.0**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.1**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -205,13 +205,29 @@ odblokowują.
 w fazie 1 („⌨ Wypełnij ręcznie (tryb awaryjny)") — celowo mały i na końcu, żeby
 domyślną ścieżką został pomiar na żywo; potwierdzenie tłumaczy konsekwencje.
 Raport przechodzi od razu do podsumowania, gdzie:
-- **godziny sesji wpisuje się z ręki** (pola „Rozpoczęcie"/„Zakończenie" +
-  wyliczony czas pracy); zapisywane są jako pełne znaczniki ISO na dacie z
-  nagłówka, więc statystyki, PDF i eksport liczą się tą samą ścieżką co przy
-  pomiarze. Koniec wcześniejszy od startu = sesja przez północ (+24 h),
+- **datę i godziny sesji wpisuje się z ręki** (pola „Data" / „Rozpoczęcie" /
+  „Zakończenie" + wyliczony czas pracy); zapisywane są jako pełne znaczniki ISO,
+  więc statystyki, PDF i eksport liczą się tą samą ścieżką co przy pomiarze,
 - **zatrzymania dodaje się ręcznie** (log widoczny nawet gdy pusty),
 - pasek akcji dostaje „✓ Oznacz ukończony" (w trybie live status ustawia
   zakończenie sesji, którego tu nie ma).
+
+**Jeden dzień, jawna data (v1.1).** Cała sesja — godziny i wszystkie
+zatrzymania — mieści się w dniu z pola „Data" (to samo pole co data raportu w
+nagłówku, więc zmiana przelicza też numer raportu). Zmiana daty **przenosi
+wszystkie wpisy** z zachowaniem godzin. Dzień nigdy nie dziedziczy się po
+poprzedniej wartości pola: `isoOnDate(data, HH:MM)` zawsze bierze dzień z pola.
+
+To był realny błąd v1.0. Poprzednia wersja dosuwała koniec sesji o dobę, gdy
+wypadł przed startem („sesja przez północ"), a pole `type="time"` przechodzi w
+trakcie pisania przez stany pośrednie — wpisując „14:50" mijasz „01:50", które
+jest przed startem 07:25. Koniec lądował na kolejnym dniu, kolejna edycja
+trzymała się już tego dnia i **czas pracy pokazywał 31:25:00 zamiast 07:25:00**;
+bez widocznej daty nie było tego jak zauważyć ani poprawić (zgłoszone ze zrzutu
+ekranu). Teraz koniec wcześniejszy od startu daje **ostrzeżenie**, nie cichą
+korektę. Raporty ręczne zapisane przez v1.0 **naprawiają się przy otwarciu** —
+`useEffect` sprowadza znaczniki na datę z nagłówka; sesje mierzone na żywo
+zostają nietknięte, bo tam przełom doby jest prawdziwy.
 
 Karta godzin jest widoczna **w każdym podsumowaniu**, nie tylko w trybie ręcznym
 — po awarii telefonu koniec sesji bywa zapisany w złym momencie i musi dać się
@@ -581,12 +597,13 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 7 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 8 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
   MTTR, sumy sztuk, kilometry jako liczba, migracja klienta v3→v4, „puste ≠ 0");
   **uruchomienie: wznowienie maszyny po powrocie do raportu + tryb ręczny**;
+  **tryb ręczny trzyma sesję w jednym dniu** (koniec nie ucieka o dobę);
   podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
@@ -607,7 +624,15 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.0.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.1.** Skrót ostatnich zmian:
+- **v1.1** — **fix przeliczania czasu w trybie ręcznym + jawna data sesji**.
+  Ręczne godziny mogły wskazać czas pracy o dobę za długi (31:25:00 zamiast
+  07:25:00), bo koniec wcześniejszy od startu był po cichu przesuwany na kolejny
+  dzień, a pole czasu przechodzi przez stany pośrednie w trakcie pisania. Teraz:
+  pole **Data** w karcie godzin (zmiana przenosi całą sesję razem z
+  zatrzymaniami), dzień zawsze z pola (nigdy dziedziczony), koniec przed startem
+  = ostrzeżenie zamiast korekty, a raporty ręczne z v1.0 naprawiają się przy
+  otwarciu. Szczegóły w §5.
 - **v1.0** — **tryb ręczny raportu uruchomienia + koniec pułapki „maszyna
   zatrzymana"**. (1) Szkic trwającego zatrzymania przeniesiony z `useState`
   modala do `report.activeStop`, a modal stał się pochodną danych — powrót do

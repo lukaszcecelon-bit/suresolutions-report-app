@@ -29,6 +29,22 @@ function setTimeOnISO(iso, hhmm) {
   return d.toISOString()
 }
 
+// Znacznik dla KONKRETNEJ daty (YYYY-MM-DD) i godziny (HH:MM). Inaczej niż
+// setTimeOnISO nie dziedziczy dnia po poprzedniej wartości — dzień bierze się
+// zawsze z pola daty, więc godzin nie da się „przesunąć" na inną dobę.
+function isoOnDate(dateISO, hhmm) {
+  const [hh, mm] = (hhmm || '00:00').split(':').map((n) => parseInt(n, 10) || 0)
+  const d = new Date(`${dateISO || todayISO()}T00:00:00`)
+  d.setHours(hh, mm, 0, 0)
+  return d.toISOString()
+}
+
+// Dzień znacznika w czasie LOKALNYM (nie UTC) — do porównania z polem daty.
+function localDateOf(iso) {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function formatDuration(ms) {
   if (ms < 0) ms = 0
   const totalSec = Math.floor(ms / 1000)
@@ -99,6 +115,25 @@ export default function CommissioningReport({ navigate, reportId }) {
   // Ekran nie gaśnie podczas trwającej sesji (running/stopped) — inżynier
   // obserwuje maszynę i live-timer, nie dotykając telefonu.
   useWakeLock(report.phase === 'running' || report.phase === 'stopped')
+
+  // Samo-naprawa raportów ręcznych zapisanych przez v1.0: tamta wersja mogła
+  // dosunąć koniec sesji o dobę (patrz komentarz przy setSessionTime), co dawało
+  // czasy pracy w rodzaju 31:25:00. Raport ręczny trwa jeden dzień, więc
+  // sprowadzamy znaczniki na datę z nagłówka — bez ruszania sesji mierzonych na
+  // żywo, gdzie przełom doby jest prawdziwy.
+  useEffect(() => {
+    if (!report.manual) return
+    const date = report.header?.date
+    if (!date) return
+    const drifted = [report.sessionStartAt, report.sessionEndAt]
+      .some((iso) => iso && localDateOf(iso) !== date)
+    if (!drifted) return
+    setReport((r) => ({
+      ...r,
+      sessionStartAt: r.sessionStartAt ? isoOnDate(date, timeHHMM(r.sessionStartAt)) : r.sessionStartAt,
+      sessionEndAt: r.sessionEndAt ? isoOnDate(date, timeHHMM(r.sessionEndAt)) : r.sessionEndAt,
+    }))
+  }, [report.manual, report.header?.date, report.sessionStartAt, report.sessionEndAt])
 
   const [attemptedStart, setAttemptedStart] = useState(false)
 
@@ -200,16 +235,44 @@ export default function CommissioningReport({ navigate, reportId }) {
 
   // Godziny sesji wpisywane z ręki. Trzymamy pełne znaczniki ISO (jak przy
   // pomiarze), więc PDF, statystyki i eksport liczą się tą samą ścieżką.
+  //
+  // ZASADA: cała sesja mieszka w JEDNYM dniu — tym z pola daty. Dzień nigdy nie
+  // dziedziczy się po poprzedniej wartości pola. Wcześniejsza wersja dosuwała
+  // koniec o dobę, gdy wypadł przed startem („sesja przez północ"), a pole
+  // czasu przechodzi w trakcie pisania przez stany pośrednie: wpisując „14:50"
+  // mijasz „01:50", które jest przed startem. Efekt: koniec lądował na kolejnym
+  // dniu i czas pracy wychodził 31:25:00 zamiast 07:25:00 — bez widocznej daty
+  // nie było tego jak zauważyć ani poprawić.
   const setSessionTime = (which, hhmm) => {
     if (!hhmm) return
     setReport((r) => {
-      const base = which === 'start' ? r.sessionStartAt : r.sessionEndAt
-      let next = setTimeOnISO(base || `${r.header?.date || todayISO()}T00:00:00`, hhmm)
-      // Sesja przez północ: koniec wcześniejszy od startu = następna doba.
-      if (which === 'end' && r.sessionStartAt && new Date(next) <= new Date(r.sessionStartAt)) {
-        next = new Date(new Date(next).getTime() + 24 * 3600 * 1000).toISOString()
-      }
+      const next = isoOnDate(r.header?.date, hhmm)
       return which === 'start' ? { ...r, sessionStartAt: next } : { ...r, sessionEndAt: next }
+    })
+  }
+
+  // Zmiana daty przenosi CAŁĄ sesję: godziny sesji i wszystkie zatrzymania
+  // (zakładamy jeden dzień, więc rozjazd dat nie ma prawa powstać). Data to
+  // to samo pole co w nagłówku, dlatego numer raportu przelicza się jak przy
+  // edycji nagłówka.
+  const setSessionDate = (dateISO) => {
+    if (!dateISO) return
+    setReport((r) => {
+      const move = (iso) => (iso ? isoOnDate(dateISO, timeHHMM(iso)) : iso)
+      return {
+        ...r,
+        header: {
+          ...r.header,
+          date: dateISO,
+          reportNumber: computeReportNumber('URU', r.header?.projectNumber, dateISO, r.header?.reportNumber),
+        },
+        sessionStartAt: move(r.sessionStartAt),
+        sessionEndAt: move(r.sessionEndAt),
+        stops: (r.stops || []).map((s) => {
+          const startAt = move(s.startAt)
+          return { ...s, startAt, endAt: new Date(new Date(startAt).getTime() + (s.durationMs || 0)).toISOString() }
+        }),
+      }
     })
   }
 
@@ -535,14 +598,23 @@ export default function CommissioningReport({ navigate, reportId }) {
               w złym momencie i musi dać się poprawić. */}
           <div className="card">
             <h3 className="section-title">Czas pracy maszyny</h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Data JAWNIE w formularzu — bez niej rozjazd dnia był
+                  niewidoczny i nie do poprawienia. To ta sama data co w
+                  nagłówku raportu. */}
+              <div className="min-w-0">
+                <label className="field-label" htmlFor="sess-date">Data</label>
+                <input id="sess-date" type="date" className="field-input"
+                  value={report.header?.date || ''}
+                  onChange={(e) => setSessionDate(e.target.value)} />
+              </div>
+              <div className="min-w-0">
                 <label className="field-label" htmlFor="sess-start">Rozpoczęcie</label>
                 <input id="sess-start" type="time" className="field-input"
                   value={report.sessionStartAt ? timeHHMM(report.sessionStartAt) : ''}
                   onChange={(e) => setSessionTime('start', e.target.value)} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label className="field-label" htmlFor="sess-end">Zakończenie</label>
                 <input id="sess-end" type="time" className="field-input"
                   value={report.sessionEndAt ? timeHHMM(report.sessionEndAt) : ''}
@@ -550,15 +622,20 @@ export default function CommissioningReport({ navigate, reportId }) {
               </div>
             </div>
             <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-              {report.sessionStartAt && report.sessionEndAt ? (
-                <>Czas pracy: <strong className="text-sure-dark dark:text-gray-100">{formatDuration(stats.totalRunMs)}</strong></>
-              ) : (
+              {!report.sessionStartAt || !report.sessionEndAt ? (
                 <span className="text-amber-600 dark:text-amber-400">
                   Podaj obie godziny — bez nich raport nie ma czasu pracy maszyny.
                 </span>
+              ) : stats.totalRunMs <= 0 ? (
+                <span className="text-amber-600 dark:text-amber-400">
+                  Zakończenie jest wcześniejsze niż rozpoczęcie — popraw godziny.
+                </span>
+              ) : (
+                <>Czas pracy: <strong className="text-sure-dark dark:text-gray-100">{formatDuration(stats.totalRunMs)}</strong></>
               )}
               <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Data z nagłówka: {report.header?.date || '—'}. Koniec wcześniejszy niż start = sesja przez północ.
+                Cała sesja (godziny i zatrzymania) mieści się w tym jednym dniu.
+                Zmiana daty przenosi wszystkie wpisy.
               </span>
             </p>
           </div>
