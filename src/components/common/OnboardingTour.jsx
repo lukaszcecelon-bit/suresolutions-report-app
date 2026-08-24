@@ -20,7 +20,7 @@ const STEPS = [
   {
     icon: '📋',
     title: 'Sześć typów w dwóch strefach',
-    body: 'Kliknij „+ Nowy raport" — typy są podzielone na 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie) i 🔒 Wewnętrzne (prototyp, lekcja projektowa, reklamacja). Pełna lista raportów czeka w zakładce 🗂 Raporty na dolnym pasku.',
+    body: 'Kliknij „+ Nowy raport" — typy są podzielone na 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie) i 🔒 Wewnętrzne (prototyp, ticket z montażu, reklamacja). Pełna lista raportów czeka w zakładce 🗂 Raporty na dolnym pasku.',
   },
   {
     icon: '📷',

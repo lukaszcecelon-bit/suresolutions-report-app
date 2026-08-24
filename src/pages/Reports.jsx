@@ -5,7 +5,7 @@ import { buildLessonRegisterXlsx } from '../utils/registerExport.js'
 import { buildAnalyticsXlsx, buildAnalyticsJsonl } from '../utils/analyticsExport.js'
 import { LESSON_SEVERITIES } from '../utils/settings.js'
 import { TYPE_LABELS, TYPE_ICONS, typeCategory, CATEGORY_ACCENT } from '../utils/reportMeta.js'
-import { reportClient, reportLocation } from '../utils/reportFields.js'
+import { reportClient, reportLocation, isBlankReport } from '../utils/reportFields.js'
 import { exportAllReportsPackage, shareOrDownload, shareFileOrDownload, downloadBlob, canShareFiles, backupAllReports } from '../utils/syncPackage.js'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import PackageImportDialog from '../components/common/PackageImportDialog.jsx'
@@ -22,7 +22,7 @@ const TYPE_FILTER_ITEMS = [
   { key: 'service',       label: '🔧 Serwis' },
   { key: 'satfat',        label: '📋 SAT/FAT' },
   { key: 'prototype',     label: '🧪 Prototyp' },
-  { key: 'lesson',        label: '🎓 Lekcja' },
+  { key: 'lesson',        label: '🎓 Ticket' },
   { key: 'complaint',     label: '🚩 Reklamacja' },
 ]
 
@@ -83,6 +83,7 @@ function getSearchableText(r) {
     for (const pp of (r.participants?.vendor || [])) { push(pp.name); push(pp.role) }
   } else if (r.type === 'lesson') {
     push(r.stage); push(r.category); push(r.drawingNo); push(r.problem); push(r.impact)
+    for (const p of (r.partNos || [])) push(p.no)   // ticket po numerze części (v1.3)
     pushList(r.lessons)       // wnioski (lista rekordów)
   }
   return normalize(parts.join(' '))
@@ -174,14 +175,33 @@ export default function Reports({ navigate }) {
     setXlsxBusy(true)
     try {
       const { blob, filename, count } = await buildLessonRegisterXlsx(subset || reports)
-      await shareOrDownload(blob, filename, `Rejestr lekcji projektowych (${count})`)
-      toast.success(`Rejestr gotowy — ${count} ${count === 1 ? 'lekcja' : count < 5 ? 'lekcje' : 'lekcji'}`)
+      await shareOrDownload(blob, filename, `Rejestr ticketów z montażu (${count})`)
+      toast.success(`Rejestr gotowy — ${count} ${count === 1 ? 'ticket' : count < 5 ? 'tickety' : 'ticketów'}`)
     } catch (e) {
-      if (e.code === 'EMPTY') toast.info(subset ? 'Wśród zaznaczonych nie ma lekcji projektowych' : 'Brak lekcji projektowych do eksportu')
+      if (e.code === 'EMPTY') toast.info(subset ? 'Wśród zaznaczonych nie ma ticketów' : 'Brak ticketów do eksportu')
       else toast.error('Błąd eksportu: ' + (e.message || e))
     } finally {
       setXlsxBusy(false)
     }
+  }
+
+  // Puste szkice — raporty bez ani jednej wpisanej wartości. Od v1.2 nowe już
+  // nie powstają, ale w bazie mogły zostać te z wcześniejszych wersji.
+  const blankDrafts = useMemo(
+    () => reports.filter((r) => r.status !== 'completed' && isBlankReport(r)),
+    [reports],
+  )
+
+  const handleCleanBlankDrafts = async () => {
+    const n = blankDrafts.length
+    if (!n) return
+    if (!(await confirm(
+      `Usunąć ${n} ${n === 1 ? 'pusty szkic' : 'puste szkice'}? To raporty bez żadnej wpisanej treści.`,
+      { title: 'Puste szkice', confirmLabel: 'Usuń', variant: 'danger' },
+    ))) return
+    blankDrafts.forEach((r) => remove(r.id))
+    refresh()
+    toast.success(`Usunięto ${n} ${n === 1 ? 'szkic' : 'szkice'}`)
   }
 
   // Eksport ANALITYCZNY — cała baza w płaskich tabelach (fakty + zatrzymania +
@@ -460,7 +480,7 @@ export default function Reports({ navigate }) {
                       className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40"
                       onClick={() => { setToolsOpen(false); handleExportRegister() }}
                     >
-                      {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr lekcji → Excel'}
+                      {xlsxBusy ? '⏳ Tworzenie arkusza…' : '📊 Rejestr ticketów → Excel'}
                     </button>
                   )}
                   {reports.length > 0 && (
@@ -485,6 +505,21 @@ export default function Reports({ navigate }) {
                         title="Plik dla Power BI / Pythona — jedna linia = jeden raport"
                       >
                         {analyticsBusy === 'jsonl' ? '⏳ Liczenie…' : '🧾 Eksport analityczny → JSONL'}
+                      </button>
+                    </>
+                  )}
+                  {/* Jednorazowe sprzątanie po pustych szkicach, które osiadły w
+                      bazie przed v1.2 (wystarczyło jedno przypadkowe tapnięcie). */}
+                  {blankDrafts.length > 0 && (
+                    <>
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      <button
+                        role="menuitem"
+                        className="w-full text-left px-3 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => { setToolsOpen(false); handleCleanBlankDrafts() }}
+                        title="Szkice bez żadnej wpisanej treści"
+                      >
+                        🧹 Usuń puste szkice ({blankDrafts.length})
                       </button>
                     </>
                   )}
@@ -824,7 +859,7 @@ export default function Reports({ navigate }) {
                   onClick={() => handleExportRegister(filtered.filter((r) => selectedIds.has(r.id)))}
                   disabled={selectedIds.size === 0 || xlsxBusy}
                   className="btn-sm bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600 disabled:opacity-40"
-                  title="Eksportuj rejestr XLSX tylko z zaznaczonych lekcji"
+                  title="Eksportuj rejestr XLSX tylko z zaznaczonych ticketów"
                 >
                   {xlsxBusy ? '⏳ Arkusz…' : '📊 Rejestr'}
                 </button>

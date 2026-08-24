@@ -20,7 +20,7 @@
 // tabel przestawnych) oraz JSONL (klucze ASCII snake_case — dla Power BI /
 // Pythona). Każda kolumna zna oba nazewnictwa: `key` (PL) i `id` (snake).
 import { collectMediaIds, SCHEMA_VERSION } from './storage.js'
-import { reportClient, reportLocation, reportTimeRange, reportMinutes, travelKm } from './reportFields.js'
+import { reportClient, reportLocation, reportTimeRange, reportMinutes, travelKm, partNosLabel } from './reportFields.js'
 import { APP_VERSION } from './version.js'
 import { LESSON_SEVERITIES } from './settings.js'
 import {
@@ -204,7 +204,8 @@ const FACT_COLUMNS = [
   { key: 'Ocena ogólna',   id: 'ocena_ogolna',     width: 20, get: (r) => (r.type === 'prototype' ? label(PROTO_OVERALL_LABELS, r.overallResult) : '') },
   { key: 'Decyzja',        id: 'decyzja',          width: 24, get: (r) => (r.type === 'prototype' ? label(PROTO_DECISION_LABELS, r.decision) : '') },
   { key: 'decyzja_key',    id: 'decyzja_key',      width: 12, get: (r) => (r.type === 'prototype' ? txt(r.decision) : '') },
-  // — lekcja projektowa —
+  // — ticket z montażu (Lesson Learned) —
+  { key: 'Numery części',  id: 'numery_czesci',    width: 22, get: (r) => (r.type === 'lesson' ? partNosLabel(r) : '') },
   { key: 'Etap wykrycia',  id: 'etap_wykrycia',    width: 14, get: (r) => (r.type === 'lesson' ? txt(r.stage) : '') },
   { key: 'Kategoria błędu', id: 'kategoria_bledu', width: 20, get: (r) => (r.type === 'lesson' ? txt(r.category) : '') },
   { key: 'Istotność',      id: 'istotnosc',        width: 12, get: (r) => (r.type === 'lesson' ? label(SEV_LABEL, r.severity) : '') },
@@ -368,7 +369,7 @@ const CHILD_TABLES = [
       } else if (r.type === 'satfat') {
         push(r.conclusions, 'Wniosek')
       } else if (r.type === 'lesson') {
-        push(r.lessons, 'Wniosek z lekcji')
+        push(r.lessons, 'Wniosek z ticketu')
       } else if (r.type === 'prototype' && txt(r.observations)) {
         // Prototyp trzyma obserwacje jako jeden blok tekstu, nie listę rekordów.
         out.push({ source: 'Obserwacja', index: 1, text: r.observations, media: r.observationsMedia })

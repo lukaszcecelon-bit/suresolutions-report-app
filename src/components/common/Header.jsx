@@ -10,7 +10,7 @@ const TYPE_TITLES = {
   service: 'Raport serwisu na obiekcie',
   prototype: 'Raport testów prototypu',
   satfat: 'Raport odbioru SAT / FAT',
-  lesson: 'Lekcja projektowa — feedback do konstrukcji',
+  lesson: 'Ticket z montażu (Lesson Learned)',
 }
 
 // `requiredFields` (default: all) — which header fields are validated as required.
@@ -18,6 +18,11 @@ const TYPE_TITLES = {
 // `showClient` (default: false) — dokłada opcjonalne pole „Klient" (v0.52).
 //   Włączone dla typów, które NIE mają własnej sekcji z klientem (uruchomienie,
 //   prototyp, lekcja); serwis i SAT/FAT edytują header.client w swojej sekcji A.
+// `showProject` / `showMachine` (default: true) — pozwalają OKROIĆ nagłówek.
+//   Ticket z montażu (v1.3) ma świadomie chudy nagłówek: numer projektu plus
+//   opcjonalne numery części, bo zgłasza się go w biegu na hali i każde dodatkowe
+//   pole to kolejna wymówka, żeby go nie wypełnić.
+// `extra` — slot na treść specyficzną dla typu (u ticketu: numery części).
 export default function Header({
   header,
   onChange,
@@ -25,6 +30,9 @@ export default function Header({
   requiredFields = ['reportNumber', 'projectName', 'machineName', 'date', 'author'],
   showErrors = false,
   showClient = false,
+  showProject = true,
+  showMachine = true,
+  extra = null,
 }) {
   const set = (k, v) => onChange({ ...header, [k]: v })
   const invalid = (k) => showErrors && requiredFields.includes(k) && !(header[k] || '').toString().trim()
@@ -92,16 +100,18 @@ export default function Header({
               />
             </div>
           )}
-          <div className="min-w-0">
-            <label className={labelCls('projectName')}>Nazwa projektu</label>
-            <SuggestInput
-              type="text"
-              className={inputCls('projectName')}
-              suggestions={projectNameSug}
-              value={header.projectName || ''}
-              onChange={(e) => set('projectName', e.target.value)}
-            />
-          </div>
+          {showProject && (
+            <div className="min-w-0">
+              <label className={labelCls('projectName')}>Nazwa projektu</label>
+              <SuggestInput
+                type="text"
+                className={inputCls('projectName')}
+                suggestions={projectNameSug}
+                value={header.projectName || ''}
+                onChange={(e) => set('projectName', e.target.value)}
+              />
+            </div>
+          )}
           {showClient && (
             <div className="min-w-0">
               <label className="field-label">Klient</label>
@@ -115,16 +125,19 @@ export default function Header({
               />
             </div>
           )}
-          <div className={(showClient ? '' : 'sm:col-span-2 ') + 'min-w-0'}>
-            <label className={labelCls('machineName')}>Nazwa / numer maszyny</label>
-            <SuggestInput
-              type="text"
-              className={inputCls('machineName')}
-              suggestions={machineNameSug}
-              value={header.machineName || ''}
-              onChange={(e) => set('machineName', e.target.value)}
-            />
-          </div>
+          {showMachine && (
+            <div className={(showClient ? '' : 'sm:col-span-2 ') + 'min-w-0'}>
+              <label className={labelCls('machineName')}>Nazwa / numer maszyny</label>
+              <SuggestInput
+                type="text"
+                className={inputCls('machineName')}
+                suggestions={machineNameSug}
+                value={header.machineName || ''}
+                onChange={(e) => set('machineName', e.target.value)}
+              />
+            </div>
+          )}
+          {extra}
         </div>
 
         {/* Short fields — stacked on phones (iOS native date input is wider than

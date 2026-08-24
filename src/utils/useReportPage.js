@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import { useAutoSave } from './useAutoSave.js'
+import { isBlankReport } from './reportFields.js'
+import { remove } from './storage.js'
 import { ensureValidOrConfirm } from './validateReport.js'
 import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
 
@@ -28,6 +30,22 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const savedAt = useAutoSave(report)
 
   const locked = report.status === 'completed' && !unlocked
+
+  // Szkic bez treści — jeszcze NIE ma go w bazie (patrz useAutoSave). Strona
+  // pokazuje to zamiast mylącego „Zapisano".
+  const unsaved = !savedAt && isBlankReport(report)
+
+  // Wyjście ze świeżego raportu bez zostawiania po sobie wpisu. Pusty szkic
+  // odrzucamy bez pytania (nie ma czego stracić); przy wpisanych danych pytamy.
+  const discardDraft = async (navigate) => {
+    if (!isBlankReport(report)) {
+      if (!(await confirm('Odrzucić ten raport? Wpisane dane i zdjęcia zostaną usunięte. Tej operacji nie można cofnąć.', {
+        title: 'Odrzuć raport', confirmLabel: 'Odrzuć', variant: 'danger',
+      }))) return
+    }
+    remove(report.id)
+    navigate('')
+  }
   const unlock = () => {
     setUnlocked(true)
     toast.info('Edycja odblokowana — raport pozostaje oznaczony jako ukończony')
@@ -138,7 +156,7 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
   const closePreview = () => setPreview(null)
 
   return {
-    toast, confirm, savedAt,
+    toast, confirm, savedAt, unsaved, discardDraft,
     downloading, sending, previewing, preview,
     locked, unlock,
     finishReport, sendToDevice, downloadPdf, downloadPackage, sharePdf, sharePackage,

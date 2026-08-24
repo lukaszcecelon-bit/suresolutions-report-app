@@ -87,15 +87,21 @@ export function suggestPartNames() {
   return Array.from(out.entries()).sort((a, b) => b[1] - a[1]).map(([v]) => v)
 }
 
+// Numery części ze WSZYSTKICH miejsc, gdzie się pojawiają: części serwisowe,
+// reklamacje i numery z ticketów montażowych (v1.3). Wcześniej tylko serwis, więc
+// nowe pole „Numery części" w tickecie startowałoby bez żadnych podpowiedzi.
 export function suggestPartCatalogNos() {
   const out = new Map()
-  for (const r of loadAll().filter((r) => r.type === 'service')) {
-    for (const p of (r.parts || [])) {
-      const t = (p.catalogNo || '').trim()
-      if (!t) continue
-      const ts = new Date(r.updatedAt || r.createdAt || 0).getTime()
+  for (const r of loadAll()) {
+    const ts = new Date(r.updatedAt || r.createdAt || 0).getTime()
+    const add = (v) => {
+      const t = (v || '').trim()
+      if (!t) return
       if (!out.has(t) || out.get(t) < ts) out.set(t, ts)
     }
+    if (r.type === 'service') for (const p of (r.parts || [])) add(p.catalogNo)
+    if (r.type === 'complaint') add(r.partNo)
+    if (r.type === 'lesson') for (const p of (r.partNos || [])) add(p.no)
   }
   return Array.from(out.entries()).sort((a, b) => b[1] - a[1]).map(([v]) => v)
 }

@@ -43,7 +43,12 @@ function buildChecks(report) {
   // Identyfikator raportu — serwis/uruchomienie/prototyp/SAT-FAT wpisują NUMER
   // PROJEKTU, z którego auto-generuje się numer raportu.
   req(report.header?.projectNumber, 'Numer projektu', 'sec-header')
-  for (const r of COMMON_HEADER) req(get(report, r.field), r.label, r.sectionId)
+  // Ticket z montażu ma świadomie chudy nagłówek (v1.3): nazwa projektu i maszyna
+  // nie są ani wpisywane, ani wymagane — zostają data i autor zgłoszenia.
+  const headerFields = report.type === 'lesson'
+    ? COMMON_HEADER.filter((c) => c.field === 'header.date' || c.field === 'header.author')
+    : COMMON_HEADER
+  for (const r of headerFields) req(get(report, r.field), r.label, r.sectionId)
 
   if (report.type === 'service') {
     // Klient/lokalizacja od v0.52 w header (edytowane w sekcji A) — sectionId

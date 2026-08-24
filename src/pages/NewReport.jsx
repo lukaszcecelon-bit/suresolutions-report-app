@@ -3,7 +3,7 @@ import { CATEGORIES, TYPE_LABELS, TYPE_ICONS } from '../utils/reportMeta.js'
 // Wybór typu raportu (v0.42) — typy pogrupowane w DWIE STREFY zamiast
 // płaskiej listy sześciu kafli:
 //  🏢 Dla klienta (niebieska)  — serwis, SAT/FAT, uruchomienie,
-//  🔒 Wewnętrzne  (fioletowa)  — prototyp, lekcja projektowa, reklamacja.
+//  🔒 Wewnętrzne  (fioletowa)  — prototyp, ticket z montażu, reklamacja.
 // Kolor strefy powtarza się na liście raportów (akcent karty) i w segmencie
 // zakładki Raporty — jeden język wizualny w całej aplikacji.
 
@@ -13,7 +13,7 @@ const TYPE_DESCS = {
   prototype: 'Iteracyjne testy podzespołów — każda iteracja jako osobny PDF.',
   satfat: 'Lista testów odbiorowych z punchlistą — live na placu / w fabryce.',
   complaint: 'Szybkie zgłoszenie wadliwej części — zdjęcie + dane, PDF do zakupowca.',
-  lesson: 'Błąd projektowy z terenu → wniosek dla konstrukcji (Lessons Learned).',
+  lesson: 'Zgłoszenie z hali do konstrukcji — co było źle w projekcie.',
 }
 
 // Style stref: kontener + nagłówek (spójne z segmentem w zakładce Raporty).

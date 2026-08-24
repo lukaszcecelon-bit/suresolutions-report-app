@@ -33,8 +33,8 @@ const REPORT_TYPES = [
   },
   {
     icon: '🎓',
-    name: 'Lekcja projektowa (feedback do konstrukcji)',
-    desc: 'Błąd projektowy wykryty w terenie → wniosek dla konstrukcji (Lessons Learned): opis błędu, kategoria, istotność, skutek i rekomendacja na przyszłość. Wszystkie lekcje eksportujesz jednym kliknięciem do arkusza Excel — to filtrowalny rejestr.',
+    name: 'Ticket z montażu (Lesson Learned)',
+    desc: 'Zgłoszenie z hali do konstrukcji: co było źle zaprojektowane, jaki to miało skutek i jaki z tego wniosek na przyszłość. Nagłówek jest chudy — numer projektu i opcjonalnie numery części — żeby dało się to wypełnić w biegu. Wszystkie tickety eksportujesz jednym kliknięciem do arkusza Excel: to filtrowalny rejestr.',
   },
 ]
 
@@ -43,7 +43,7 @@ const HOW_IT_WORKS = [
   {
     icon: '🧭',
     title: 'Nawigacja i strefy',
-    body: 'Dolny pasek: Start (szybkie akcje i „kontynuuj ostatni”), 🗂 Raporty (pełna lista z wyszukiwarką i filtrami), Pomoc. Typy raportów dzielą się na dwie strefy: 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie — niebieski akcent) i 🔒 Wewnętrzne (prototyp, lekcja projektowa, reklamacja — fioletowy).',
+    body: 'Dolny pasek: Start (szybkie akcje i „kontynuuj ostatni”), 🗂 Raporty (pełna lista z wyszukiwarką i filtrami), Pomoc. Typy raportów dzielą się na dwie strefy: 🏢 Dla klienta (serwis, SAT/FAT, uruchomienie — niebieski akcent) i 🔒 Wewnętrzne (prototyp, ticket z montażu, reklamacja — fioletowy).',
   },
   {
     icon: '✍️',

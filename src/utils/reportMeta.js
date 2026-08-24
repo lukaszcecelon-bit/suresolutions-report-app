@@ -5,7 +5,7 @@
 // Strefy (decyzja użytkownika, 2026-07-17):
 //  - „Dla klienta"  (niebieski, sure-blue) — dokumenty przekazywane klientowi:
 //    serwis, SAT/FAT, uruchomienie.
-//  - „Wewnętrzne"   (fiolet) — dokumentacja firmowa: prototyp, lekcja
+//  - „Wewnętrzne"   (fiolet) — dokumentacja firmowa: prototyp, ticket z montażu
 //    projektowa oraz reklamacja (idzie do zakupowca → dostawcy; klient
 //    jej nie widzi, więc w obiegu jest „wewnętrzna").
 
@@ -15,7 +15,7 @@ export const TYPE_LABELS = {
   prototype: 'Testy prototypu / podzespołu',
   satfat: 'SAT / FAT — odbiór maszyny',
   complaint: 'Reklamacja / zgłoszenie wady',
-  lesson: 'Lekcja projektowa (feedback do konstrukcji)',
+  lesson: 'Ticket z montażu (Lesson Learned)',
 }
 
 // Krótkie etykiety do ciasnych miejsc (skróty „nowy raport" na pulpicie,
@@ -26,7 +26,7 @@ export const TYPE_SHORT = {
   prototype: 'Prototyp',
   satfat: 'SAT / FAT',
   complaint: 'Reklamacja',
-  lesson: 'Lekcja',
+  lesson: 'Ticket',
 }
 
 export const TYPE_ICONS = {

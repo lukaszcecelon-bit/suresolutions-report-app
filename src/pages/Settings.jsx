@@ -119,12 +119,12 @@ export default function Settings({ navigate }) {
         </button>
       </section>
 
-      {/* === Kategorie błędu (lekcja projektowa) === */}
+      {/* === Kategorie błędu (ticket z montażu) === */}
       <section className="card">
-        <h2 className="section-title">🎓 Kategorie błędu (lekcja projektowa)</h2>
+        <h2 className="section-title">🎓 Kategorie błędu (ticket z montażu)</h2>
         <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">
-          Lista wyboru w raporcie „Lekcja projektowa". To po niej (obok istotności)
-          filtrujesz rejestr lekcji w Excelu. „Inne" jest zawsze dostępne — nie trzeba go dodawać.
+          Lista wyboru w tickecie z montażu. To po niej (obok istotności)
+          filtrujesz rejestr ticketów w Excelu. „Inne" jest zawsze dostępne — nie trzeba go dodawać.
         </p>
         <div className="space-y-2">
           {(settings.lessonCategories || []).map((cat, i) => (

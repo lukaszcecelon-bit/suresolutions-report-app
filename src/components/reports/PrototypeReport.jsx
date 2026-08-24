@@ -4,7 +4,7 @@ import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
 import EmptyState from '../common/EmptyState.jsx'
-import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import ReportTopBar from '../common/ReportTopBar.jsx'
 import SortableList from '../common/SortableList.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import SuggestInput from '../common/SuggestInput.jsx'
@@ -159,10 +159,7 @@ export default function PrototypeReport({ navigate, reportId }) {
 
   return (
     <div className="space-y-4 pb-4">
-      <div className="flex items-center justify-between gap-2">
-        <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <AutoSaveIndicator savedAt={page.savedAt} />
-      </div>
+      <ReportTopBar page={page} report={report} navigate={navigate} />
 
       <div className="text-xs text-gray-500 dark:text-gray-400 text-right">
         Test #{report.info.iteration || 1}

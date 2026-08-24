@@ -1,4 +1,6 @@
-// LEKCJA PROJEKTOWA — feedback do konstrukcji (Lessons Learned).
+// TICKET Z MONTAŻU (Lesson Learned) — feedback z hali do konstrukcji.
+// Typ w danych pozostaje `lesson` (zmiana nazwy jest wyłącznie warstwą etykiet —
+// przepisywanie klucza wymagałoby migracji bez żadnego zysku).
 // Natywny tekst (jsPDF + autotable + Roboto). Kontekst i klasyfikacja lądują
 // w meta-tabeli; opis błędu, skutek i wnioski to bloki/tabela z miniaturkami.
 import {
@@ -7,7 +9,7 @@ import {
   drawReportHeader, drawMetaTable, drawSectionHeader, drawTable,
   drawTextBlock, drawThumbsRow, drawEmpty, drawPhotoAppendix,
 } from './core.js'
-import { reportClient } from '../reportFields.js'
+import { reportClient, partNosLabel } from '../reportFields.js'
 
 // Istotność → badge (te same kolory co reszta apki).
 const SEVERITY_BADGE = {
@@ -30,16 +32,24 @@ function buildPdf(ctx, report, photos) {
   const lessons = Array.isArray(report.lessons) ? report.lessons : []
   const W = ctx.contentW
 
-  drawReportHeader(ctx, { title: 'LEKCJA PROJEKTOWA — FEEDBACK DO KONSTRUKCJI', number: h.reportNumber })
+  drawReportHeader(ctx, { title: 'TICKET Z MONTAŻU (LESSON LEARNED)', number: h.reportNumber })
 
   const sevCell = report.severity && SEVERITY_BADGE[report.severity]
     ? { label: 'Istotność', badge: SEVERITY_BADGE[report.severity] }
     : { label: 'Istotność', value: '—' }
 
+  // Nagłówek ticketu jest chudy (v1.3): numer projektu i numery części zamiast
+  // nazwy projektu/maszyny. Klient pokazywany tylko, gdy raport go ma (starsze
+  // wpisy sprzed okrojenia nagłówka).
+  const client = reportClient(report)
   drawMetaTable(ctx, [
-    [{ label: 'Projekt', value: h.projectName || '—' }, { label: 'Maszyna', value: h.machineName || '—' }, { label: 'Data', value: h.date || '—' }],
-    [{ label: 'Autor', value: h.author || '—' }, { label: 'Etap wykrycia', value: report.stage || '—' }, { label: 'Nr rysunku / DTR', value: report.drawingNo || '—' }],
-    [{ label: 'Kategoria błędu', value: report.category || '—' }, { label: 'Klient', value: reportClient(report) || '—' }, sevCell],
+    [
+      { label: 'Nr projektu', value: h.projectNumber || '—' },
+      { label: 'Numery części', value: partNosLabel(report) || '—' },
+      { label: 'Data', value: h.date || '—' },
+    ],
+    [{ label: 'Zgłaszający', value: h.author || '—' }, { label: 'Etap wykrycia', value: report.stage || '—' }, { label: 'Nr rysunku / DTR', value: report.drawingNo || '—' }],
+    [{ label: 'Kategoria błędu', value: report.category || '—' }, { label: 'Klient', value: client || '—' }, sevCell],
   ])
 
   drawSectionHeader(ctx, 'Opis błędu projektowego')
@@ -67,7 +77,7 @@ function buildPdf(ctx, report, photos) {
   drawPhotoAppendix(ctx, photos)
 }
 
-const baseName = (r) => fileBase(r, 'lekcja')
+const baseName = (r) => fileBase(r, 'ticket')
 const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
 export const buildLessonPdf = gen.pdf
 export const buildLessonPackage = gen.pkg

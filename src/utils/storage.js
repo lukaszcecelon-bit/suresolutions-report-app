@@ -409,8 +409,9 @@ export function cloneReport(source) {
   }
 
   if (source.type === 'lesson') {
-    // Lekcja projektowa: zachowujemy projekt/maszynę/etap/kategorię (zwykle ten
-    // sam kontekst), czyścimy sam opis błędu, skutek i wnioski.
+    // Ticket z montażu: zachowujemy kontekst (projekt/etap/kategoria/rysunek),
+    // czyścimy opis błędu, skutek, wnioski i numery części — nowy ticket to inny
+    // problem, zwykle na innych pozycjach.
     const projectNumber = source.header?.projectNumber || ''
     const date = todayISO()
     return {
@@ -423,7 +424,8 @@ export function cloneReport(source) {
       drawingNo: source.drawingNo || '',   // keep — zwykle ten sam rysunek/DTR
       stage: source.stage || '',           // keep — ten sam etap wykrycia
       category: source.category || '',     // keep — zwykle ta sama kategoria
-      severity: '',                        // reset — nowa lekcja
+      partNos: [],                         // reset — nowy ticket, inne pozycje
+      severity: '',                        // reset — nowy ticket
       problem: '',
       problemMedia: [],
       impact: '',

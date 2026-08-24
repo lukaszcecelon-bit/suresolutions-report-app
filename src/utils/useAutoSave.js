@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { upsert } from './storage.js'
+import { upsert, getById } from './storage.js'
+import { isBlankReport } from './reportFields.js'
 
 // Debounced auto-save for report state.
 //
@@ -28,6 +29,10 @@ export function useAutoSave(report, { debounceMs = 300 } = {}) {
   // podpowiedzi). Teraz flush na unmount zachodzi tylko gdy faktycznie brudny —
   // a nietknięty świeży raport nie zostaje zapisany jako pusty szkic.
   const dirtyRef = useRef(false)
+  // Czy ten raport JUŻ jest w bazie. Raport otwarty z listy zachowuje się
+  // dokładnie jak dotąd (każda zmiana zapisywana); bramka pustego szkicu dotyczy
+  // wyłącznie świeżo utworzonych, jeszcze nigdy nie zapisanych raportów.
+  const savedOnceRef = useRef(!!getById(report.id))
 
   // Keep the latest report value in a ref so the unmount cleanup can flush it
   // regardless of which render the unmount happens on.
@@ -35,9 +40,14 @@ export function useAutoSave(report, { debounceMs = 300 } = {}) {
 
   useEffect(() => {
     if (isFirst.current) { isFirst.current = false; return }
+    // NOWY, PUSTY raport nie trafia do bazy (v1.2). Wcześniej wystarczyło jedno
+    // przypadkowe tapnięcie — np. w przełącznik statusu wizyty — żeby raport bez
+    // żadnej treści osiadł w bazie na stałe.
+    if (!savedOnceRef.current && isBlankReport(report)) return
     dirtyRef.current = true
     const t = setTimeout(() => {
       upsert(report)
+      savedOnceRef.current = true
       dirtyRef.current = false
       setSavedAt(Date.now())
     }, debounceMs)

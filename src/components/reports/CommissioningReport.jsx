@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
-import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import ReportTopBar from '../common/ReportTopBar.jsx'
 import ReportActionBar from '../common/ReportActionBar.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
 import NotesList from '../common/NotesList.jsx'
@@ -386,18 +386,14 @@ export default function CommissioningReport({ navigate, reportId }) {
   // ============ RENDER ============
   return (
     <div className="space-y-4 pb-4">
-      <div className="flex items-center justify-between gap-2">
-        <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <div className="flex items-center gap-3">
-          <AutoSaveIndicator savedAt={page.savedAt} />
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {report.phase === 'setup' && 'Faza 1: Start sesji'}
-            {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
-            {report.phase === 'stopped' && 'Faza 2: Zatrzymanie maszyny'}
-            {report.phase === 'finished' && 'Faza 3: Podsumowanie'}
-          </div>
+      <ReportTopBar page={page} report={report} navigate={navigate}>
+        <div className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+          {report.phase === 'setup' && 'Faza 1: Start sesji'}
+          {report.phase === 'running' && 'Faza 2: Logowanie na żywo'}
+          {report.phase === 'stopped' && 'Faza 2: Zatrzymanie maszyny'}
+          {report.phase === 'finished' && 'Faza 3: Podsumowanie'}
         </div>
-      </div>
+      </ReportTopBar>
 
       {/* FAZA 1 */}
       {report.phase === 'setup' && (

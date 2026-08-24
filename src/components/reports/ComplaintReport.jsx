@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
-import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import ReportTopBar from '../common/ReportTopBar.jsx'
 import LoadingOverlay from '../common/LoadingOverlay.jsx'
 import PdfPreview from '../common/PdfPreview.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
@@ -185,10 +185,7 @@ export default function ComplaintReport({ navigate, reportId }) {
 
   return (
     <div className="space-y-4 pb-4">
-      <div className="flex items-center justify-between gap-2">
-        <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <AutoSaveIndicator savedAt={page.savedAt} />
-      </div>
+      <ReportTopBar page={page} report={report} navigate={navigate} />
 
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
         <span className="text-base">🚩</span>

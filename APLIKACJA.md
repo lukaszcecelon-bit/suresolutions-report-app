@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.1**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.3**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -132,7 +132,7 @@ przepadła po cichu:
   urządzeniu — każdy z zespołu ustawia raz i nie wpisuje w kółko),
   **`stopReasons`** (konfigurowalna lista powodów zatrzymań w raporcie
   uruchomienia; „Inne" doklejane zawsze), **`lessonCategories`** (konfigurowalne
-  kategorie błędu w lekcji projektowej). Helpery: `getDefaultAuthor()`,
+  kategorie błędu w tickecie z montażu). Helpery: `getDefaultAuthor()`,
   `getDefaultRole()`, `getStopReasons()`, `getLessonCategories()`; stałe
   `ROLE_OPTIONS`, `DEFAULT_STOP_REASONS`, `DEFAULT_LESSON_CATEGORIES`,
   `LESSON_SEVERITIES`, `LESSON_STAGES`. Plik: `src/utils/settings.js`, ekran `#/settings`.
@@ -148,13 +148,13 @@ przepadła po cichu:
 | **Testy prototypu / podzespołu** | `prototype` | Informacje o teście, warunki, punkty kontrolne (OK/NOK/warunkowo), decyzja. |
 | **Odbiór SAT / FAT** | `satfat` | Uczestnicy, testy odbiorowe ze statusami, lista usterek (punchlist), wnioski, status końcowy, podpisy stron. |
 | **Reklamacja / zgłoszenie wady** | `complaint` | Duże zdjęcia-dowody wady, identyfikacja części, opis, wysyłka do zakupowca. |
-| **Lekcja projektowa** | `lesson` | Feedback błędu projektowego do konstrukcji (Lessons Learned): kontekst, opis błędu, kategoria + istotność, skutek, wnioski. Rejestr z eksportem do Excela. |
+| **Ticket z montażu (Lesson Learned)** | `lesson` | Zgłoszenie z hali do konstrukcji: chudy nagłówek (nr projektu + numery części), opis błędu, kategoria + istotność, skutek, wnioski. Rejestr z eksportem do Excela. |
 
 ### Automatyczna numeracja (wszystkie typy poza reklamacją mają auto-numer)
 Użytkownik podaje **numer projektu** (np. `25-104`), a numer raportu tworzy się
 sam wg wzorca `{PREFIX}-{nr projektu}-{data}`: `URU-` (uruchomienie), `RPT-`
 (serwis), `PRT-` (prototyp), `FAT-`/`SAT-` (odbiór — zależnie od typu testu),
-`LL-` (lekcja projektowa), `REK-` (reklamacja). Logika w `Header.jsx`
+`LL-` (ticket z montażu — klucz i prefiks zostały z czasów „lekcji projektowej"), `REK-` (reklamacja). Logika w `Header.jsx`
 (`autoNumber`) + `computeReportNumber` w komponentach; walidacja żąda „Numeru
 projektu" (nie „Numeru raportu").
 
@@ -296,16 +296,37 @@ analitycznego (przedtem trzy kopie tej samej funkcji).
   widoczny, pusty pokazuje „—") i w treści maila do zakupowca. Bez niego nie dało
   się zestawić reklamacji per dostawca.
 
-### Specyfika lekcji projektowej (lesson, v0.40)
-- **Cel:** zamknięcie pętli teren → konstrukcja. Błąd projektowy wykryty przy
-  uruchomieniu/serwisie trafia jako trwały wpis do konstrukcji (Lessons Learned).
-- **Pola:** kontekst (etap wykrycia `stage`, nr rysunku `drawingNo`), opis błędu
-  (`problem` + zdjęcia), klasyfikacja (`category` — konfigurowalna lista + „Inne";
-  `severity` — krytyczny/poważny/drobny), skutek (`impact`), wnioski (`lessons` —
-  rekordy `NotesList`).
-- **„Baza" bez SharePointa:** PDF to karta pojedynczej lekcji; kategoryzowalny
-  rejestr powstaje z ustrukturyzowanych danych — filtrowanie na Home + **eksport
-  wszystkich lekcji do XLSX** (patrz §7). Świadoma decyzja: PDF ≠ baza.
+### Specyfika ticketu z montażu (lesson, v0.40; nazwa i chudy nagłówek v1.3)
+- **Nazwa:** „**Ticket z montażu (Lesson Learned)**". Zmiana jest **wyłącznie
+  warstwą etykiet** — klucz typu w danych pozostaje `lesson`, prefiks numeru `LL-`,
+  nazwy plików źródłowych też. Przepisywanie klucza wymagałoby migracji wszystkich
+  raportów i paczek `.suresync` bez żadnego zysku.
+- **Cel:** zamknięcie pętli hala → konstrukcja. Błąd projektowy wykryty przy
+  montażu/uruchomieniu/serwisie trafia jako trwały wpis do konstrukcji.
+- **Chudy nagłówek (v1.3):** tylko **numer projektu** (z niego auto-numer `LL-`),
+  **opcjonalne numery części** (`partNos` — lista rekordów `{id, no}`), data i autor
+  zgłoszenia. Bez nazwy projektu, maszyny i klienta — ticket wypełnia się w biegu na
+  hali, a każde dodatkowe pole to kolejna wymówka, żeby tego nie zrobić; te dane i
+  tak wynikają z numeru projektu. Technicznie: `Header` dostał przełączniki
+  `showProject`/`showMachine` i slot `extra`, a `validateReport` nie wymaga dla
+  ticketu nazwy projektu ani maszyny.
+- **Numery części:** lista, bo jedno zgłoszenie potrafi obejmować kilka pozycji.
+  Rekordy z `id` (nie same stringi) — przy usuwaniu ze środka listy klucz po
+  indeksie przenosiłby wartości między polami. Podpowiedzi z historii:
+  `suggestPartCatalogNos` zbiera numery z części serwisowych, reklamacji **i**
+  ticketów. Wyszukiwarka na liście raportów indeksuje je, więc ticket znajdziesz po
+  numerze części. `partNosLabel()` w `reportFields.js` to jedno źródło formatu
+  („25-104-03, 25-104-07") dla PDF, rejestru i eksportu analitycznego.
+- **Pozostałe pola:** kontekst (etap wykrycia `stage`, nr rysunku `drawingNo`), opis
+  błędu (`problem` + zdjęcia), klasyfikacja (`category` — konfigurowalna lista +
+  „Inne"; `severity` — krytyczny/poważny/drobny), skutek (`impact`), wnioski
+  (`lessons` — rekordy `NotesList`).
+- **„Baza" bez SharePointa:** PDF to karta pojedynczego ticketu; kategoryzowalny
+  rejestr powstaje z ustrukturyzowanych danych — filtrowanie w zakładce Raporty +
+  **eksport wszystkich ticketów do XLSX** (patrz §7). Świadoma decyzja: PDF ≠ baza.
+- **Stare wpisy:** tickety sprzed v1.3 mają nazwę projektu, maszynę i klienta w
+  danych — PDF i rejestr nadal je pokazują, nowe wpisy zostawiają te kolumny puste
+  („puste = nie dotyczy", jak w całym eksporcie).
 
 ---
 
@@ -373,20 +394,21 @@ własnymi urządzeniami**. Wybór share vs pobranie steruje `canShareFiles()`
 (`syncPackage.js`) — telefon udostępnia, desktop pobiera i podpowiada mail.
 Nazwa pliku = numer raportu (bez podwójnej daty — `fileBase` w `core.js`).
 
-### Rejestr lekcji projektowych → XLSX (v0.40)
-Osobna ścieżka eksportu (nie PDF): na Home przycisk **„📊 Rejestr lekcji → Excel
-(XLSX)"** (widoczny gdy istnieje ≥1 lekcja) zbiera WSZYSTKIE lekcje w jeden
-arkusz — wiersz = lekcja, kolumny = pola (numer, data, projekt, maszyna, nr
+### Rejestr ticketów z montażu → XLSX (v0.40)
+Osobna ścieżka eksportu (nie PDF): w menu ⋯ zakładki Raporty **„📊 Rejestr
+ticketów → Excel"** (widoczny gdy istnieje ≥1 ticket) zbiera WSZYSTKIE tickety w
+jeden arkusz — wiersz = ticket, kolumny = pola (numer, data, nr projektu, numery
+części, projekt, maszyna, nr
 rysunku, etap, kategoria, istotność, opis, skutek, wnioski, liczba zdjęć, autor,
 status), z autofiltrem. To filtrowalna „baza" bez backendu (sort/filtr/tabela
 przestawna w Excelu lub Power BI). Silnik: `utils/registerExport.js` + SheetJS
 (`xlsx`, leniwie). Telefon → udostępnij, desktop → pobierz (`canShareFiles`).
-- **Przeglądanie rejestru w apce (v0.41):** po włączeniu filtra „🎓 Lekcja" na
+- **Przeglądanie rejestru w apce (v0.41):** po włączeniu filtra „🎓 Ticket" na
   Home pojawia się kontekstowy wiersz podfiltrów — chipy **kategorii** (brane z
   danych) + **istotności**; rejestr filtrujesz też bez Excela. Podfiltry czyszczą
-  się po wyłączeniu filtra „Lekcja".
+  się po wyłączeniu filtra „Ticket".
 - **Eksport z zaznaczonych (v0.41):** w trybie multi-select przycisk „📊 Rejestr"
-  eksportuje XLSX tylko z zaznaczonych lekcji (`handleExportRegister(subset)`).
+  eksportuje XLSX tylko z zaznaczonych ticketów (`handleExportRegister(subset)`).
 
 ### Eksport ANALITYCZNY — cała baza w płaskich tabelach (v0.52)
 Silnik: **`src/utils/analyticsExport.js`**. Wejście z menu ⋯ na zakładce Raporty
@@ -409,7 +431,7 @@ nagłówek do XLSX i `id` = ASCII snake_case do JSONL):
   **dostępność %**, **MTBF**, **MTTR**), SAT/FAT (testy pass/fail/cond/na,
   **FPY %**, usterki, usterki krytyczne, wynik odbioru, uczestnicy), prototyp
   (podzespół, iteracja, metoda próbki, punkty OK/NOK/warunkowo, ocena, decyzja),
-  lekcja (etap, kategoria, istotność, nr rysunku), reklamacja (część, dostawca,
+  ticket z montażu (numery części, etap, kategoria, istotność, nr rysunku), reklamacja (część, dostawca,
   kategoria wady, blokuje montaż).
 - **tabele-dzieci** (pomijane, gdy puste): `Zatrzymania`, `Czynności`, `Części`,
   `Testy`, `Usterki`, `Punkty prototypu`, `Parametry`, `Notatki` (obserwacje +
@@ -455,6 +477,10 @@ dwóch typów.
 ## 8. Funkcje wspólne
 
 - **Auto-zapis** (`useAutoSave`) — debounce 300 ms, wskaźnik „Zapisano".
+- **Pusty szkic NIE trafia do bazy** (v1.2) — patrz niżej.
+- **Górny pasek raportu** (`ReportTopBar`) — powrót, „🗑 Odrzuć" i wskaźnik
+  zapisu; jedna implementacja dla wszystkich 6 typów (wcześniej ten sam układ
+  był przepisany w każdym z nich).
 - **Walidacja przed eksportem** (`validateReport`) — modal z listą braków +
   scroll do pierwszej brakującej sekcji; można pobrać mimo to. (Podgląd NIE
   wymaga kompletu — można podejrzeć szkic.)
@@ -466,6 +492,34 @@ dwóch typów.
   reklamacja to lean-form — bez paska).
 - **Blokada ukończonych** — status `completed` → `<fieldset disabled>` +
   `LockBanner` z „Odblokuj edycję"; pobieranie działa mimo blokady.
+
+### Pusty szkic nie trafia do bazy (v1.2)
+Zgłoszenie: *„nawet jak przypadkiem kliknę nowy raport, to on już wisi w bazie"*.
+Samo otwarcie raportu nigdy go nie zapisywało (auto-zapis pomija pierwszy render),
+ale **wystarczyło jedno tapnięcie w cokolwiek** — np. w przełącznik statusu wizyty,
+łatwy do trafienia przy przewijaniu na telefonie — i raport bez ani jednej wpisanej
+wartości osiadał w bazie na stałe. Lista zapełniała się szkicami-widmami.
+
+- **`isBlankReport(report)`** (`utils/reportFields.js`) — raport jest pusty, gdy nie
+  ma ani jednego niepustego tekstu, żadnej pozycji listy i żadnego `true`, **poza**
+  polami wypełnianymi automatycznie (data = dziś, autor i rola z Ustawień, domyślne
+  `visitStatus`/`testType`/`finalStatus`/`sampleMethod`/`phase`). Skan jest
+  generyczny (schodzi w głąb obiektu), więc obejmuje wszystkie 6 typów bez tabeli
+  per typ. Kierunek ewentualnej pomyłki jest świadomy: brakujące pole domyślne
+  oznacza „raport niepusty", czyli zachowanie jak dotąd — **nigdy odwrotnie**, więc
+  realna treść nie może przez to zniknąć.
+- **`useAutoSave`** pomija zapis, dopóki raport jest pusty **i** nigdy nie był
+  zapisany (`savedOnceRef` startuje z `getById(id)`, więc raport otwarty z listy
+  zachowuje się dokładnie jak wcześniej).
+- **Wskaźnik mówi wprost** „Szkic — nie zapisany" zamiast milczeć albo pokazywać
+  mylące „Zapisano".
+- **„🗑 Odrzuć"** w górnym pasku (`ReportTopBar`) — usuwa raport i wraca na Start;
+  pusty szkic bez pytania, przy wpisanych danych z potwierdzeniem. Celowo **nie**
+  jest to pływający przycisk nad formularzem: taki guzik na telefonie zasłania pola
+  i sam prosi się o przypadkowe tapnięcie, czyli o problem, który tu naprawiamy.
+  Wyjście z raportu ma jedno miejsce — obok „← Strona główna".
+- **„🧹 Usuń puste szkice (N)"** w menu ⋯ zakładki Raporty — jednorazowe sprzątanie
+  po szkicach z wersji przed v1.2 (pozycja pojawia się tylko, gdy takie są).
 - **Zdjęcia/wideo** (`MediaUploader`) — aparat / galeria / nagrywanie;
   kompresja do miniatury + zapis oryginału; **edytor adnotacji**
   (`PhotoAnnotator`) tapnięciem w miniaturę: strzałki, kółka, prostokąty,
@@ -513,15 +567,15 @@ dwóch typów.
     więc nic nie filtruje „w ukryciu". Obok licznik wyników i „Wyczyść".
   - **Narzędzia archiwum w menu ⋯** (rzeczy używane raz w miesiącu, wcześniej
     zajmowały stałe wiersze nad listą): „☑ Zaznacz wiele", „📥 Importuj raport
-    z paczki", „💾 Backup wszystkich raportów" oraz — gdy istnieją lekcje —
-    „📊 Rejestr lekcji → Excel" (patrz §7).
+    z paczki", „💾 Backup wszystkich raportów" oraz — gdy istnieją tickety —
+    „📊 Rejestr ticketów → Excel" (patrz §7).
   - Lista ma stałą kolejność (wg `createdAt`), akcent strefy na lewej krawędzi
     karty, „Otwórz" + „📄 PDF" widoczne, a Duplikuj/Usuń w menu ⋯ karty.
     Multi-select ma pasek akcji zbiorczych nad TabBarem.
 - **Onboarding** (jednorazowy tour) + **stała strona Pomocy** (`#/help`, z sekcją
   „Wysyłka do Teams — znane problemy").
 - **Ustawienia globalne** (`#/settings`) — domyślny autor + rola, konfigurowalne
-  powody zatrzymań, **kategorie błędu (lekcja projektowa)**, podfolder SharePoint,
+  powody zatrzymań, **kategorie błędu (ticket z montażu)**, podfolder SharePoint,
   e-mail zakupowca, wskaźnik pamięci.
 
 ---
@@ -597,14 +651,14 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 8 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 9 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
-  zdjęć; **lekcja projektowa: karta PDF + eksport rejestru XLSX**; **eksport
+  zdjęć; **ticket z montażu: karta PDF (chudy nagłówek + numery części) + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
   MTTR, sumy sztuk, kilometry jako liczba, migracja klienta v3→v4, „puste ≠ 0");
   **uruchomienie: wznowienie maszyny po powrocie do raportu + tryb ręczny**;
   **tryb ręczny trzyma sesję w jednym dniu** (koniec nie ucieka o dobę);
-  podgląd PDF w apce
+  **pusty szkic nie trafia do bazy + „Odrzuć"**; podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
 - **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
@@ -624,7 +678,21 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.1.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.3.** Skrót ostatnich zmian:
+- **v1.3** — **„Lekcja projektowa" → „Ticket z montażu (Lesson Learned)"** i
+  **chudy nagłówek** tego typu: numer projektu + opcjonalne **numery części**
+  (`partNos`, lista z podpowiedziami z historii), bez nazwy projektu, maszyny i
+  klienta. Zmiana nazwy to wyłącznie warstwa etykiet — klucz `lesson` i prefiks
+  `LL-` zostają. `Header` dostał `showProject`/`showMachine` + slot `extra`,
+  rejestr XLSX kolumnę „Numery części" (arkusz „Tickety z montażu"), eksport
+  analityczny `numery_czesci`, a wyszukiwarka indeksuje numery części.
+  Szczegóły w §5.
+- **v1.2** — **pusty szkic nie trafia do bazy** (zgłoszenie: przypadkowe
+  kliknięcie „Nowy raport" zostawiało wpis na stałe — wystarczyło jedno tapnięcie
+  w przełącznik). `isBlankReport` + bramka w `useAutoSave`, wskaźnik „Szkic — nie
+  zapisany", przycisk **„🗑 Odrzuć"** w nowym wspólnym `ReportTopBar` (koniec
+  powtórzonego górnego paska w 6 typach) oraz **„🧹 Usuń puste szkice (N)"** w menu
+  ⋯ do sprzątnięcia starych widm. Szczegóły w §8.
 - **v1.1** — **fix przeliczania czasu w trybie ręcznym + jawna data sesji**.
   Ręczne godziny mogły wskazać czas pracy o dobę za długi (31:25:00 zamiast
   07:25:00), bo koniec wcześniejszy od startu był po cichu przesuwany na kolejny

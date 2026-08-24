@@ -1,13 +1,14 @@
-// Eksport REJESTRU LEKCJI PROJEKTOWYCH do XLSX (jeden wiersz = jedna lekcja).
-// To jest odpowiedź na „kategoryzację": PDF to karta pojedynczej lekcji, a ten
+// Eksport REJESTRU TICKETÓW Z MONTAŻU (Lesson Learned) do XLSX — jeden wiersz
+// = jeden ticket.
+// To jest odpowiedź na „kategoryzację": PDF to karta pojedynczego ticketu, a ten
 // arkusz to filtrowalna baza — sortowanie/filtry/tabela przestawna w Excelu lub
 // Power BI. SheetJS (xlsx) ładowany LENIWIE (ciężki) — dopiero przy eksporcie.
 import { LESSON_SEVERITIES } from './settings.js'
-import { reportClient } from './reportFields.js'
+import { reportClient, partNosLabel } from './reportFields.js'
 
 const SEV_LABEL = Object.fromEntries(LESSON_SEVERITIES.map((s) => [s.key, s.label]))
 
-// Liczba zdjęć w lekcji (opis błędu + wnioski) — przydatna kolumna w rejestrze.
+// Liczba zdjęć w tickecie (opis błędu + wnioski) — przydatna kolumna w rejestrze.
 function countPhotos(report) {
   let n = (report.problemMedia || []).filter((m) => m?.kind === 'image').length
   for (const l of (report.lessons || [])) {
@@ -17,10 +18,13 @@ function countPhotos(report) {
 }
 
 // Kolejność i nagłówki kolumn arkusza. Klucz = nagłówek widoczny w Excelu.
+// Projekt/Klient/Maszyna zostają dla ticketów sprzed v1.3 — od okrojenia
+// nagłówka nowe wpisy mają tu pusto (konwencja: puste = „nie dotyczy").
 const COLUMNS = [
   { key: 'Numer',         width: 20, get: (r) => r.header?.reportNumber || '' },
   { key: 'Data',          width: 11, get: (r) => r.header?.date || '' },
   { key: 'Nr projektu',   width: 12, get: (r) => r.header?.projectNumber || '' },
+  { key: 'Numery części', width: 22, get: (r) => partNosLabel(r) },
   { key: 'Projekt',       width: 22, get: (r) => r.header?.projectName || '' },
   { key: 'Klient',        width: 18, get: (r) => reportClient(r) },
   { key: 'Maszyna',       width: 20, get: (r) => r.header?.machineName || '' },
@@ -37,7 +41,7 @@ const COLUMNS = [
 ]
 
 // Buduje arkusz XLSX z listy raportów typu 'lesson'. Zwraca { blob, filename, count }.
-// Rzuca wyjątkiem, gdy brak lekcji — caller pokazuje toast.
+// Rzuca wyjątkiem, gdy brak ticketów — caller pokazuje toast.
 export async function buildLessonRegisterXlsx(reports) {
   const lessons = (reports || [])
     .filter((r) => r.type === 'lesson')
@@ -48,7 +52,7 @@ export async function buildLessonRegisterXlsx(reports) {
     })
 
   if (lessons.length === 0) {
-    const err = new Error('Brak lekcji projektowych do wyeksportowania')
+    const err = new Error('Brak ticketów z montażu do wyeksportowania')
     err.code = 'EMPTY'
     throw err
   }
@@ -68,12 +72,12 @@ export async function buildLessonRegisterXlsx(reports) {
   if (ws['!ref']) ws['!autofilter'] = { ref: ws['!ref'] }
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Lekcje projektowe')
+  XLSX.utils.book_append_sheet(wb, ws, 'Tickety z montażu')
 
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
   const blob = new Blob([out], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
   const date = new Date().toISOString().slice(0, 10)
-  return { blob, filename: `rejestr-lekcji_${date}.xlsx`, count: lessons.length }
+  return { blob, filename: `rejestr-ticketow_${date}.xlsx`, count: lessons.length }
 }

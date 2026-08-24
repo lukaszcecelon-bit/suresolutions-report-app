@@ -111,13 +111,14 @@ test('osobny PDF vs ZIP + załącznik dużych zdjęć (v0.33)', async ({ page })
   expect(zip.suggestedFilename()).toMatch(/\.zip$/)
 })
 
-test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({ page }) => {
-  // Lekcja z kompletem wymaganych pól (opis + kategoria + ≥1 wniosek) — bez
+test('ticket z montażu: PDF karty + eksport rejestru do XLSX (v0.40, nazwy v1.3)', async ({ page }) => {
+  // Ticket z kompletem wymaganych pól (opis + kategoria + ≥1 wniosek) — bez
   // modala walidacji. Seed przez localStorage; brak mediów = brak IndexedDB.
   const report = {
     id: 'r_lesson_test', type: 'lesson', status: 'draft', schemaVersion: 3,
     createdAt: '2026-06-19T08:00:00.000Z', updatedAt: '2026-06-19T08:00:00.000Z',
     header: { reportNumber: 'LL-99-990-2026-06-19', projectNumber: '99-990', projectName: 'Projekt', machineName: 'Podajnik', date: '2026-06-19', author: 'Jan' },
+    partNos: [{ id: 'pn1', no: '25-104-03' }, { id: 'pn2', no: '25-104-07' }],
     drawingNo: 'RYS-1', stage: 'Uruchomienie', category: 'Dobór komponentu', severity: 'critical',
     problem: 'Zbyt mały prześwit prowadnicy — detal się blokuje.', problemMedia: [],
     impact: 'Przestój 2h, przeróbka.',
@@ -142,18 +143,20 @@ test('lekcja projektowa: PDF karty + eksport rejestru do XLSX (v0.40)', async ({
   const pdfData = await parser.getText()
   await parser.destroy()
   expect(pdfData.text).toContain('LL-99-990')
-  expect(pdfData.text).toContain('KONSTRUKCJI')     // tytuł/sekcja jako tekst
+  expect(pdfData.text).toContain('TICKET Z MONTAŻU')   // nowy tytuł (v1.3)
+  expect(pdfData.text).toContain('25-104-03')          // numery części w nagłówku
+  expect(pdfData.text).not.toContain('MASZYNA')        // chudy nagłówek — bez maszyny
   expect(pdfData.text).toMatch(/[ĄĆĘŁŃÓŚŻŹ]/)        // polskie znaki (BŁĘDU)
 
-  // --- 2) Eksport REJESTRU lekcji do XLSX z zakładki Raporty (v0.42) ---
+  // --- 2) Eksport REJESTRU ticketów do XLSX z zakładki Raporty (v0.42) ---
   // Od v0.51 narzędzia archiwum (import/backup/rejestr) są w menu ⋯ w nagłówku,
   // żeby nie zajmowały stałych wierszy nad listą raportów.
   await page.goto('/#/reports')
   await page.getByRole('button', { name: 'Narzędzia archiwum' }).click()
   const dlXlsx = page.waitForEvent('download', { timeout: 120_000 })
-  await page.getByRole('menuitem', { name: /Rejestr lekcji/ }).click()
+  await page.getByRole('menuitem', { name: /Rejestr ticketów/ }).click()
   const xlsx = await dlXlsx
-  expect(xlsx.suggestedFilename()).toMatch(/rejestr-lekcji.*\.xlsx$/)
+  expect(xlsx.suggestedFilename()).toMatch(/rejestr-ticketow.*\.xlsx$/)
   // XLSX to archiwum ZIP — sygnatura „PK" na starcie pliku.
   const xlsxBuf = await fs.readFile(await xlsx.path())
   expect(xlsxBuf.subarray(0, 2).toString('latin1')).toBe('PK')
@@ -322,6 +325,32 @@ test('uruchomienie ręczne: jeden dzień — koniec sesji nie ucieka o dobę (v1
   await expect(page.getByText('31:25:00')).toHaveCount(0)
   // Data jest widoczna i edytowalna — bez niej rozjazdu nie dało się zauważyć.
   await expect(page.locator('#sess-date')).toHaveValue('2026-08-20')
+})
+
+test('nowy raport nie ląduje w bazie przed pierwszym wpisem + „Odrzuć" (v1.2)', async ({ page }) => {
+  const count = () => page.evaluate(
+    () => Object.keys(localStorage).filter((k) => k.startsWith('suresolutions.report.v2:')).length,
+  )
+
+  await page.goto('/#/service')
+
+  // Przypadkowe tapnięcie w przełącznik statusu — zero wpisanej treści.
+  // Przedtem wystarczyło to, żeby pusty raport osiadł w bazie na stałe.
+  await page.getByRole('button', { name: /Wymaga spotkania/ }).click()
+  await expect(page.getByText('Szkic — nie zapisany')).toBeVisible()
+  await page.waitForTimeout(600)          // dłużej niż debounce auto-save
+  expect(await count()).toBe(0)
+
+  // Pierwszy realny wpis (numer projektu) → raport zapisuje się normalnie.
+  await page.locator('input.field-input').first().fill('99-777')
+  await expect(page.getByText(/Zapisano/)).toBeVisible()
+  await expect.poll(count).toBe(1)
+
+  // „Odrzuć" usuwa raport z bazy i wraca na Start (przy wpisanych danych pyta).
+  await page.getByRole('button', { name: '🗑 Odrzuć' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Odrzuć' }).click()
+  await expect.poll(count).toBe(0)
+  await expect(page.getByRole('button', { name: /Nowy raport/ })).toBeVisible()
 })
 
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {

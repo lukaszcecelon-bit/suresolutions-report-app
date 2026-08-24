@@ -3,10 +3,12 @@ import Header from '../common/Header.jsx'
 import MediaUploader from '../common/MediaUploader.jsx'
 import ToggleGroup from '../common/ToggleGroup.jsx'
 import SectionNav from '../common/SectionNav.jsx'
-import AutoSaveIndicator from '../common/AutoSaveIndicator.jsx'
+import ReportTopBar from '../common/ReportTopBar.jsx'
 import ReportActionBar, { LockBanner } from '../common/ReportActionBar.jsx'
 import NotesList from '../common/NotesList.jsx'
 import { MicTextarea } from '../common/VoiceMic.jsx'
+import SuggestInput from '../common/SuggestInput.jsx'
+import { suggestPartCatalogNos } from '../../utils/suggestions.js'
 import { getById, newId } from '../../utils/storage.js'
 import { computeReportNumber } from '../../utils/reportNumber.js'
 import { getDefaultAuthor, getLessonCategories, LESSON_STAGES } from '../../utils/settings.js'
@@ -47,6 +49,7 @@ function defaultReport() {
       date: todayISO(),
       author: getDefaultAuthor(),
     },
+    partNos: [],        // numery części, których dotyczy ticket — [{id, no}]
     drawingNo: '',      // nr rysunku / DTR (opcjonalny)
     stage: '',          // etap, na którym wykryto błąd
     category: '',       // kategoria błędu (klasyfikacja rejestru)
@@ -81,12 +84,26 @@ export default function LessonReport({ navigate, reportId }) {
   }
   const setField = (k, v) => setReport((r) => ({ ...r, [k]: v }))
 
+  // Numery części, których dotyczy ticket (v1.3) — lista, bo jedno zgłoszenie z
+  // montażu potrafi obejmować kilka pozycji. Rekordy z `id`, nie same stringi:
+  // przy usuwaniu ze środka listy klucz po indeksie przenosiłby wartości między
+  // polami. Podpowiedzi z numerów katalogowych używanych w serwisie i reklamacjach.
+  // Operacje na liście idą przez updater `setReport((r) => …)`, a NIE przez
+  // `partNos` z domknięcia — dwa szybkie tapnięcia „+ Dodaj" trafiają w ten sam
+  // render i wersja z domknięciem dawała jeden wiersz zamiast dwóch.
+  const partNoSug = useMemo(() => suggestPartCatalogNos(), [])
+  const partNos = report.partNos || []
+  const addPartNo = () => setReport((r) => ({ ...r, partNos: [...(r.partNos || []), { id: newId(), no: '' }] }))
+  const updatePartNo = (id, no) => setReport((r) => ({
+    ...r, partNos: (r.partNos || []).map((p) => (p.id === id ? { ...p, no } : p)),
+  }))
+  const removePartNo = (id) => setReport((r) => ({
+    ...r, partNos: (r.partNos || []).filter((p) => p.id !== id),
+  }))
+
   return (
     <div className="space-y-4 pb-4">
-      <div className="flex items-center justify-between gap-2">
-        <button onClick={() => navigate('')} className="text-sure-blue text-sm">← Strona główna</button>
-        <AutoSaveIndicator savedAt={page.savedAt} />
-      </div>
+      <ReportTopBar page={page} report={report} navigate={navigate} />
 
       <SectionNav sections={SECTIONS} report={report} />
 
@@ -95,7 +112,52 @@ export default function LessonReport({ navigate, reportId }) {
       <fieldset disabled={locked} className="space-y-4 min-w-0">
 
       <div id="sec-header">
-        <Header header={report.header} onChange={updateHeader} reportType="lesson" showClient />
+        {/* Chudy nagłówek (v1.3): numer projektu + opcjonalne numery części.
+            Bez nazwy projektu, maszyny i klienta — ticket zgłasza się w biegu na
+            hali, a te dane i tak wynikają z numeru projektu. */}
+        <Header
+          header={report.header}
+          onChange={updateHeader}
+          reportType="lesson"
+          requiredFields={['reportNumber', 'date', 'author']}
+          showProject={false}
+          showMachine={false}
+          extra={(
+            <div className="min-w-0">
+              <label className="field-label">Numery części (opcjonalnie)</label>
+              {partNos.length === 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Dodaj, jeśli ticket dotyczy konkretnych pozycji.
+                </p>
+              )}
+              {partNos.map((p) => (
+                <div key={p.id} className="flex gap-2 mb-2">
+                  <SuggestInput
+                    type="text"
+                    className="field-input flex-1 min-w-0"
+                    placeholder="np. 25-104-03"
+                    suggestions={partNoSug}
+                    value={p.no}
+                    onChange={(e) => updatePartNo(p.id, e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePartNo(p.id)}
+                    className="btn-icon bg-red-600 hover:bg-red-700 focus:ring-red-500/40 shrink-0"
+                    aria-label="Usuń numer części"
+                  >✕</button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addPartNo}
+                className="btn-sm w-full bg-white text-sure-dark border border-gray-300 hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:hover:bg-gray-600"
+              >
+                + Dodaj numer części
+              </button>
+            </div>
+          )}
+        />
       </div>
 
       <div id="sec-a" className="card">

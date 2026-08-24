@@ -7,7 +7,7 @@
 //   prototype.js     — raport testów prototypu
 //   satfat.js        — raport odbioru SAT / FAT
 //   complaint.js     — zgłoszenie wady / reklamacja
-//   lesson.js        — lekcja projektowa (feedback do konstrukcji / Lessons Learned)
+//   lesson.js        — ticket z montażu (Lesson Learned)
 // Importerzy (strony raportów, Home, App-warmup) używają wyłącznie tego pliku.
 // Buildery zwracają { blob, filename } (bez pobierania). useReportPage decyduje:
 // pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
