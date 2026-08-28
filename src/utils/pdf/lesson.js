@@ -81,3 +81,4 @@ const baseName = (r) => fileBase(r, 'ticket')
 const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
 export const buildLessonPdf = gen.pdf
 export const buildLessonPackage = gen.pkg
+export const buildLessonTransfer = gen.transfer

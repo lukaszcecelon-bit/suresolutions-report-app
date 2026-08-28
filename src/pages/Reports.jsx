@@ -463,7 +463,7 @@ export default function Reports({ navigate }) {
                     className="w-full text-left px-3 py-2.5 text-sm text-sure-dark dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700"
                     onClick={() => { setToolsOpen(false); handleImportClick() }}
                   >
-                    📥 Importuj raport z paczki
+                    📥 Wczytaj raport z pliku
                   </button>
                   <button
                     role="menuitem"
@@ -531,7 +531,7 @@ export default function Reports({ navigate }) {
         <input
           ref={importInput}
           type="file"
-          accept=".suresync,.zip,application/zip"
+          accept=".pdf,application/pdf,.suresync,.zip,application/zip"
           onChange={handleImportFileChange}
           className="hidden"
         />

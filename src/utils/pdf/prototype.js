@@ -144,3 +144,4 @@ function baseName(r) {
 const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
 export const buildPrototypePdf = gen.pdf
 export const buildPrototypePackage = gen.pkg
+export const buildPrototypeTransfer = gen.transfer

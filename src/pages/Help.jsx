@@ -78,7 +78,7 @@ const HOW_IT_WORKS = [
   {
     icon: '🔁',
     title: 'Wysyłka i przenoszenie',
-    body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” tworzy paczkę do przeniesienia całego raportu (z edycją po imporcie) — w zakładce 🗂 Raporty „📥 Importuj raport” ją wczytuje, a „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
+    body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” daje PDF z zaszytymi danymi: wygląda i otwiera się jak zwykły raport, ale druga osoba może go wczytać z powrotem do aplikacji i edytować — w zakładce 🗂 Raporty „📥 Wczytaj raport z pliku”. Dlatego do przekazywania raportu między telefonem a komputerem (albo między ludźmi) używaj TEGO przycisku — zwykły wydruk PDF danych nie niesie. „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
   },
   {
     icon: '🌗',

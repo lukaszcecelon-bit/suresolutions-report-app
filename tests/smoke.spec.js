@@ -353,6 +353,64 @@ test('nowy raport nie ląduje w bazie przed pierwszym wpisem + „Odrzuć" (v1.2
   await expect(page.getByRole('button', { name: /Nowy raport/ })).toBeVisible()
 })
 
+test('PDF z zaszytymi danymi: przenieś → wczytaj z powrotem (v1.4)', async ({ page }) => {
+  // Pełna pętla przenoszenia raportu JEDNYM plikiem: „Przenieś na inne
+  // urządzenie" daje PDF z zaszytą paczką, a import tego samego PDF-a odtwarza
+  // raport. Wcześniej wychodził osobny .suresync i sam PDF nie dawał się wczytać.
+  const report = {
+    id: 'r_transfer', type: 'service', status: 'draft', schemaVersion: 4,
+    createdAt: '2026-08-24T08:00:00.000Z', updatedAt: '2026-08-24T08:00:00.000Z',
+    header: { reportNumber: 'RPT-99-321-2026-08-24', projectNumber: '99-321', projectName: 'Projekt transferowy', machineName: 'Prasa', date: '2026-08-24', author: 'Jan', client: 'BSH', location: 'Hala 3' },
+    visit: { arrival: '08:00', departure: '12:00', attendees: '2', travelKm: '128' },
+    role: 'Technik serwisu', visitStatus: 'completed',
+    actions: [{ id: 'a1', description: 'Wymiana czujnika krańcowego', media: [] }],
+    parts: [], observations: [], recommendations: [], receivedBy: 'Klient',
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, report)
+
+  // --- 1) Eksport: PDF (nie .suresync) ---
+  await page.goto('/#/service/r_transfer')
+  const dl = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: /Przenieś na inne urządzenie/ }).click()
+  const file = await dl
+  expect(file.suggestedFilename()).toMatch(/\.pdf$/)
+  const pdfPath = await file.path()
+
+  // Plik jest prawdziwym PDF-em z czytelnym tekstem — czyli nadal dokumentem.
+  const buf = await fs.readFile(pdfPath)
+  expect(buf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  const parser = new PDFParse({ data: new Uint8Array(buf) })
+  const pdfData = await parser.getText()
+  await parser.destroy()
+  expect(pdfData.text).toContain('RAPORT SERWISU NA OBIEKCIE')
+
+  // --- 2) Kasujemy raport lokalnie (symulacja drugiego urządzenia) ---
+  await page.goto('/#/reports')
+  await page.evaluate(() => {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('suresolutions.report.v2:'))
+      .forEach((k) => localStorage.removeItem(k))
+  })
+  await page.reload()
+
+  // --- 3) Import TEGO SAMEGO PDF-a odtwarza raport ---
+  await page.locator('input[type="file"]').setInputFiles(pdfPath)
+  await expect(page.getByRole('button', { name: 'Importuj' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Importuj' }).click()
+
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('suresolutions.report.v2:r_transfer')
+    return raw ? JSON.parse(raw).header.projectName : null
+  }), { timeout: 30_000 }).toBe('Projekt transferowy')
+
+  // Dane szczegółowe też przeżyły podróż przez PDF.
+  const restored = await page.evaluate(() => JSON.parse(localStorage.getItem('suresolutions.report.v2:r_transfer')))
+  expect(restored.visit.travelKm).toBe('128')
+  expect(restored.actions[0].description).toBe('Wymiana czujnika krańcowego')
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()

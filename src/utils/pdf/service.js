@@ -136,3 +136,4 @@ const baseName = (r) => fileBase(r, 'serwis')
 const gen = makeReportGenerators(collectMedia, buildPdf, baseName)
 export const buildServicePdf = gen.pdf
 export const buildServicePackage = gen.pkg
+export const buildServiceTransfer = gen.transfer

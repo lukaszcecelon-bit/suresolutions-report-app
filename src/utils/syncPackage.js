@@ -22,6 +22,7 @@ import {
   replaceImage, replaceOriginal, replaceVideo,
 } from './imageStore.js'
 import { collectMediaIds, loadAll, upsert, newId } from './storage.js'
+import { isPdfFile, extractPackageFromPdf } from './pdfAttachment.js'
 import { slugify } from './text.js'
 import { setLastBackupAt } from './settings.js'
 
@@ -167,13 +168,28 @@ export async function exportAllReportsPackage(reportsArg) {
 // Czyta paczkę z pliku i zwraca {zip, manifest, conflictingIds}.
 // conflictingIds — lista raportów o id które już istnieją lokalnie (do
 // pokazania UI conflict resolution).
-export async function readPackage(file) {
+export async function readPackage(inputFile) {
+  // PDF na wejściu (v1.4) — wyciągamy z niego zaszytą paczkę i dalej idzie już
+  // zwykła ścieżka ZIP-a. Dzięki temu wystarczy PDF, który monter i tak wysyła:
+  // nie trzeba prosić go o wygenerowanie osobnego pliku.
+  let file = inputFile
+  if (await isPdfFile(inputFile)) {
+    const extracted = await extractPackageFromPdf(inputFile)
+    if (!extracted) {
+      throw new Error(
+        'Ten PDF nie zawiera danych raportu. Poproś o plik z przycisku „Przenieś na inne urządzenie" ' +
+        '— zwykły wydruk PDF nie wystarczy (dane gubi też ponowne zapisanie pliku innym programem).'
+      )
+    }
+    file = extracted
+  }
+
   const { default: JSZip } = await import('jszip')
   let zip
   try {
     zip = await JSZip.loadAsync(file)
   } catch (e) {
-    throw new Error('Nie udało się otworzyć paczki — czy to jest plik .suresync?')
+    throw new Error('Nie udało się otworzyć paczki — czy to jest plik .suresync lub PDF z danymi?')
   }
 
   const manifestFile = zip.file('manifest.json')

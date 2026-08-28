@@ -12,9 +12,27 @@
 // Buildery zwracają { blob, filename } (bez pobierania). useReportPage decyduje:
 // pobrać (downloadBlob) czy udostępnić (Web Share → Teams/Mail).
 export { warmupLibs } from './pdf/core.js'
-export { buildCommissioningPackage, buildCommissioningPdf } from './pdf/commissioning.js'
-export { buildServicePackage, buildServicePdf } from './pdf/service.js'
-export { buildPrototypePackage, buildPrototypePdf } from './pdf/prototype.js'
-export { buildSatFatPackage, buildSatFatPdf } from './pdf/satfat.js'
-export { buildComplaintPackage, buildComplaintPdf } from './pdf/complaint.js'
-export { buildLessonPackage, buildLessonPdf } from './pdf/lesson.js'
+export { buildCommissioningPackage, buildCommissioningPdf, buildCommissioningTransfer } from './pdf/commissioning.js'
+export { buildServicePackage, buildServicePdf, buildServiceTransfer } from './pdf/service.js'
+export { buildPrototypePackage, buildPrototypePdf, buildPrototypeTransfer } from './pdf/prototype.js'
+export { buildSatFatPackage, buildSatFatPdf, buildSatFatTransfer } from './pdf/satfat.js'
+export { buildComplaintPackage, buildComplaintPdf, buildComplaintTransfer } from './pdf/complaint.js'
+export { buildLessonPackage, buildLessonPdf, buildLessonTransfer } from './pdf/lesson.js'
+
+import { buildCommissioningTransfer } from './pdf/commissioning.js'
+import { buildServiceTransfer } from './pdf/service.js'
+import { buildPrototypeTransfer } from './pdf/prototype.js'
+import { buildSatFatTransfer } from './pdf/satfat.js'
+import { buildComplaintTransfer } from './pdf/complaint.js'
+import { buildLessonTransfer } from './pdf/lesson.js'
+
+// Rejestr builderów „PDF do przeniesienia" per typ raportu — dzięki niemu
+// useReportPage sięga po właściwy bez przekazywania go przez każdą z 6 stron.
+export const TRANSFER_BUILDERS = {
+  commissioning: buildCommissioningTransfer,
+  service: buildServiceTransfer,
+  prototype: buildPrototypeTransfer,
+  satfat: buildSatFatTransfer,
+  complaint: buildComplaintTransfer,
+  lesson: buildLessonTransfer,
+}

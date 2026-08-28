@@ -53,3 +53,4 @@ function buildPdf(ctx, report, photos) {
 const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r, 'reklamacja'))
 export const buildComplaintPdf = gen.pdf
 export const buildComplaintPackage = gen.pkg
+export const buildComplaintTransfer = gen.transfer

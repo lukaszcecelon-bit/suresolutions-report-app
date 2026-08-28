@@ -105,3 +105,4 @@ function buildPdf(ctx, report, photos, videos) {
 const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r))
 export const buildCommissioningPdf = gen.pdf
 export const buildCommissioningPackage = gen.pkg
+export const buildCommissioningTransfer = gen.transfer

@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.3**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.4**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -382,17 +382,58 @@ w trzech rzędach:
 - **Rząd 3:** „✓ Oznacz ukończony" (jeśli dotyczy) + „🔄 Przenieś na inne
   urządzenie" + „Zapisz i wyjdź".
 
-**🔄 Przenieś na inne urządzenie** — paczka **synchronizacyjna** `.suresync`
-(ZIP z `report.json` + media) do przeniesienia raportu na inne urządzenie
-(import na Home). To NIE jest plik dla klienta — to kopia robocza do edycji.
+**🔄 Przenieś na inne urządzenie** — patrz niżej: od v1.4 **PDF z zaszytymi
+danymi**, nie osobna paczka.
 
 Reklamacja (własny pasek): dodatkowo **📤 Wyślij do zakupowca** (telefon → Web
 Share ZIP do Outlooka; komputer → pobranie ZIP + `mailto` z tematem/treścią).
 
-Rozróżnienie: **PDF/ZIP = gotowy raport dla odbiorcy**; **.suresync = sync między
-własnymi urządzeniami**. Wybór share vs pobranie steruje `canShareFiles()`
-(`syncPackage.js`) — telefon udostępnia, desktop pobiera i podpowiada mail.
-Nazwa pliku = numer raportu (bez podwójnej daty — `fileBase` w `core.js`).
+Wybór share vs pobranie steruje `canShareFiles()` (`syncPackage.js`) — telefon
+udostępnia, desktop pobiera i podpowiada mail. Nazwa pliku = numer raportu (bez
+podwójnej daty — `fileBase` w `core.js`).
+
+### PDF z zaszytymi danymi — przenoszenie raportu (v1.4)
+**Problem:** przeniesienie raportu wymagało osobnego pliku `.suresync`. To dawało
+dwa różne pliki na to samo („który mam wysłać?"), nietypowe rozszerzenie bywa
+blokowane przez pocztę i Teams, a przede wszystkim: **gdy monter wysłał sam PDF,
+odbiorca nie mógł go wczytać do edycji** — musiał prosić o wygenerowanie paczki,
+czyli o kolejną rundę w terenie.
+
+**Rozwiązanie:** `🔄 Przenieś na inne urządzenie` produkuje **zwykły PDF raportu
+z paczką `.suresync` zaszytą w środku** jako standardowy załącznik PDF
+(`EmbeddedFiles` — ten sam mechanizm, którym e-faktury wożą XML w wydruku). Na
+wydruku nie widać nic; dla apki to komplet danych. Jeden plik jest RAZEM
+dokumentem do czytania i źródłem do edycji.
+
+Jak to działa (`utils/pdfAttachment.js`):
+- **Zapis:** jsPDF nie ma API do załączników, ale wystawia `newObject`/`out` oraz
+  zdarzenia `postPutResources` (zasoby) i `putCatalog` (katalog) — obiekty
+  `EmbeddedFile` → `Filespec` → drzewo `Names` dopisujemy ręcznie. Bajty idą jako
+  „binary string" porcjami po 8 KB (jsPDF tak trzyma dane obrazów i przy zapisie
+  robi `charCodeAt & 0xFF`), więc plik nie puchnie — **bez base64**.
+- **Odczyt:** pdf.js `getAttachments()` — pdf.js i tak jest w apce (podgląd PDF),
+  więc zero nowych zależności. `readPackage()` wykrywa PDF po sygnaturze `%PDF-`,
+  wyciąga paczkę i dalej idzie **niezmieniona** ścieżka importu: podgląd zawartości,
+  wykrywanie konfliktów (nadpisz / dodaj jako kopię), odtworzenie mediów.
+- Buildery `transfer` powstają w `makeReportGenerators` (jeden na typ), a
+  `TRANSFER_BUILDERS` w `pdfGenerator.js` pozwala `useReportPage` sięgnąć po
+  właściwy bez przekazywania go przez każdą z 6 stron.
+
+Zweryfikowane: 3 MB losowych bajtów (z `0x00`, `0xFF`, `\n`, `\r`, `\`, `)`)
+wraca z PDF-a **bajt w bajt**, a plik nie rośnie. Smoke test przechodzi pełną
+pętlę: eksport → skasowanie raportu → import tego samego PDF-a → raport wraca
+z detalami.
+
+**Ograniczenia, o których trzeba wiedzieć:**
+- **Zwykły „Zapisz PDF" danych NIE niesie** — do przenoszenia służy przycisk
+  „Przenieś". Import mówi to wprost, gdy trafi na PDF bez danych.
+- Narzędzia, które **przepisują** PDF (drukowanie do PDF, kompresory, część
+  komunikatorów), wyrzucą załącznik. Poczta i Teams przepuszczają plik bez zmian.
+- To **przeniesienie, nie synchronizacja** — przy równoległej edycji wygrywa
+  ostatni import (okno konfliktów pozwala wybrać nadpisanie albo kopię).
+- Plik jest większy niż sam PDF (niesie też media) — mniej więcej tyle, ile
+  wcześniej ważyły PDF i paczka razem.
+- `.suresync` **nadal się wczytuje** — stare paczki i backupy działają bez zmian.
 
 ### Rejestr ticketów z montażu → XLSX (v0.40)
 Osobna ścieżka eksportu (nie PDF): w menu ⋯ zakładki Raporty **„📊 Rejestr
@@ -627,6 +668,7 @@ utils/
   useWakeLock.js            # Screen Wake Lock (ekran nie gaśnie w sesji uruchomienia)
   validateReport.js         # walidacja przed eksportem + buildChecks (total/filled do wskaźnika)
   syncPackage.js            # paczki .suresync + helpery Web Share + canShareFiles
+  pdfAttachment.js          # zaszywanie paczki w PDF (jsPDF) + odczyt (pdf.js)
   pdfGenerator.js           # barrel API generowania
   pdf/
     core.js                 # silnik PDF + prymitywy + buildReportPdf + makeReportGenerators
@@ -651,14 +693,15 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 9 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 10 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **ticket z montażu: karta PDF (chudy nagłówek + numery części) + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
   MTTR, sumy sztuk, kilometry jako liczba, migracja klienta v3→v4, „puste ≠ 0");
   **uruchomienie: wznowienie maszyny po powrocie do raportu + tryb ręczny**;
   **tryb ręczny trzyma sesję w jednym dniu** (koniec nie ucieka o dobę);
-  **pusty szkic nie trafia do bazy + „Odrzuć"**; podgląd PDF w apce
+  **pusty szkic nie trafia do bazy + „Odrzuć"**; **PDF z zaszytymi danymi:
+  przenieś → wczytaj z powrotem**; podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
 - **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
@@ -678,7 +721,12 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.3.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.4.** Skrót ostatnich zmian:
+- **v1.4** — **PDF z zaszytymi danymi**: „🔄 Przenieś na inne urządzenie" daje
+  jeden plik, który jest naraz dokumentem i źródłem do edycji (paczka
+  `.suresync` jako załącznik PDF; odczyt przez pdf.js `getAttachments`).
+  Koniec z dwoma plikami na to samo i z proszeniem montera o ponowny eksport,
+  gdy przysłał sam PDF. Import przyjmuje PDF i stare paczki. Szczegóły w §7.
 - **v1.3** — **„Lekcja projektowa" → „Ticket z montażu (Lesson Learned)"** i
   **chudy nagłówek** tego typu: numer projektu + opcjonalne **numery części**
   (`partNos`, lista z podpowiedziami z historii), bez nazwy projektu, maszyny i

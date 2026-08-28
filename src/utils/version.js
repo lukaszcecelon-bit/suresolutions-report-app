@@ -4,4 +4,4 @@
 // package.json. Przedtem stała siedziała w App.jsx, ale od v0.52 potrzebują jej
 // też moduły bez dostępu do drzewa Reacta (eksport analityczny stempluje nią
 // każdy plik, żeby po pół roku było wiadomo, czym policzono liczby).
-export const APP_VERSION = 'v1.3'
+export const APP_VERSION = 'v1.4'

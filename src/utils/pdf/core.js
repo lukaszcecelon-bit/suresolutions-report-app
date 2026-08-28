@@ -806,8 +806,13 @@ function applyLinks(ctx) {
 }
 
 // Główne wejście: drawFn(ctx) rysuje raport prymitywami; my dokładamy stopki+linki.
-export async function renderReportToBlob(drawFn) {
+// `attach` (opcjonalne) — paczka danych zaszywana w PDF-ie, patrz pdfAttachment.js.
+export async function renderReportToBlob(drawFn, { attach } = {}) {
   const { doc, autoTable } = await setupDoc()
+  if (attach) {
+    const { attachFileToPdf } = await import('../pdfAttachment.js')
+    attachFileToPdf(doc, attach)
+  }
   const logo = await getLogoDataUrl()
   const ctx = makeCtx(doc, autoTable, logo)
   await drawFn(ctx)
@@ -821,10 +826,10 @@ export async function renderReportToBlob(drawFn) {
 // pobrania SAMEGO PDF, albo do złożenia paczki ZIP — bez duplikowania tych
 // trzech kroków w każdym module. buildPdf dostaje (ctx, r, photos, videos);
 // moduły bez wideo po prostu ignorują ostatni argument.
-export async function buildReportPdf(report, collectMedia, buildPdf) {
+export async function buildReportPdf(report, collectMedia, buildPdf, opts) {
   const r = await resolveReportPhotos(report)
   const { photos, videos } = collectMedia(r)
-  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos))
+  const pdfBlob = await renderReportToBlob((ctx) => buildPdf(ctx, r, photos, videos), opts)
   return { r, photos, videos, pdfBlob }
 }
 
@@ -842,6 +847,25 @@ export function makeReportGenerators(collectMedia, drawPdf, baseName) {
     pkg: async (report) => {
       const { r, photos, videos, pdfBlob } = await buildReportPdf(report, collectMedia, drawPdf)
       return assemblePackage(pdfBlob, photos, videos, baseName(r))
+    },
+    // PDF DO PRZENIESIENIA (v1.4): ten sam dokument, ale z zaszytą paczką
+    // `.suresync`. Wygląda i otwiera się jak zwykły raport, a apka potrafi go
+    // wczytać z powrotem do edycji — koniec z dwoma różnymi plikami na to samo.
+    // syncPackage importowany dynamicznie: JSZip ma trafiać do bundla dopiero
+    // przy realnym użyciu, tak jak w pozostałych ścieżkach paczkowania.
+    transfer: async (report) => {
+      const { exportReportPackage } = await import('../syncPackage.js')
+      const pkgBlob = await exportReportPackage(report)
+      const bytes = new Uint8Array(await pkgBlob.arrayBuffer())
+      const name = baseName(report)
+      const { pdfBlob } = await buildReportPdf(report, collectMedia, drawPdf, {
+        attach: {
+          filename: name + '.suresync',
+          bytes,
+          description: 'Dane raportu do edycji w aplikacji Raporty SURE',
+        },
+      })
+      return { blob: pdfBlob, filename: name + '.pdf' }
     },
   }
 }

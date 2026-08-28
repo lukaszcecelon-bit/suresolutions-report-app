@@ -3,6 +3,7 @@ import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import { useAutoSave } from './useAutoSave.js'
 import { isBlankReport } from './reportFields.js'
 import { remove } from './storage.js'
+import { TRANSFER_BUILDERS } from './pdfGenerator.js'
 import { ensureValidOrConfirm } from './validateReport.js'
 import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
 
@@ -59,19 +60,24 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
     toast.success('Raport ukończony i zablokowany do edycji')
   }
 
-  // Synchronizacja — paczka sync z całym raportem + mediami do przesłania
-  // na inne urządzenie. forceDownload=false → Web Share API; true → download lokalny.
+  // Przeniesienie na inne urządzenie — od v1.4 zwykły PDF raportu z ZASZYTĄ
+  // paczką danych (patrz pdfAttachment.js). Wcześniej wychodził osobny plik
+  // `.suresync`: dwa różne pliki na to samo, nietypowe rozszerzenie blokowane
+  // przez pocztę/Teams, a odbiorca samego PDF-a nie mógł go wczytać do edycji.
+  // Fallback na starą paczkę zostaje dla typów spoza rejestru builderów.
   const sendToDevice = async (forceDownload = false) => {
     setSending(true)
     try {
-      const blob = await exportReportPackage(report)
-      const filename = makePackageFilename(report)
+      const buildTransfer = TRANSFER_BUILDERS[report.type]
+      const { blob, filename } = buildTransfer
+        ? await buildTransfer(report)
+        : { blob: await exportReportPackage(report), filename: makePackageFilename(report) }
       if (forceDownload) {
         downloadBlob(blob, filename)
-        toast.success('Plik zapisany lokalnie')
+        toast.success('PDF z danymi zapisany — można go wczytać z powrotem do apki')
       } else {
         await shareOrDownload(blob, filename)
-        toast.success('Paczka gotowa do przesłania')
+        toast.success('PDF z danymi gotowy do wysłania')
       }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))

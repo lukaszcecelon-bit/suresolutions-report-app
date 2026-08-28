@@ -93,7 +93,7 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
             onClick={() => page.sendToDevice(false)}
             disabled={page.sending}
             className="btn-secondary flex-1"
-            title="Paczka do PRZENIESIENIA raportu na inne Twoje urządzenie (z możliwością edycji po imporcie)"
+            title="PDF z zaszytymi danymi — wygląda jak zwykły raport, a druga osoba może go wczytać do apki i edytować"
           >
             {page.sending ? '⏳' : '🔄 Przenieś na inne urządzenie'}
           </button>

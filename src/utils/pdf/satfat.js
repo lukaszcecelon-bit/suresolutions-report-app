@@ -195,3 +195,4 @@ function buildPdf(ctx, report, photos, videos) {
 const gen = makeReportGenerators(collectMedia, buildPdf, (r) => fileBase(r, 'odbior'))
 export const buildSatFatPdf = gen.pdf
 export const buildSatFatPackage = gen.pkg
+export const buildSatFatTransfer = gen.transfer
