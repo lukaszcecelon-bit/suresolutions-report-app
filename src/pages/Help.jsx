@@ -81,6 +81,11 @@ const HOW_IT_WORKS = [
     body: 'Na telefonie: „📲 Udostępnij PDF” → systemowe okno (Mail / Pliki / Teams). Na komputerze: „✉️ Wyślij mailem” pobiera PDF i otwiera pocztę z tematem (załącz pobrany plik). „🔄 Przenieś na inne urządzenie” daje PDF z zaszytymi danymi: wygląda i otwiera się jak zwykły raport, ale druga osoba może go wczytać z powrotem do aplikacji i edytować — w zakładce 🗂 Raporty „📥 Wczytaj raport z pliku”. Dlatego do przekazywania raportu między telefonem a komputerem (albo między ludźmi) używaj TEGO przycisku — zwykły wydruk PDF danych nie niesie. „💾 Backup wszystko” pakuje wszystkie raporty naraz.',
   },
   {
+    icon: '📤',
+    title: 'Nie widzę Teams w oknie udostępniania (iPhone)',
+    body: 'iOS pokazuje w oknie udostępniania tylko te aplikacje, które zgłosiły systemowi, że przyjmują dany typ pliku — i tylko te włączone w rzędzie ikon. Jeśli brakuje Teams: przewiń rząd aplikacji do końca w prawo → „Więcej” → włącz Microsoft Teams (możesz je też przestawić na początek). Gdy Teams nadal nie przyjmuje pliku, wybierz „Zapisz w Plikach” → folder OneDrive, a w Teams załącz plik z OneDrive — albo wyślij raport Outlookiem, który przyjmuje załączniki bez problemu. Komunikat „Nie można przekazać pliku” w samym Teams to kwestia OneDrive/M365, nie aplikacji.',
+  },
+  {
     icon: '🌗',
     title: 'Tryb jasny / ciemny',
     body: 'Przełącznik ☀️/🌙 w prawym górnym rogu. Domyślnie dopasowuje się do ustawień systemu, ale możesz wymusić swój wybór.',

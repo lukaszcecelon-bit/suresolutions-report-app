@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.4**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.5**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -12,8 +12,9 @@
 
 **Raporty SURE** to aplikacja webowa (PWA) dla firmy **SureSolutions** do tworzenia
 raportów inżynierskich w terenie i w warsztacie: uruchomień maszyn, serwisów,
-testów prototypów, odbiorów SAT/FAT oraz zgłoszeń wad/reklamacji. Działa na
-telefonie (zainstalowana z ekranu głównego) i na komputerze.
+testów prototypów, odbiorów SAT/FAT, zgłoszeń wad/reklamacji oraz ticketów
+z montażu do konstrukcji. Działa na telefonie (zainstalowana z ekranu głównego)
+i na komputerze.
 
 **Kluczowe założenie architektoniczne:** aplikacja jest **w 100% kliencka** —
 brak backendu, brak logowania, brak kosztów serwerowych. Wszystkie dane
@@ -389,7 +390,9 @@ Reklamacja (własny pasek): dodatkowo **📤 Wyślij do zakupowca** (telefon →
 Share ZIP do Outlooka; komputer → pobranie ZIP + `mailto` z tematem/treścią).
 
 Wybór share vs pobranie steruje `canShareFiles()` (`syncPackage.js`) — telefon
-udostępnia, desktop pobiera i podpowiada mail. Nazwa pliku = numer raportu (bez
+udostępnia, desktop pobiera i podpowiada mail. **Typ pliku w `navigator.share`
+decyduje o tym, które aplikacje iOS w ogóle pokaże** — dlatego `File` dostaje MIME
+z `mimeForFilename(nazwa)`, a payload zawiera wyłącznie `files` (patrz §13). Nazwa pliku = numer raportu (bez
 podwójnej daty — `fileBase` w `core.js`).
 
 ### PDF z zaszytymi danymi — przenoszenie raportu (v1.4)
@@ -693,7 +696,7 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 10 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 11 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **ticket z montażu: karta PDF (chudy nagłówek + numery części) + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
@@ -701,7 +704,8 @@ assets/logo.png
   **uruchomienie: wznowienie maszyny po powrocie do raportu + tryb ręczny**;
   **tryb ręczny trzyma sesję w jednym dniu** (koniec nie ucieka o dobę);
   **pusty szkic nie trafia do bazy + „Odrzuć"**; **PDF z zaszytymi danymi:
-  przenieś → wczytaj z powrotem**; podgląd PDF w apce
+  przenieś → wczytaj z powrotem**; **udostępnianie: typ pliku i payload share**;
+  podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
 - **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
@@ -721,7 +725,13 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.4.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.5.** Skrót ostatnich zmian:
+- **v1.5** — **fix listy aplikacji w oknie udostępniania iOS**: plik szedł do
+  `navigator.share` z typem `application/zip` niezależnie od tego, czym był, więc
+  PDF z „Przenieś na inne urządzenie" trafiał do UTI `public.zip-archive` i znikał
+  z listy Teams/Outlooka. Typ MIME wyprowadzany jest teraz z rozszerzenia
+  (`mimeForFilename`), a payload zostaje wyłącznie plikiem. Nowy smoke test
+  przechwytuje payload `navigator.share`. Szczegóły w §7 i §13.
 - **v1.4** — **PDF z zaszytymi danymi**: „🔄 Przenieś na inne urządzenie" daje
   jeden plik, który jest naraz dokumentem i źródłem do edycji (paczka
   `.suresync` jako załącznik PDF; odczyt przez pdf.js `getAttachments`).
@@ -894,6 +904,14 @@ eksport analityczny stempluje nim pliki.
 
 ## 13. Znane ograniczenia
 
+- **Teams w oknie udostępniania iOS.** System dobiera aplikacje po zarejestrowanym
+  **typie pliku** (UTI wyprowadzanym z MIME), a nie po rozszerzeniu w nazwie —
+  dlatego `mimeForFilename` w `syncPackage.js` musi zwracać prawdę o pliku
+  (v1.5 naprawia PDF ogłaszany jako ZIP). Do payloadu `navigator.share` nie
+  dokładamy `title`/`text`, bo rozszerzenia deklarujące „dokładnie jeden plik"
+  wypadają wtedy z listy. Pozostała część jest **poza aplikacją**: aplikacja musi
+  być włączona w rzędzie ikon („Więcej"), a Teams i tak bywa kapryśny — obejście
+  to „Zapisz w Plikach" → OneDrive → załącznik z OneDrive w Teams, albo Outlook.
 - **Teams na iOS — „Nie można przekazać pliku".** To problem **Teams / Microsoft
   365 (OneDrive)**, NIE aplikacji — powtarza się nawet przy ręcznym załączaniu
   zapisanego pliku w Teams. Teams wrzuca pliki z czatu do OneDrive nadawcy; bez
@@ -905,14 +923,20 @@ eksport analityczny stempluje nim pliki.
   ładują się online przy pierwszym użyciu (świadomie poza precache). Offline
   podgląd/eksport rejestru pokaże błąd; sama praca nad raportami działa offline.
 - **Duże raporty** — wiele zdjęć w załączniku zwiększa rozmiar PDF (kompromis:
-  samowystarczalny plik vs waga).
+  samowystarczalny plik vs waga). PDF **z danymi** (§7) niesie dodatkowo paczkę,
+  więc waży mniej więcej tyle, ile wcześniej PDF i `.suresync` razem.
+- **Załącznik z danymi ginie przy przepisaniu PDF-a** — „drukuj do PDF",
+  kompresory i część komunikatorów zapisują plik od nowa i wyrzucają
+  załączniki. Wtedy zostaje sam dokument (import powie o tym wprost).
+  Poczta i Teams przekazują plik bez zmian.
 - **Przejście między dwoma raportami samą zmianą hasha** (`#/typ/id1` → `#/typ/id2`
   wpisane w pasku adresu) nie przemontowuje komponentu, więc zostaje stan
   poprzedniego raportu. Z poziomu UI nie da się tego zrobić — do innego raportu
   wchodzi się przez listę, która najpierw odmontowuje stronę — ale w testach
   wymaga to `page.reload()`. Docelowo `key={reportId}` na stronach raportów.
 - **Dane lokalne** — wyczyszczenie danych przeglądarki = utrata raportów.
-  Do przenoszenia/backupu służy paczka `.suresync`. iOS Safari potrafi czyścić
+  Do przenoszenia służy PDF z zaszytymi danymi (§7), do backupu całej bazy
+  paczka `.suresync`. iOS Safari potrafi czyścić
   IndexedDB po ~7 dniach nieużywania, chyba że PWA jest dodana do ekranu głównego.
 - **Voice-to-text** wysyła audio do serwera przeglądarki (Google/Apple/MS);
   Firefox nie wspiera Web Speech API (graceful fallback).
@@ -956,6 +980,9 @@ eksport analityczny stempluje nim pliki.
   Naturalny moment powrotu: po pierwszym eksporcie na realnych danych — wtedy
   wiadomo, których przekrojów faktycznie brakuje (i czy nie trzeba raczej
   poprawić kolumn niż budować pulpit).
+- **Wczytywanie raportu wprost z udostępniania** (PWA `share_target` /
+  `file_handlers`) — „udostępnij PDF → Raporty SURE" zamiast zapisz-i-wybierz.
+  Działa na Androidzie; iOS tego nie wspiera, więc zysk byłby połowiczny.
 - **Subset fontu Roboto** (~168→60 KB) — mikrooptymalizacja precache.
 - **Przełącznik „dołączaj duże zdjęcia do PDF"** / limit rozdzielczości
   załącznika — gdyby waga PDF była problemem.

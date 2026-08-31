@@ -356,10 +356,33 @@ export function canShareFiles() {
 // PODAJEMY title+text, bo celem jest e-mail: Outlook/Mail tworzy wiadomość
 // z załączonym PDF, tematem i treścią. Adresata user wybiera/wkleja.
 // Fallback: pobranie pliku.
+// TYP PLIKU DECYDUJE O LIŚCIE APLIKACJI w oknie udostępniania iOS (v1.5).
+// System dobiera aplikacje po zarejestrowanym UTI, który wyprowadza z typu MIME
+// pliku — nie z rozszerzenia w nazwie. PDF ogłoszony jako `application/zip`
+// trafia do `public.zip-archive` i znika z listy Teams/Outlooka, mimo że nazywa
+// się `.pdf`. Ta sama pułapka co kiedyś z `.suresync` (patrz makePackageFilename).
+const MIME_BY_EXT = {
+  pdf: 'application/pdf',
+  zip: 'application/zip',
+  suresync: 'application/zip',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  jsonl: 'application/json',
+  json: 'application/json',
+}
+
+export function mimeForFilename(filename) {
+  const ext = String(filename || '').split('.').pop().toLowerCase()
+  return MIME_BY_EXT[ext] || 'application/octet-stream'
+}
+
 export async function shareFileOrDownload(blob, filename, mime, { title, text } = {}) {
-  const file = new File([blob], filename, { type: mime || 'application/octet-stream' })
+  const file = new File([blob], filename, { type: mime || mimeForFilename(filename) })
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
+      // TYLKO plik, bez `title`/`text`, jeśli wywołujący ich nie poda. Rozszerzenia
+      // udostępniania w iOS deklarują, ile i jakich elementów przyjmują — dorzucenie
+      // tekstu obok pliku potrafi wyciąć z listy aplikacje przyjmujące „dokładnie
+      // jeden plik" (m.in. Teams).
       const payload = { files: [file] }
       if (title) payload.title = title
       if (text) payload.text = text
@@ -384,7 +407,9 @@ export async function shareFileOrDownload(blob, filename, mime, { title, text } 
 // wspierają takiego mieszanego payload. Czysty file-only share daje pełną
 // listę kompatybilnych apek.
 export async function shareOrDownload(blob, filename /* , title — usunięte */) {
-  const file = new File([blob], filename, { type: 'application/zip' })
+  // Typ z rozszerzenia, NIE na sztywno „zip": tą ścieżką idzie też PDF z danymi
+  // („Przenieś na inne urządzenie", v1.4) oraz arkusze XLSX.
+  const file = new File([blob], filename, { type: mimeForFilename(filename) })
 
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {

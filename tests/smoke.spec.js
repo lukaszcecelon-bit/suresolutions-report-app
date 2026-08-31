@@ -411,6 +411,56 @@ test('PDF z zaszytymi danymi: przenieś → wczytaj z powrotem (v1.4)', async ({
   expect(restored.actions[0].description).toBe('Wymiana czujnika krańcowego')
 })
 
+test('udostępnianie: plik ogłaszany jako PDF, bez dodatkowego tekstu (v1.5)', async ({ page }) => {
+  // Regresja z terenu: na iPhonie w oknie udostępniania nie było Teams. Powód —
+  // „Przenieś na inne urządzenie" ogłaszało PDF jako `application/zip`, a iOS
+  // dobiera aplikacje po TYPIE pliku, nie po rozszerzeniu w nazwie.
+  await page.addInitScript(() => {
+    window.__shared = null
+    Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true })
+    Object.defineProperty(navigator, 'share', {
+      value: (data) => {
+        const f = data.files && data.files[0]
+        window.__shared = { name: f && f.name, type: f && f.type, keys: Object.keys(data).sort() }
+        return Promise.resolve()
+      },
+      configurable: true,
+    })
+  })
+
+  const report = {
+    id: 'r_share', type: 'service', status: 'draft', schemaVersion: 4,
+    createdAt: '2026-08-31T08:00:00.000Z', updatedAt: '2026-08-31T08:00:00.000Z',
+    header: { reportNumber: 'RPT-99-555-2026-08-31', projectNumber: '99-555', projectName: 'Projekt', machineName: 'Prasa', date: '2026-08-31', author: 'Jan', client: 'Klient', location: 'Hala' },
+    visit: { arrival: '08:00', departure: '12:00', attendees: '1', travelKm: '10' },
+    role: 'Technik serwisu', visitStatus: 'completed',
+    actions: [{ id: 'a1', description: 'Czynność', media: [] }],
+    parts: [], observations: [], recommendations: [], receivedBy: 'Klient',
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, report)
+
+  await page.goto('/#/service/r_share')
+
+  // --- 1) zwykłe udostępnienie raportu ---
+  await page.getByRole('button', { name: /Udostępnij PDF/ }).click()
+  await expect.poll(() => page.evaluate(() => window.__shared?.type), { timeout: 60_000 })
+    .toBe('application/pdf')
+  const plain = await page.evaluate(() => window.__shared)
+  expect(plain.name).toMatch(/\.pdf$/)
+  expect(plain.keys).toEqual(['files'])   // bez title/text — inaczej iOS filtruje aplikacje
+
+  // --- 2) przeniesienie na inne urządzenie (PDF z zaszytymi danymi) ---
+  await page.evaluate(() => { window.__shared = null })
+  await page.getByRole('button', { name: /Przenieś na inne urządzenie/ }).click()
+  await expect.poll(() => page.evaluate(() => window.__shared?.type), { timeout: 60_000 })
+    .toBe('application/pdf')
+  const transfer = await page.evaluate(() => window.__shared)
+  expect(transfer.name).toMatch(/\.pdf$/)
+  expect(transfer.keys).toEqual(['files'])
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()
