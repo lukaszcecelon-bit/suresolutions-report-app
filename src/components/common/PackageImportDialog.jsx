@@ -181,6 +181,15 @@ export default function PackageImportDialog({ file, onClose, onImported }) {
           {' · '}
           📷 {stats.photoCount || 0} zdjęć · 🎬 {stats.videoCount || 0} wideo
         </p>
+        {/* Plik z „Przenieś na inne urządzenie" niesie zdjęcia w rozdzielczości
+            raportu i pomija wideo (v1.6) — mówimy o tym przed importem, żeby
+            nikt nie szukał potem brakujących filmów. */}
+        {stats.videosOmitted > 0 && (
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+            🎬 Ten plik nie zawiera {stats.videosOmitted} pliku/ów wideo — zostały na urządzeniu,
+            z którego wysłano raport (plik do przenoszenia musi zmieścić się w mailu).
+          </p>
+        )}
       </div>
 
       {/* Brak konfliktów — proste podsumowanie */}

@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.5**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.6**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -434,9 +434,39 @@ z detalami.
   komunikatorów), wyrzucą załącznik. Poczta i Teams przepuszczają plik bez zmian.
 - To **przeniesienie, nie synchronizacja** — przy równoległej edycji wygrywa
   ostatni import (okno konfliktów pozwala wybrać nadpisanie albo kopię).
-- Plik jest większy niż sam PDF (niesie też media) — mniej więcej tyle, ile
-  wcześniej ważyły PDF i paczka razem.
+- Plik jest większy niż sam PDF (niesie też media), ale od v1.6 tylko nieznacznie
+  — patrz niżej.
 - `.suresync` **nadal się wczytuje** — stare paczki i backupy działają bez zmian.
+
+### Waga pliku do przenoszenia — profil `lite` (v1.6)
+**Problem z terenu:** „raporty do przenoszenia mają często powyżej 20 MB", a
+skrzynki tną załączniki na 20 MB. Powód: zaszyta paczka niosła **pełnowymiarowe
+oryginały zdjęć** (3–5 MB sztuka) i **wideo** — choć sam PDF renderuje zdjęcia
+w 1200×900.
+
+**Rozwiązanie:** `exportReportPackage(report, { media: 'lite' })` — używane
+wyłącznie przez builder `transfer`:
+- zdjęcia w **rozdzielczości raportu** (1200×900, ten sam cache `medium`, którym
+  karmimy PDF; brakujące pozycje downsamplujemy w locie i cache'ujemy),
+- **bez wideo** (jeden film z telefonu bywa cięższy niż cała reszta raportu),
+- gdy przeskalowanie wyszłoby większe niż wejście (mały obrazek, zrzut ekranu),
+  pakowany jest oryginał.
+
+Zapis idzie pod tą samą nazwą `originals/orig_{id}` co pełne oryginały, więc
+**strona odbierająca nie wie o profilach** — po imporcie ma normalny oryginał,
+tylko mniejszy. Manifest niesie `mediaProfile` i `stats.videosOmitted`; okno
+importu pokazuje ostrzeżenie o pominiętych filmach, a komunikat po wygenerowaniu
+podaje **rozmiar pliku** i liczbę pominiętych filmów.
+
+Co odbiorca traci: **nic w wydruku** (PDF i tak renderuje 1200×900) — wyłącznie
+zapas pikseli przy ponownym kadrowaniu. Pełną wierność dają „📦 ZIP" (jeden
+raport) i „💾 Backup wszystko" (cała baza) — te zostają na profilu `full`.
+
+Zmierzone (smoke test, zdjęcie 3200×2400 z szumem, czyli najgorszy przypadek dla
+kompresji): **7,56 MB → 1,56 MB**. Test pilnuje relacji do paczki ZIP i domyka
+pętlę: import w **czystym kontekście przeglądarki** musi odtworzyć zdjęcie
+w IndexedDB. Downsample wylądował w `utils/imageScale.js` — `syncPackage.js` nie
+może importować `pdf/core.js` (ściągnąłby jsPDF z fontami do bundla importu).
 
 ### Rejestr ticketów z montażu → XLSX (v0.40)
 Osobna ścieżka eksportu (nie PDF): w menu ⋯ zakładki Raporty **„📊 Rejestr
@@ -696,7 +726,7 @@ assets/logo.png
 
 - **Dev:** `npm run dev` (Vite, port 5173). **Build:** `npm run build`.
   **Testy E2E:** `npm run test:e2e` (Playwright).
-- **Smoke testy** (`tests/smoke.spec.js`, 11 testów): ładowanie Home; serwisowy
+- **Smoke testy** (`tests/smoke.spec.js`, 12 testów): ładowanie Home; serwisowy
   PDF z natywnym tekstem + polskie znaki; osobny PDF vs ZIP + załącznik dużych
   zdjęć; **ticket z montażu: karta PDF (chudy nagłówek + numery części) + eksport rejestru XLSX**; **eksport
   analityczny: zakładki XLSX + JSONL z wyliczonymi miarami** (dostępność, MTBF,
@@ -705,7 +735,8 @@ assets/logo.png
   **tryb ręczny trzyma sesję w jednym dniu** (koniec nie ucieka o dobę);
   **pusty szkic nie trafia do bazy + „Odrzuć"**; **PDF z zaszytymi danymi:
   przenieś → wczytaj z powrotem**; **udostępnianie: typ pliku i payload share**;
-  podgląd PDF w apce
+  **plik do przenoszenia lekki mimo dużych zdjęć + import odtwarza zdjęcie
+  w czystym kontekście**; podgląd PDF w apce
   renderuje strony. `beforeEach` wyłącza Web Share, by deterministycznie
   pojawiały się przyciski „Pobierz".
 - **UWAGA przy uruchamianiu testów:** `npm run build && npm run test:e2e | tail`
@@ -725,7 +756,14 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.5.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.6.** Skrót ostatnich zmian:
+- **v1.6** — **plik do przenoszenia mieści się w mailu**: zaszyta paczka szła
+  z pełnowymiarowymi oryginałami zdjęć i wideo, więc raporty przekraczały 20 MB
+  (limit załącznika). Nowy profil `lite` (tylko builder `transfer`): zdjęcia
+  w rozdzielczości raportu, bez wideo, oryginał gdy przeskalowanie nie pomaga.
+  Zmierzone 7,56 MB → 1,56 MB; komunikat podaje rozmiar i pominięte filmy, okno
+  importu ostrzega o brakujących wideo. Downsample wydzielony do
+  `utils/imageScale.js`. „📦 ZIP" i backup nadal pełne. Patrz §7.
 - **v1.5** — **fix listy aplikacji w oknie udostępniania iOS**: plik szedł do
   `navigator.share` z typem `application/zip` niezależnie od tego, czym był, więc
   PDF z „Przenieś na inne urządzenie" trafiał do UTI `public.zip-archive` i znikał
@@ -912,6 +950,15 @@ eksport analityczny stempluje nim pliki.
   wypadają wtedy z listy. Pozostała część jest **poza aplikacją**: aplikacja musi
   być włączona w rzędzie ikon („Więcej"), a Teams i tak bywa kapryśny — obejście
   to „Zapisz w Plikach" → OneDrive → załącznik z OneDrive w Teams, albo Outlook.
+  **Sprawdzone na urządzeniu (2026-09-01):** po v1.5 Teams nie pojawia się także
+  przy udostępnianiu **dowolnego innego PDF-a** (np. z aplikacji Pliki) i nie ma
+  go w liście „Więcej" — czyli rozszerzenie Teams nie jest w tym telefonie
+  zarejestrowane. To zamyka temat po stronie aplikacji: przyczyną jest instalacja
+  Teams albo firmowa polityka Microsoft (Intune potrafi zabronić Teamsowi
+  przyjmowania danych z aplikacji spoza polityki — „Receive data from other
+  apps"). Kanał roboczy: **Outlook** (dlatego v1.6 pilnuje wagi pliku) lub
+  OneDrive; trwałe rozwiązanie dla Teams = wysyłanie **linku** z SharePointa
+  zamiast pliku, czyli integracja z Graph (§14).
 - **Teams na iOS — „Nie można przekazać pliku".** To problem **Teams / Microsoft
   365 (OneDrive)**, NIE aplikacji — powtarza się nawet przy ręcznym załączaniu
   zapisanego pliku w Teams. Teams wrzuca pliki z czatu do OneDrive nadawcy; bez
@@ -924,7 +971,9 @@ eksport analityczny stempluje nim pliki.
   podgląd/eksport rejestru pokaże błąd; sama praca nad raportami działa offline.
 - **Duże raporty** — wiele zdjęć w załączniku zwiększa rozmiar PDF (kompromis:
   samowystarczalny plik vs waga). PDF **z danymi** (§7) niesie dodatkowo paczkę,
-  więc waży mniej więcej tyle, ile wcześniej PDF i `.suresync` razem.
+  ale od v1.6 w profilu `lite` (zdjęcia w rozdzielczości raportu, bez wideo), więc
+  mieści się w załączniku maila. Pełne oryginały i filmy przenosi „📦 ZIP"
+  albo backup — i te nadal mogą przekroczyć limity poczty.
 - **Załącznik z danymi ginie przy przepisaniu PDF-a** — „drukuj do PDF",
   kompresory i część komunikatorów zapisują plik od nowa i wyrzucają
   załączniki. Wtedy zostaje sam dokument (import powie o tym wprost).

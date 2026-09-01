@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useToast, useConfirm } from '../components/common/Toast.jsx'
 import { useAutoSave } from './useAutoSave.js'
 import { isBlankReport } from './reportFields.js'
-import { remove } from './storage.js'
+import { remove, collectMediaIds } from './storage.js'
+import { formatBytes } from './text.js'
 import { TRANSFER_BUILDERS } from './pdfGenerator.js'
 import { ensureValidOrConfirm } from './validateReport.js'
 import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
@@ -72,12 +73,19 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
       const { blob, filename } = buildTransfer
         ? await buildTransfer(report)
         : { blob: await exportReportPackage(report), filename: makePackageFilename(report) }
+      // Rozmiar w komunikacie, bo to jest właśnie to, na czym wysyłka się
+      // wykłada: skrzynki tną załączniki na 20 MB. Wideo zostaje na tym
+      // urządzeniu (profil 'lite'), więc mówimy o tym wprost.
+      const skippedVideos = collectMediaIds(report).videos.size
+      const details = formatBytes(blob.size)
+        + (skippedVideos > 0 ? ` · bez wideo (${skippedVideos}) — zostaje na tym urządzeniu` : '')
+
       if (forceDownload) {
         downloadBlob(blob, filename)
-        toast.success('PDF z danymi zapisany — można go wczytać z powrotem do apki')
+        toast.success(`PDF z danymi zapisany (${details}) — można go wczytać z powrotem do apki`)
       } else {
         await shareOrDownload(blob, filename)
-        toast.success('PDF z danymi gotowy do wysłania')
+        toast.success(`PDF z danymi gotowy do wysłania (${details})`)
       }
     } catch (e) {
       toast.error('Błąd: ' + (e.message || e))

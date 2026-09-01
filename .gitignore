@@ -6,3 +6,9 @@ dist
 
 test-results/
 playwright-report/
+
+# Materiały na potrzeby lokalne — repozytorium jest PUBLICZNE, te pliki
+# nie trafiają do niego nigdy (decyzja 2026-09-01).
+SZKOLENIE-BRIEF.md
+screenshots/
+tools/screenshots.mjs

@@ -18,9 +18,10 @@
 // │   └─ videos/{id}.ext         — pliki wideo
 
 import {
-  getImages, getOriginals, getVideos,
+  getImages, getOriginals, getVideos, getMediums, putMedium,
   replaceImage, replaceOriginal, replaceVideo,
 } from './imageStore.js'
+import { downsampleBlobToDataUrl, dataUrlToBlob } from './imageScale.js'
 import { collectMediaIds, loadAll, upsert, newId } from './storage.js'
 import { isPdfFile, extractPackageFromPdf } from './pdfAttachment.js'
 import { slugify } from './text.js'
@@ -60,7 +61,52 @@ function extFromVideoBlob(blob) {
 
 // ---------- Adding media to ZIP ----------
 
-async function addMediaToZip(zip, mediaIds) {
+// Zdjęcia w rozdzielczości raportu zamiast pełnych oryginałów (profil 'lite').
+//
+// POWÓD (v1.6): plik z „Przenieś na inne urządzenie" idzie mailem albo Teamsem,
+// a oryginał z telefonu to 3–5 MB SZTUKA — raport z sześcioma zdjęciami puchł
+// do ~25 MB przy skrzynkach ciętych na 20 MB. PDF i tak renderuje zdjęcia
+// w 1200×900, więc w wydruku odbiorca nie traci nic; traci wyłącznie zapas
+// pikseli przy ponownym kadrowaniu. Pełną wierność dają „📦 Pobierz paczkę ZIP"
+// i „💾 Backup wszystko" — te zostają na profilu 'full'.
+//
+// Zapisujemy pod tą samą nazwą `orig_{id}` co pełne oryginały: strona
+// odbierająca nie musi nic wiedzieć o profilu, po imporcie ma normalny
+// oryginał, tylko mniejszy.
+async function addLiteOriginalsToZip(zip, ids) {
+  const [mediums, originals] = await Promise.all([getMediums(ids), getOriginals(ids)])
+  const folder = zip.folder('originals')
+
+  for (const id of ids) {
+    const source = originals.get(id) || null
+    let blob = null
+
+    // Cache 'medium' z generowania PDF-a — {d,w,h} albo legacy sam string.
+    const cached = mediums.get(id)
+    const cachedUrl = cached && typeof cached === 'object' ? cached.d
+      : (typeof cached === 'string' ? cached : null)
+    if (cachedUrl) blob = dataUrlToBlob(cachedUrl)
+
+    if (!blob && source) {
+      try {
+        const r = await downsampleBlobToDataUrl(source)
+        blob = dataUrlToBlob(r.dataUrl)
+        putMedium(id, { d: r.dataUrl, w: r.w, h: r.h }).catch(() => {})
+      } catch (e) {
+        console.warn('paczka lite: downsample nieudany, pakuję oryginał', e)
+      }
+    }
+
+    // Przeskalowanie potrafi wyjść WIĘKSZE niż wejście (małe zdjęcie, zrzut
+    // ekranu w PNG) — wtedy pakujemy to, co mniejsze.
+    if (!blob || (source && source.size > 0 && source.size <= blob.size)) blob = source
+    if (!blob) continue
+
+    folder.file(`orig_${id}.${extFromImageBlob(blob) || 'jpg'}`, blob)
+  }
+}
+
+async function addMediaToZip(zip, mediaIds, { profile = 'full' } = {}) {
   // Photos (miniatury — stored as base64 dataURL stringów w IDB)
   if (mediaIds.photos.size > 0) {
     const images = await getImages(Array.from(mediaIds.photos))
@@ -75,16 +121,24 @@ async function addMediaToZip(zip, mediaIds) {
 
   // Originals (pełna rozdzielczość, stored as Blob)
   if (mediaIds.originals.size > 0) {
-    const originals = await getOriginals(Array.from(mediaIds.originals))
-    const folder = zip.folder('originals')
-    for (const [id, blob] of originals.entries()) {
-      const ext = extFromImageBlob(blob) || 'jpg'
-      folder.file(`orig_${id}.${ext}`, blob)
+    if (profile === 'lite') {
+      await addLiteOriginalsToZip(zip, Array.from(mediaIds.originals))
+    } else {
+      const originals = await getOriginals(Array.from(mediaIds.originals))
+      const folder = zip.folder('originals')
+      for (const [id, blob] of originals.entries()) {
+        const ext = extFromImageBlob(blob) || 'jpg'
+        folder.file(`orig_${id}.${ext}`, blob)
+      }
     }
   }
 
-  // Videos (Blob)
-  if (mediaIds.videos.size > 0) {
+  // Videos (Blob) — profil 'lite' ich nie niesie: jeden film z telefonu bywa
+  // większy niż cała reszta raportu razem wzięta. W aplikacji wideo i tak jest
+  // tylko metadanymi (kafelek z nazwą i rozmiarem, bez odtwarzania), więc po
+  // imporcie kafelek zostaje — brakuje samego pliku, a ten jest na urządzeniu
+  // źródłowym i w backupie.
+  if (profile !== 'lite' && mediaIds.videos.size > 0) {
     const videos = await getVideos(Array.from(mediaIds.videos))
     const folder = zip.folder('videos')
     for (const [id, blob] of videos.entries()) {
@@ -96,14 +150,19 @@ async function addMediaToZip(zip, mediaIds) {
 
 // ---------- Export single report ----------
 
-export async function exportReportPackage(report) {
+// `media`: 'full' (domyślnie — backup, pełne oryginały i wideo) albo 'lite'
+// (przenoszenie między urządzeniami — zdjęcia w rozdzielczości raportu,
+// bez wideo; patrz addLiteOriginalsToZip).
+export async function exportReportPackage(report, { media = 'full' } = {}) {
   const { default: JSZip } = await import('jszip')
   const zip = new JSZip()
   const mediaIds = collectMediaIds(report)
+  const lite = media === 'lite'
 
   zip.file('manifest.json', JSON.stringify({
     format: FORMAT,
     bundleType: 'single-report',
+    mediaProfile: media,
     exportedAt: new Date().toISOString(),
     sourceUserAgent: navigator.userAgent,
     reportId: report.id,
@@ -113,13 +172,14 @@ export async function exportReportPackage(report) {
     stats: {
       photoCount: mediaIds.photos.size,
       originalCount: mediaIds.originals.size,
-      videoCount: mediaIds.videos.size,
+      videoCount: lite ? 0 : mediaIds.videos.size,
+      videosOmitted: lite ? mediaIds.videos.size : 0,
     },
   }, null, 2))
 
   zip.file('report.json', JSON.stringify(report))
 
-  await addMediaToZip(zip, mediaIds)
+  await addMediaToZip(zip, mediaIds, { profile: media })
 
   return await zip.generateAsync({ type: 'blob', compression: 'STORE' })
 }

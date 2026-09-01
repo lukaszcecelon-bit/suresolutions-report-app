@@ -8,6 +8,7 @@
 // dopiero przy realnym "Pobierz paczkę". warmupLibs() pre-fetchuje w tle.
 import logoUrl from '../../assets/logo.png'
 import { getImages, getVideos, getOriginals, getMediums, putMedium } from '../imageStore.js'
+import { downsampleBlobToDataUrl } from '../imageScale.js'
 import { slugify } from '../text.js'
 
 export { logoUrl }
@@ -92,42 +93,6 @@ export function downloadBlob(blob, filename) {
     URL.revokeObjectURL(url)
     a.remove()
   }, 200)
-}
-
-// Downsample Blob (oryginał z IDB) do dataURL 1200×900 (medium-res do osadzenia
-// w PDF). Zwraca {dataUrl, w, h} — wymiary potrzebne do zachowania proporcji
-// przy rysowaniu miniaturek i dużych zdjęć-dowodów.
-async function downsampleBlobToDataUrl(blob, maxW = 1200, maxH = 900, quality = 0.88) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob)
-    const img = new Image()
-    img.onload = () => {
-      try {
-        let w = img.naturalWidth
-        let h = img.naturalHeight
-        const ratio = Math.min(maxW / w, maxH / h, 1)
-        w = Math.round(w * ratio)
-        h = Math.round(h * ratio)
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx2 = canvas.getContext('2d')
-        ctx2.imageSmoothingEnabled = true
-        ctx2.imageSmoothingQuality = 'high'
-        ctx2.drawImage(img, 0, 0, w, h)
-        resolve({ dataUrl: canvas.toDataURL('image/jpeg', quality), w, h })
-      } catch (e) {
-        reject(e)
-      } finally {
-        URL.revokeObjectURL(url)
-      }
-    }
-    img.onerror = () => {
-      URL.revokeObjectURL(url)
-      reject(new Error('downsample: image load failed'))
-    }
-    img.src = url
-  })
 }
 
 // Wymiary obrazka z dataURL (fallback gdy nie znamy ich z downsamplu/cache).
@@ -855,7 +820,9 @@ export function makeReportGenerators(collectMedia, drawPdf, baseName) {
     // przy realnym użyciu, tak jak w pozostałych ścieżkach paczkowania.
     transfer: async (report) => {
       const { exportReportPackage } = await import('../syncPackage.js')
-      const pkgBlob = await exportReportPackage(report)
+      // Profil 'lite': zdjęcia w rozdzielczości raportu, bez wideo — plik ma
+      // zmieścić się w załączniku maila (20 MB), a nie archiwizować oryginały.
+      const pkgBlob = await exportReportPackage(report, { media: 'lite' })
       const bytes = new Uint8Array(await pkgBlob.arrayBuffer())
       const name = baseName(report)
       const { pdfBlob } = await buildReportPdf(report, collectMedia, drawPdf, {

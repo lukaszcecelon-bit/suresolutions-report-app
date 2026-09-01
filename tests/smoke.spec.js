@@ -461,6 +461,94 @@ test('udostępnianie: plik ogłaszany jako PDF, bez dodatkowego tekstu (v1.5)', 
   expect(transfer.keys).toEqual(['files'])
 })
 
+test('plik do przenoszenia jest lekki mimo dużych zdjęć (v1.6)', async ({ page, browser }) => {
+  // Regresja z terenu: „raporty do przenoszenia mają często powyżej 20 MB",
+  // a skrzynki tną załączniki na 20 MB. Paczka zaszyta w PDF-ie niosła
+  // PEŁNOWYMIAROWE oryginały zdjęć — choć sam PDF renderuje je w 1200×900.
+  // Od v1.6 idzie profil 'lite': zdjęcia w rozdzielczości raportu, bez wideo.
+  //
+  // Szum, nie jednolity kolor — gładkie tło kompresuje się do kilku kB i test
+  // przechodziłby także ze zepsutą poprawką.
+  const bigPhoto = await sharp({
+    create: {
+      width: 3200, height: 2400, channels: 3,
+      background: { r: 40, g: 90, b: 150 },
+      noise: { type: 'gaussian', mean: 128, sigma: 70 },
+    },
+  }).jpeg({ quality: 92 }).toBuffer()
+  expect(bigPhoto.length).toBeGreaterThan(1_000_000)   // realny plik z aparatu
+
+  const report = {
+    id: 'r_size', type: 'service', status: 'draft', schemaVersion: 4,
+    createdAt: '2026-09-01T08:00:00.000Z', updatedAt: '2026-09-01T08:00:00.000Z',
+    header: { reportNumber: 'RPT-99-777-2026-09-01', projectNumber: '99-777', projectName: 'Projekt', machineName: 'Prasa', date: '2026-09-01', author: 'Jan', client: 'Klient', location: 'Hala' },
+    visit: { arrival: '08:00', departure: '12:00', attendees: '1', travelKm: '10' },
+    role: 'Technik serwisu', visitStatus: 'completed',
+    actions: [{ id: 'a1', description: 'Czynność ze zdjęciem', media: [] }],
+    parts: [], observations: [], recommendations: [], receivedBy: 'Klient',
+  }
+  await page.addInitScript((r) => {
+    try { localStorage.setItem('suresolutions.report.v2:' + r.id, JSON.stringify(r)) } catch {}
+  }, report)
+
+  await page.goto('/#/service/r_size')
+
+  // Wgranie zdjęcia przez uploader — oryginał ląduje w IndexedDB (tej ścieżki
+  // nie da się ominąć podstawianiem dataUrl w raporcie, a to właśnie oryginał
+  // decyduje o wadze paczki).
+  await page.locator('input[type="file"][multiple]').first().setInputFiles({
+    name: 'zdjecie.jpg', mimeType: 'image/jpeg', buffer: bigPhoto,
+  })
+  await expect(page.getByRole('button', { name: 'Usuń zdjęcie' })).toBeVisible({ timeout: 60_000 })
+
+  const grab = async (name) => {
+    const dl = page.waitForEvent('download', { timeout: 120_000 })
+    await page.getByRole('button', { name }).click()
+    const confirmBtn = page.getByRole('button', { name: 'Pobierz mimo to' })
+    if (await confirmBtn.isVisible({ timeout: 2_000 }).catch(() => false)) await confirmBtn.click()
+    const f = await dl
+    const path = await f.path()
+    return { path, size: (await fs.readFile(path)).length }
+  }
+
+  const transfer = await grab(/Przenieś na inne urządzenie/)
+  const zip = await grab(/Zapisz ZIP/)
+
+  // Paczka ZIP nadal archiwizuje pełny oryginał…
+  expect(zip.size).toBeGreaterThan(bigPhoto.length)
+  // …a plik do przenoszenia mieści się w mailu i jest ułamkiem tamtego.
+  expect(transfer.size).toBeLessThan(zip.size / 2)
+  expect(transfer.size).toBeLessThan(2_000_000)
+
+  // --- Odchudzone zdjęcie musi WRÓCIĆ przy imporcie ---
+  // Osobny kontekst = czyste localStorage i czyste IndexedDB, czyli naprawdę
+  // drugie urządzenie: gdyby profil 'lite' zgubił oryginał, raport przyjechałby
+  // bez zdjęcia i nie dałoby się go dalej edytować ani wydrukować.
+  const ctx = await browser.newContext()
+  const page2 = await ctx.newPage()
+  await page2.addInitScript(() => {
+    try { localStorage.setItem('suresolutions.onboarding.v2.dismissed', '1') } catch {}
+  })
+  await page2.goto('/#/reports')
+  await page2.locator('input[type="file"]').first().setInputFiles(transfer.path)
+  await page2.getByRole('button', { name: 'Importuj' }).click({ timeout: 30_000 })
+
+  await expect.poll(async () => page2.evaluate(() => new Promise((resolve) => {
+    const req = indexedDB.open('suresolutions.images.v1')
+    req.onsuccess = () => {
+      const db = req.result
+      const st = db.transaction('originals').objectStore('originals').getAllKeys()
+      st.onsuccess = () => resolve(st.result.length)
+      st.onerror = () => resolve(-1)
+    }
+    req.onerror = () => resolve(-1)
+  })), { timeout: 30_000 }).toBeGreaterThan(0)
+
+  await page2.goto('/#/service/r_size')
+  await expect(page2.getByRole('button', { name: 'Usuń zdjęcie' })).toBeVisible({ timeout: 30_000 })
+  await ctx.close()
+})
+
 test('podgląd PDF w aplikacji renderuje strony (v0.35)', async ({ page }) => {
   const jpg = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 180 } } })
     .jpeg().toBuffer()
