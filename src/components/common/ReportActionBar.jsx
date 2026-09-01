@@ -97,6 +97,23 @@ export default function ReportActionBar({ page, status, navigate, showFinish = t
           >
             {page.sending ? '⏳' : '🔄 Przenieś na inne urządzenie'}
           </button>
+          {/* Zapis pliku do przenoszenia na urządzenie — na telefonie sam
+              przycisk wyżej TYLKO udostępnia, a rozszerzenie udostępniania
+              Teamsa na iOS nie przyjmuje pliku podanego wprost z przeglądarki
+              (przyjmuje ten leżący na dysku). Sprawdzone w terenie: zapis do
+              Plików → udostępnienie Z PLIKÓW pokazuje Teams. Bez tego przycisku
+              ta jedyna działająca droga była dla pliku z danymi zamknięta.
+              Na desktopie przycisk wyżej i tak pobiera, więc nie dublujemy. */}
+          {canShare && (
+            <button
+              onClick={() => page.sendToDevice(true)}
+              disabled={page.sending}
+              className="btn-secondary flex-1"
+              title="Zapisuje ten sam plik w Plikach telefonu — potem udostępnij go z aplikacji Pliki (tak działa wysyłka do Teams na iPhonie)"
+            >
+              {page.sending ? '⏳' : '💾 Zapisz do Plików'}
+            </button>
+          )}
           <button onClick={() => navigate('')} className="btn-secondary flex-1">
             Zapisz i wyjdź
           </button>

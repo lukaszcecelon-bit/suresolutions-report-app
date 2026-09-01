@@ -1,6 +1,6 @@
 # Raporty SURE — dokumentacja aplikacji
 
-> Aktualny, kompletny opis aplikacji. Stan na **v1.6**.
+> Aktualny, kompletny opis aplikacji. Stan na **v1.7**.
 > Plik utrzymywany ręcznie — przy większych zmianach aktualizuj odpowiednią sekcję.
 
 **Live:** https://lukaszcecelon-bit.github.io/suresolutions-report-app/
@@ -381,7 +381,8 @@ w trzech rzędach:
 - **Rząd 2 — komputer:** „📦 Zapisz ZIP" + **„✉️ Wyślij mailem"** (pobiera PDF
   i otwiera Outlooka z gotowym tematem — załączasz pobrany plik).
 - **Rząd 3:** „✓ Oznacz ukończony" (jeśli dotyczy) + „🔄 Przenieś na inne
-  urządzenie" + „Zapisz i wyjdź".
+  urządzenie" + **„💾 Zapisz do Plików"** (tylko telefon — ten sam plik zapisany
+  lokalnie zamiast udostępnionego; patrz §13, Teams na iOS) + „Zapisz i wyjdź".
 
 **🔄 Przenieś na inne urządzenie** — patrz niżej: od v1.4 **PDF z zaszytymi
 danymi**, nie osobna paczka.
@@ -756,7 +757,14 @@ w `src/App.jsx`) **oraz** w `package.json`. Numer pokazuje `VersionBadge` w
 nagłówku; służy użytkownikowi do potwierdzenia, że PWA pobrała aktualizację, a
 eksport analityczny stempluje nim pliki.
 
-**Aktualna wersja: v1.6.** Skrót ostatnich zmian:
+**Aktualna wersja: v1.7.** Skrót ostatnich zmian:
+- **v1.7** — **„💾 Zapisz do Plików" dla pliku z danymi**: na iPhonie Teams nie
+  przyjmuje pliku podanego wprost z przeglądarki, ale przyjmuje ten zapisany na
+  dysku (udostępnianie z aplikacji Pliki działa). „🔄 Przenieś na inne
+  urządzenie" na telefonie tylko udostępniało, więc jedyna działająca droga była
+  dla tego pliku zamknięta. Nowy przycisk (tylko gdy Web Share dostępny) zapisuje
+  ten sam plik lokalnie; komunikat mówi, co zrobić dalej. Pomoc i §13 opisują
+  pełną diagnozę. Patrz §7, §13.
 - **v1.6** — **plik do przenoszenia mieści się w mailu**: zaszyta paczka szła
   z pełnowymiarowymi oryginałami zdjęć i wideo, więc raporty przekraczały 20 MB
   (limit załącznika). Nowy profil `lite` (tylko builder `transfer`): zdjęcia
@@ -950,15 +958,21 @@ eksport analityczny stempluje nim pliki.
   wypadają wtedy z listy. Pozostała część jest **poza aplikacją**: aplikacja musi
   być włączona w rzędzie ikon („Więcej"), a Teams i tak bywa kapryśny — obejście
   to „Zapisz w Plikach" → OneDrive → załącznik z OneDrive w Teams, albo Outlook.
-  **Sprawdzone na urządzeniu (2026-09-01):** po v1.5 Teams nie pojawia się także
-  przy udostępnianiu **dowolnego innego PDF-a** (np. z aplikacji Pliki) i nie ma
-  go w liście „Więcej" — czyli rozszerzenie Teams nie jest w tym telefonie
-  zarejestrowane. To zamyka temat po stronie aplikacji: przyczyną jest instalacja
-  Teams albo firmowa polityka Microsoft (Intune potrafi zabronić Teamsowi
-  przyjmowania danych z aplikacji spoza polityki — „Receive data from other
-  apps"). Kanał roboczy: **Outlook** (dlatego v1.6 pilnuje wagi pliku) lub
-  OneDrive; trwałe rozwiązanie dla Teams = wysyłanie **linku** z SharePointa
-  zamiast pliku, czyli integracja z Graph (§14).
+  **Rozpoznane na urządzeniu (2026-09-01), pełna diagnoza:** na iPhonie Teams
+  **nie pojawia się przy udostępnianiu wprost z aplikacji** — ani PDF-a, ani
+  linku z Safari — natomiast **pojawia się przy udostępnianiu tego samego pliku
+  z aplikacji Pliki**. Outlook i OneDrive są widoczne w obu przypadkach; na
+  Androidzie i na komputerze udostępnianie do Teams działa wprost. Restart,
+  odciążenie i przeinstalowanie Teamsa nie zmieniły nic. Wniosek: rozszerzenie
+  udostępniania Teamsa przyjmuje **plik leżący na dysku**, a nie dane podane
+  z pamięci przeglądarki (tak Safari przekazuje `File` z Web Share) — i tego
+  **nie da się obejść kodem**, bo o opakowaniu decyduje Safari, nie aplikacja.
+  Odpowiedź produktowa (v1.7): na telefonie każdy artefakt musi mieć drogę
+  **zapisu**, nie tylko udostępnienia — PDF miał ją od dawna („💾 Zapisz PDF na
+  urządzenie"), plik z danymi dostał **„💾 Zapisz do Plików"**. Instrukcja dla
+  terenu: zapisz → otwórz Pliki → udostępnij z Plików → Teams. Kanał bez objazdu:
+  **Outlook** (dlatego v1.6 pilnuje wagi pliku). Trwałe rozwiązanie dla Teams =
+  wysyłanie **linku** z SharePointa zamiast pliku, czyli integracja z Graph (§14).
 - **Teams na iOS — „Nie można przekazać pliku".** To problem **Teams / Microsoft
   365 (OneDrive)**, NIE aplikacji — powtarza się nawet przy ręcznym załączaniu
   zapisanego pliku w Teams. Teams wrzuca pliki z czatu do OneDrive nadawcy; bez

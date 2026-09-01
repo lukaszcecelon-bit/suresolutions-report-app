@@ -459,6 +459,14 @@ test('udostępnianie: plik ogłaszany jako PDF, bez dodatkowego tekstu (v1.5)', 
   const transfer = await page.evaluate(() => window.__shared)
   expect(transfer.name).toMatch(/\.pdf$/)
   expect(transfer.keys).toEqual(['files'])
+
+  // --- 3) zapis pliku z danymi do Plików telefonu (v1.7) ---
+  // Na iPhonie Teams nie przyjmuje pliku podanego wprost z przeglądarki, ale
+  // przyjmuje ten leżący na dysku — więc na urządzeniach z Web Share MUSI
+  // istnieć droga zapisu, nie tylko udostępniania.
+  const dl = page.waitForEvent('download', { timeout: 120_000 })
+  await page.getByRole('button', { name: /do Plików/ }).click()
+  expect((await dl).suggestedFilename()).toMatch(/\.pdf$/)
 })
 
 test('plik do przenoszenia jest lekki mimo dużych zdjęć (v1.6)', async ({ page, browser }) => {

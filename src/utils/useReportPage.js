@@ -6,7 +6,7 @@ import { remove, collectMediaIds } from './storage.js'
 import { formatBytes } from './text.js'
 import { TRANSFER_BUILDERS } from './pdfGenerator.js'
 import { ensureValidOrConfirm } from './validateReport.js'
-import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename } from './syncPackage.js'
+import { exportReportPackage, shareOrDownload, shareFileOrDownload, downloadBlob, makePackageFilename, canShareFiles } from './syncPackage.js'
 
 // Wspólny szkielet strony raportu — wcześniej każdy z 5 typów raportów
 // powielał ten sam zestaw: toast/confirm, stany downloading/sending,
@@ -82,7 +82,12 @@ export function useReportPage({ report, setReport, buildPackage, buildPdf }) {
 
       if (forceDownload) {
         downloadBlob(blob, filename)
-        toast.success(`PDF z danymi zapisany (${details}) — można go wczytać z powrotem do apki`)
+        // Na telefonie ten przycisk ma konkretny cel: dostarczyć plik do Plików,
+        // bo udostępnianie Z PLIKÓW widzi Teams, a udostępnianie wprost z apki
+        // już nie (rozszerzenie Teamsa na iOS bierze plik z dysku, nie z pamięci).
+        toast.success(canShareFiles()
+          ? `Zapisane w Plikach (${details}) — teraz udostępnij plik z aplikacji Pliki`
+          : `PDF z danymi zapisany (${details}) — można go wczytać z powrotem do apki`)
       } else {
         await shareOrDownload(blob, filename)
         toast.success(`PDF z danymi gotowy do wysłania (${details})`)
